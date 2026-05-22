@@ -1,4 +1,4 @@
-use vm_rust::player::eval::{parse_lingo_expr_ast_runtime, LingoExpr, Rule};
+use vm_rust::player::eval::{LingoExpr, Rule, parse_lingo_expr_ast_runtime};
 
 #[test]
 fn test_list_index_literal() {
@@ -85,9 +85,10 @@ fn test_sprite_scriptinstancelist_index_property() {
         LingoExpr::ObjProp(
             Box::new(LingoExpr::ListAccess(
                 Box::new(LingoExpr::ObjProp(
-                    Box::new(LingoExpr::HandlerCall("sprite".to_string(), vec![
-                        LingoExpr::IntLiteral(39)
-                    ])),
+                    Box::new(LingoExpr::HandlerCall(
+                        "sprite".to_string(),
+                        vec![LingoExpr::IntLiteral(39)]
+                    )),
                     "scriptInstanceList".to_string()
                 )),
                 Box::new(LingoExpr::IntLiteral(2))

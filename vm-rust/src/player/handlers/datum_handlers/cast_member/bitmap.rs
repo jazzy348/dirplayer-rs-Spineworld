@@ -1,7 +1,12 @@
 use crate::{
     director::lingo::datum::Datum,
     player::{
-        DirPlayer, ScriptError, bitmap::bitmap::{BuiltInPalette, PaletteRef}, cast_lib::CastMemberRef, cast_member::Media, handlers::datum_handlers::cast_member_ref::{CastMemberRefHandlers, borrow_member_mut}, reserve_player_mut
+        DirPlayer, ScriptError,
+        bitmap::bitmap::{BuiltInPalette, PaletteRef},
+        cast_lib::CastMemberRef,
+        cast_member::Media,
+        handlers::datum_handlers::cast_member_ref::{CastMemberRefHandlers, borrow_member_mut},
+        reserve_player_mut,
     },
 };
 use num_traits::FromPrimitive;
@@ -32,6 +37,13 @@ impl BitmapMemberHandlers {
             "width" => Ok(Datum::Int(bitmap.map(|x| x.width as i32).unwrap_or(0))),
             "height" => Ok(Datum::Int(bitmap.map(|x| x.height as i32).unwrap_or(0))),
             "image" | "picture" => Ok(Datum::BitmapRef(bitmap_ref)),
+            "regPoint" | "regpoint" => Ok(Datum::Point(
+                [
+                    bitmap_member.reg_point.0 as f64,
+                    bitmap_member.reg_point.1 as f64,
+                ],
+                0,
+            )),
             "media" => Ok(Datum::Media(Media::Bitmap {
                 bitmap: bitmap.unwrap().clone(),
                 reg_point: bitmap_member.reg_point,
@@ -58,19 +70,19 @@ impl BitmapMemberHandlers {
                     }
                     PaletteRef::Default => Ok(Datum::PaletteRef(PaletteRef::Default)),
                 }
-            },
+            }
             "rect" => {
                 let width = bitmap.map(|x| x.width as i32).unwrap_or(0);
                 let height = bitmap.map(|x| x.height as i32).unwrap_or(0);
                 Ok(Datum::Rect([0.0, 0.0, width as f64, height as f64], 0))
             }
-            "depth" => Ok(Datum::Int(
-                bitmap
-                    .map(|x| x.bit_depth as i32)
-                    .unwrap_or(0),
-            )),
+            "depth" => Ok(Datum::Int(bitmap.map(|x| x.bit_depth as i32).unwrap_or(0))),
             "useAlpha" => Ok(Datum::Int(if bitmap_member.info.use_alpha { 1 } else { 0 })),
-            "trimWhiteSpace" => Ok(Datum::Int(if bitmap_member.info.trim_white_space { 1 } else { 0 })),
+            "trimWhiteSpace" => Ok(Datum::Int(if bitmap_member.info.trim_white_space {
+                1
+            } else {
+                0
+            })),
             _ => Err(ScriptError::new(format!(
                 "Cannot get castMember property {} for bitmap",
                 prop
@@ -102,7 +114,9 @@ impl BitmapMemberHandlers {
                             .find_member_by_ref(member_ref)
                             .unwrap();
                         let bitmap_member = cast_member.member_type.as_bitmap().unwrap();
-                        let old_palette = player.bitmap_manager.get_bitmap(bitmap_member.image_ref)
+                        let old_palette = player
+                            .bitmap_manager
+                            .get_bitmap(bitmap_member.image_ref)
                             .map(|bm| bm.palette_ref.clone());
                         (bitmap_member.image_ref, old_palette)
                     };
@@ -111,7 +125,10 @@ impl BitmapMemberHandlers {
                     // the default system palette (e.g. from image(w,h,24) with no
                     // palette arg). This preserves the cast member's original palette.
                     if let Some(old_pal) = old_palette {
-                        if matches!(clone.palette_ref, PaletteRef::BuiltIn(BuiltInPalette::SystemWin)) {
+                        if matches!(
+                            clone.palette_ref,
+                            PaletteRef::BuiltIn(BuiltInPalette::SystemWin)
+                        ) {
                             clone.palette_ref = old_pal;
                         }
                     }
@@ -139,10 +156,30 @@ impl BitmapMemberHandlers {
                     let reg_y = (new_height as i32) / 2;
                     bitmap_member.reg_point = (reg_x as i16, reg_y as i16);
                     cast_member.reg_point = (reg_x, reg_y);
+                    player
+                        .movie
+                        .cast_manager
+                        .queue_texture_invalidation(member_ref.clone());
+                    player.stage_dirty = true;
 
                     Ok(())
                 })
             }
+            "regPoint" | "regpoint" => reserve_player_mut(|player| {
+                let (vals, _flags) = value.to_point_inline()?;
+                let x = vals[0] as i32;
+                let y = vals[1] as i32;
+                let cast_member = player
+                    .movie
+                    .cast_manager
+                    .find_mut_member_by_ref(member_ref)
+                    .ok_or_else(|| ScriptError::new("Cast member not found".to_string()))?;
+                let bitmap_member = cast_member.member_type.as_bitmap_mut().unwrap();
+                bitmap_member.reg_point = (x as i16, y as i16);
+                bitmap_member.info.center_reg_point = false;
+                cast_member.reg_point = (x, y);
+                Ok(())
+            }),
             "media" => {
                 let media = value.media_value()?;
                 let (media_bitmap, media_reg_point) = match media {
@@ -159,7 +196,9 @@ impl BitmapMemberHandlers {
                         let bitmap_member = cast_member.member_type.as_bitmap().unwrap();
                         bitmap_member.image_ref
                     };
-                    player.bitmap_manager.replace_bitmap(member_image_ref, media_bitmap.clone());
+                    player
+                        .bitmap_manager
+                        .replace_bitmap(member_image_ref, media_bitmap.clone());
 
                     let cast_member = player
                         .movie
@@ -169,6 +208,11 @@ impl BitmapMemberHandlers {
                     let bitmap_member = cast_member.member_type.as_bitmap_mut().unwrap();
                     bitmap_member.reg_point = media_reg_point;
                     cast_member.reg_point = (media_reg_point.0 as i32, media_reg_point.1 as i32);
+                    player
+                        .movie
+                        .cast_manager
+                        .queue_texture_invalidation(member_ref.clone());
+                    player.stage_dirty = true;
                     Ok(())
                 })
             }
@@ -209,7 +253,7 @@ impl BitmapMemberHandlers {
                         return Err(ScriptError::new(format!(
                             "Cannot set bitmap member paletteRef to type {}",
                             value.type_str()
-                        )))
+                        )));
                     }
                 }
                 Ok(())
@@ -251,7 +295,7 @@ impl BitmapMemberHandlers {
                         return Err(ScriptError::new(format!(
                             "Cannot set bitmap member palette to type {}",
                             value.type_str()
-                        )))
+                        )));
                     }
                 }
                 Ok(())

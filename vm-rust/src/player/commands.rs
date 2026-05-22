@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_std::channel::Receiver;
 use chrono::Local;
-use log::{warn, debug};
+use log::{debug, warn};
 use manual_future::ManualFuture;
 use url::Url;
 
@@ -15,23 +15,23 @@ use crate::{
 };
 
 use super::{
+    PLAYER_TX, PlayerVMExecutionItem, ScriptError, ScriptReceiver,
     allocator::ScriptInstanceAllocatorTrait,
     cast_lib::CastMemberRef,
     cast_member::CastMemberType,
     datum_ref::DatumRef,
     events::{
         player_dispatch_callback_event, player_dispatch_event_to_sprite,
-        player_dispatch_movie_callback, player_wait_available,
-        player_dispatch_event_to_sprite_targeted, player_invoke_frame_and_movie_scripts,
+        player_dispatch_event_to_sprite_targeted, player_dispatch_movie_callback,
+        player_invoke_frame_and_movie_scripts, player_wait_available,
     },
     font::player_load_system_font,
-    keyboard_events::{player_key_down, player_key_up},
     handlers::datum_handlers::player_call_datum_handler,
+    keyboard_events::{get_keyboard_focus_sprite_at, player_key_down, player_key_up},
     player_alloc_datum, player_call_script_handler, player_dispatch_global_event,
     player_is_playing, reserve_player_mut, reserve_player_ref,
     score::{concrete_sprite_hit_test, get_concrete_sprite_rect, get_sprite_at},
     script_ref::ScriptInstanceRef,
-    PlayerVMExecutionItem, ScriptError, ScriptReceiver, PLAYER_TX,
 };
 
 #[allow(dead_code)]
@@ -73,7 +73,9 @@ pub enum PlayerVMCommand {
 
 pub fn _format_player_cmd(command: &PlayerVMCommand) -> String {
     match command {
-        PlayerVMCommand::LoadMovieFromFile(path, autoplay) => format!("LoadMovieFromFile({}, {})", path, autoplay),
+        PlayerVMCommand::LoadMovieFromFile(path, autoplay) => {
+            format!("LoadMovieFromFile({}, {})", path, autoplay)
+        }
         PlayerVMCommand::SetExternalParams(params) => {
             format!("SetExternalParams({:?})", params.keys().collect::<Vec<_>>())
         }
@@ -94,14 +96,37 @@ pub fn _format_player_cmd(command: &PlayerVMCommand) -> String {
         PlayerVMCommand::KeyDown(key, ..) => format!("KeyDown({})", key),
         PlayerVMCommand::KeyUp(key, ..) => format!("KeyUp({})", key),
         PlayerVMCommand::TriggerAlertHook => "TriggerAlertHook".to_string(),
-        PlayerVMCommand::TriggerFlashCallback { sprite_num, handler_name, .. } => {
-            format!("TriggerFlashCallback(sprite: {}, handler: {})", sprite_num, handler_name)
+        PlayerVMCommand::TriggerFlashCallback {
+            sprite_num,
+            handler_name,
+            ..
+        } => {
+            format!(
+                "TriggerFlashCallback(sprite: {}, handler: {})",
+                sprite_num, handler_name
+            )
         }
-        PlayerVMCommand::TriggerLingoCallbackOnScript { cast_lib, cast_member, handler_name, .. } => {
-            format!("TriggerLingoCallbackOnScript(cast_lib: {}, cast_member: {}, handler: {})", cast_lib, cast_member, handler_name)
+        PlayerVMCommand::TriggerLingoCallbackOnScript {
+            cast_lib,
+            cast_member,
+            handler_name,
+            ..
+        } => {
+            format!(
+                "TriggerLingoCallbackOnScript(cast_lib: {}, cast_member: {}, handler: {})",
+                cast_lib, cast_member, handler_name
+            )
         }
-        PlayerVMCommand::SetLingoScriptProperty { cast_lib, cast_member, prop_name, .. } => {
-            format!("SetLingoScriptProperty(cast_lib: {}, cast_member: {}, prop: {})", cast_lib, cast_member, prop_name)
+        PlayerVMCommand::SetLingoScriptProperty {
+            cast_lib,
+            cast_member,
+            prop_name,
+            ..
+        } => {
+            format!(
+                "SetLingoScriptProperty(cast_lib: {}, cast_member: {}, prop: {})",
+                cast_lib, cast_member, prop_name
+            )
         }
     }
 }
@@ -220,8 +245,9 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
         }
         PlayerVMCommand::SetBasePath(path) => {
             reserve_player_mut(|player| {
-                player.net_manager.set_base_path(Url::parse(&path)
-                    .expect(&format!("Invalid base path URL: '{}'", path)));
+                player.net_manager.set_base_path(
+                    Url::parse(&path).expect(&format!("Invalid base path URL: '{}'", path)),
+                );
             });
         }
         PlayerVMCommand::SetMoviePathOverride(path) => {
@@ -338,14 +364,13 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
             // no prior mouse_move, so stepFrame hasn't run at the tap position yet.
             // mouse_loc is already set synchronously by the JS-side mouse_down() call.
             {
-                let actor_snapshot = reserve_player_ref(|player| {
-                    player.actor_list_stepframe_snapshot()
-                });
+                let actor_snapshot =
+                    reserve_player_ref(|player| player.actor_list_stepframe_snapshot());
                 for (_idx, actor_ref) in actor_snapshot.0.iter().enumerate() {
                     if actor_snapshot.1.contains(&actor_ref.unwrap()) {
-                        let _ = player_call_datum_handler(
-                            actor_ref, &"stepFrame".to_string(), &vec![],
-                        ).await;
+                        let _ =
+                            player_call_datum_handler(actor_ref, &"stepFrame".to_string(), &vec![])
+                                .await;
                     }
                 }
             }
@@ -358,6 +383,9 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                     player.movie.click_loc = (x, y);
                     player.is_double_click = is_double_click;
                     player.last_mouse_down_time = click_now;
+                    player.click_on_sprite = get_sprite_at(player, x, y, false)
+                        .map(|sprite_number| sprite_number as i16)
+                        .unwrap_or(0);
                 });
                 player_dispatch_movie_callback("mouseDown").await?;
                 return Ok(DatumRef::Void);
@@ -385,39 +413,26 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                             player.drag_offset = (sprite.loc_h - x, sprite.loc_v - y);
                         }
                     }
-                    let sprite = player.movie.score.get_sprite(sprite_number as i16);
-                    let sprite_member = sprite
-                        .and_then(|x| x.member.as_ref())
-                        .and_then(|x| player.movie.cast_manager.find_member_by_ref(&x));
-                    if let Some(sprite_member) = sprite_member {
-                        let editable = match &sprite_member.member_type {
-                            CastMemberType::Field(f) => f.editable,
-                            CastMemberType::Text(t) => t.info.as_ref().map_or(false, |i| i.editable),
-                            _ => false,
-                        };
-                        if editable {
-                            player.keyboard_focus_sprite = sprite_number as i16;
-                        }
-                    }
-
                     // Toggle hilite for button members on mouseDown
                     if let Some(sprite) = player.movie.score.get_sprite(sprite_number as i16) {
                         if let Some(member_ref) = sprite.member.clone() {
-                            if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) {
+                            if let Some(member) = player
+                                .movie
+                                .cast_manager
+                                .find_mut_member_by_ref(&member_ref)
+                            {
                                 match &mut member.member_type {
-                                    CastMemberType::Button(button) => {
-                                        match button.button_type {
-                                            crate::player::cast_member::ButtonType::PushButton => {
-                                                button.hilite = true;
-                                            }
-                                            crate::player::cast_member::ButtonType::CheckBox => {
-                                                button.hilite = !button.hilite;
-                                            }
-                                            crate::player::cast_member::ButtonType::RadioButton => {
-                                                button.hilite = true;
-                                            }
+                                    CastMemberType::Button(button) => match button.button_type {
+                                        crate::player::cast_member::ButtonType::PushButton => {
+                                            button.hilite = true;
                                         }
-                                    }
+                                        crate::player::cast_member::ButtonType::CheckBox => {
+                                            button.hilite = !button.hilite;
+                                        }
+                                        crate::player::cast_member::ButtonType::RadioButton => {
+                                            button.hilite = true;
+                                        }
+                                    },
                                     _ => {}
                                 }
                             }
@@ -429,6 +444,10 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
 
                 // For event dispatch targeting, use scripted lookup —
                 // only sprites with behaviors or cast member scripts receive mouseDown.
+                if let Some(focus_sprite) = get_keyboard_focus_sprite_at(player, x, y) {
+                    player.keyboard_focus_sprite = focus_sprite;
+                }
+
                 let scripted_sprite = get_sprite_at(player, x, y, true);
                 if let Some(sprite_number) = scripted_sprite {
                     player.mouse_down_sprite = sprite_number as i16;
@@ -481,17 +500,21 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 None
             });
 
+            let mut handler_err: Option<ScriptError> = None;
+
             if let Some(sprite_num) = sprite_with_behaviors {
                 player_dispatch_event_to_sprite_targeted(
                     &"mouseDown".to_string(),
                     &vec![],
                     sprite_num,
-                ).await;
+                )
+                .await;
             } else {
-                player_invoke_frame_and_movie_scripts(
-                    &"mouseDown".to_string(),
-                    &vec![]
-                ).await?;
+                if let Err(e) =
+                    player_invoke_frame_and_movie_scripts(&"mouseDown".to_string(), &vec![]).await
+                {
+                    handler_err = Some(e);
+                }
             }
 
             // Execute cast member script if it exists
@@ -512,7 +535,8 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                     );
 
                     if let Some(script) = player.movie.cast_manager.get_script_by_ref(script_ref) {
-                        if let Some(handler) = script.get_own_handler_ref(&"mouseDown".to_string()) {
+                        if let Some(handler) = script.get_own_handler_ref(&"mouseDown".to_string())
+                        {
                             return Some((None, handler, vec![]));
                         }
                     }
@@ -527,17 +551,23 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 );
 
                 let script = {
-                    let cast_lib = player.movie.cast_manager.get_cast_mut(member_ref.cast_lib as u32);
+                    let cast_lib = player
+                        .movie
+                        .cast_manager
+                        .get_cast_mut(member_ref.cast_lib as u32);
                     cast_lib.get_behavior_script_from_lctx(script_id)
                 };
 
                 let script = match script {
                     Some(s) => {
-                       debug!("Behavior script {} found for mouseDown", script_id);
+                        debug!("Behavior script {} found for mouseDown", script_id);
                         s
                     }
                     None => {
-                        debug!("Behavior script {} NOT FOUND in lctx.scripts for mouseDown", script_id);
+                        debug!(
+                            "Behavior script {} NOT FOUND in lctx.scripts for mouseDown",
+                            script_id
+                        );
                         return None;
                     }
                 };
@@ -547,10 +577,11 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 Some((None, handler, vec![]))
             });
 
-            let mut handler_err: Option<ScriptError> = None;
-            if let Some((receiver, handler, args)) = cast_member_script_call {
+            if handler_err.is_none() {
+                if let Some((receiver, handler, args)) = cast_member_script_call {
                 if let Err(e) = player_call_script_handler(receiver, handler, &args).await {
                     handler_err = Some(e);
+                }
                 }
             }
 
@@ -583,9 +614,8 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 return Ok(DatumRef::Void);
             }
             // In Director, mouseUpScript intercepts BEFORE sprites get the event.
-            let mouse_up_script_active = reserve_player_ref(|player| {
-                has_executable_callback(&player.movie.mouse_up_script)
-            });
+            let mouse_up_script_active =
+                reserve_player_ref(|player| has_executable_callback(&player.movie.mouse_up_script));
             if mouse_up_script_active {
                 reserve_player_mut(|player| {
                     player.mouse_loc = (x, y);
@@ -609,9 +639,15 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 if player.mouse_down_sprite > 0 {
                     if let Some(sprite) = player.movie.score.get_sprite(player.mouse_down_sprite) {
                         if let Some(member_ref) = sprite.member.clone() {
-                            if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) {
+                            if let Some(member) = player
+                                .movie
+                                .cast_manager
+                                .find_mut_member_by_ref(&member_ref)
+                            {
                                 if let CastMemberType::Button(button) = &mut member.member_type {
-                                    if button.button_type == crate::player::cast_member::ButtonType::PushButton {
+                                    if button.button_type
+                                        == crate::player::cast_member::ButtonType::PushButton
+                                    {
                                         button.hilite = false;
                                     }
                                 }
@@ -628,7 +664,11 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 player.mouse_down_sprite = -1;
                 if let Some(sprite) = sprite {
                     let is_inside = concrete_sprite_hit_test(player, sprite, x, y);
-                    Some((sprite.script_instance_list.clone(), is_inside, sprite_num_to_notify))
+                    Some((
+                        sprite.script_instance_list.clone(),
+                        is_inside,
+                        sprite_num_to_notify,
+                    ))
                 } else {
                     None
                 }
@@ -672,7 +712,8 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                         &event_name.to_string(),
                         &vec![],
                         *sprite_num as u16,
-                    ).await;
+                    )
+                    .await;
                     true
                 } else {
                     false
@@ -682,10 +723,7 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
             };
 
             if !dispatched_to_sprite {
-                player_invoke_frame_and_movie_scripts(
-                    &event_name.to_string(),
-                    &vec![]
-                ).await;
+                player_invoke_frame_and_movie_scripts(&event_name.to_string(), &vec![]).await;
             }
 
             // Execute cast member script using the ORIGINAL sprite that had mouseDown,
@@ -700,12 +738,17 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 let member_ref = sprite.member.as_ref()?;
                 let member = player.movie.cast_manager.find_member_by_ref(member_ref)?;
 
-                let handler_name = if is_inside { "mouseUp" } else { "mouseUpOutSide" };
+                let handler_name = if is_inside {
+                    "mouseUp"
+                } else {
+                    "mouseUpOutSide"
+                };
 
                 // First check for member behavior script (stored in member_script_ref)
                 if let Some(script_ref) = member.get_member_script_ref() {
                     if let Some(script) = player.movie.cast_manager.get_script_by_ref(script_ref) {
-                        if let Some(handler) = script.get_own_handler_ref(&handler_name.to_string()) {
+                        if let Some(handler) = script.get_own_handler_ref(&handler_name.to_string())
+                        {
                             return Some((None, handler, vec![]));
                         }
                     }
@@ -715,7 +758,10 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 let script_id = member.get_script_id()?;
 
                 let script = {
-                    let cast_lib = player.movie.cast_manager.get_cast_mut(member_ref.cast_lib as u32);
+                    let cast_lib = player
+                        .movie
+                        .cast_manager
+                        .get_cast_mut(member_ref.cast_lib as u32);
                     cast_lib.get_behavior_script_from_lctx(script_id)
                 };
 
@@ -724,15 +770,18 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
 
                 // Try to get the handler
                 let handler = script.get_own_handler_ref(&handler_name);
-                
+
                 // ADD THIS CHECK:
                 if handler.is_none() {
-                    debug!("⚠️  Handler '{}' NOT FOUND in script {}", handler_name, script_id);
+                    debug!(
+                        "⚠️  Handler '{}' NOT FOUND in script {}",
+                        handler_name, script_id
+                    );
                     return None;
                 }
-                
+
                 debug!("✓ Handler '{}' found!", handler_name);
-                
+
                 Some((None, handler.unwrap(), vec![]))
             });
 
@@ -786,19 +835,23 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                         // Constraint bounds only apply to Shockwave3D members.
                         // Regular 2D sprites can be dragged freely; bounds-clamping
                         // them caused puzzle pieces to lock to a small area.
-                        let is_3d_member = sprite.member.as_ref()
+                        let is_3d_member = sprite
+                            .member
+                            .as_ref()
                             .and_then(|mref| player.movie.cast_manager.find_member_by_ref(mref))
-                            .map_or(false, |m| matches!(
-                                m.member_type,
-                                CastMemberType::Shockwave3d(_)
-                            ));
+                            .map_or(false, |m| {
+                                matches!(m.member_type, CastMemberType::Shockwave3d(_))
+                            });
                         if is_3d_member {
                             let sprite = player.movie.score.get_sprite(drag_sprite_num).unwrap();
                             let constraint_num = sprite.constraint;
                             if constraint_num > 0 {
                                 // Constrain to the bounding rect of the constraint sprite
-                                if let Some(constraint_sprite) = player.movie.score.get_sprite(constraint_num as i16) {
-                                    let bounds = get_concrete_sprite_rect(player, constraint_sprite);
+                                if let Some(constraint_sprite) =
+                                    player.movie.score.get_sprite(constraint_num as i16)
+                                {
+                                    let bounds =
+                                        get_concrete_sprite_rect(player, constraint_sprite);
                                     new_h = new_h.max(bounds.left).min(bounds.right);
                                     new_v = new_v.max(bounds.top).min(bounds.bottom);
                                 }
@@ -910,10 +963,10 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                             // For mouseDownScript, you'd compile and execute the text
                             // But for alertHook specifically, you'd look for an alertHook handler
                             // in the compiled script
-                            
+
                             // Option 1: Compile the script text on-the-fly
                             // This requires your Lingo compiler to be accessible
-                            
+
                             // Option 2: For simple cases like "--nothing", just ignore it
                             if text.trim().starts_with("--") || text.trim().is_empty() {
                                 // It's a comment or empty, do nothing
@@ -924,9 +977,12 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                                 // 1. Parse the text as Lingo code
                                 // 2. Compile it to bytecode
                                 // 3. Execute it with the given arguments
-                                
+
                                 // For now, log a warning and skip
-                                warn!("Warning: Script text execution not yet implemented for alertHook: {}", text);
+                                warn!(
+                                    "Warning: Script text execution not yet implemented for alertHook: {}",
+                                    text
+                                );
                                 None
                             }
                         }
@@ -939,13 +995,22 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 player_call_script_handler(receiver, handler, &args).await?;
             }
         }
-        PlayerVMCommand::TriggerFlashCallback { sprite_num, handler_name, args } => {
+        PlayerVMCommand::TriggerFlashCallback {
+            sprite_num,
+            handler_name,
+            args,
+        } => {
             // Find the sprite and its script instances, call the matching handler
             let call_params = reserve_player_mut(|player| {
                 if let Some(sprite) = player.movie.score.get_sprite(sprite_num as i16) {
                     for script_instance_ref in &sprite.script_instance_list {
-                        let script_instance = player.allocator.get_script_instance(script_instance_ref);
-                        if let Some(script) = player.movie.cast_manager.get_script_by_ref(&script_instance.script) {
+                        let script_instance =
+                            player.allocator.get_script_instance(script_instance_ref);
+                        if let Some(script) = player
+                            .movie
+                            .cast_manager
+                            .get_script_by_ref(&script_instance.script)
+                        {
                             if let Some(handler_ref) = script.get_own_handler_ref(&handler_name) {
                                 return Some((
                                     Some(script_instance_ref.clone()),
@@ -963,27 +1028,34 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
                 player_call_script_handler(receiver, handler, &args).await?;
             }
         }
-        PlayerVMCommand::TriggerLingoCallbackOnScript { cast_lib, cast_member, handler_name, args } => {
+        PlayerVMCommand::TriggerLingoCallbackOnScript {
+            cast_lib,
+            cast_member,
+            handler_name,
+            args,
+        } => {
             use super::handlers::datum_handlers::script_instance::ScriptInstanceDatumHandlers;
 
             let call_params = reserve_player_mut(|player| {
-                for (script_instance_id, script_instance_entry) in player.allocator.script_instances.iter() {
+                for (script_instance_id, script_instance_entry) in
+                    player.allocator.script_instances.iter()
+                {
                     let script_instance = &script_instance_entry.script_instance;
 
-                    if script_instance.script.cast_lib == cast_lib &&
-                       script_instance.script.cast_member == cast_member
+                    if script_instance.script.cast_lib == cast_lib
+                        && script_instance.script.cast_member == cast_member
                     {
-                        if let Some(script) = player.movie.cast_manager.get_script_by_ref(&script_instance.script) {
+                        if let Some(script) = player
+                            .movie
+                            .cast_manager
+                            .get_script_by_ref(&script_instance.script)
+                        {
                             if let Some(handler_ref) = script.get_own_handler_ref(&handler_name) {
                                 let script_instance_ref = ScriptInstanceRef::from_id(
                                     script_instance_id as u32,
-                                    script_instance_entry.ref_count.get()
+                                    script_instance_entry.ref_count.get(),
                                 );
-                                return Some((
-                                    script_instance_ref,
-                                    handler_ref,
-                                    args.clone(),
-                                ));
+                                return Some((script_instance_ref, handler_ref, args.clone()));
                             }
                         }
                     }
@@ -993,14 +1065,16 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
 
             if let Some((receiver, handler, args)) = call_params {
                 let receiver_datum = player_alloc_datum(Datum::ScriptInstanceRef(receiver));
-                let _ = ScriptInstanceDatumHandlers::call_async(
-                    &receiver_datum,
-                    &handler.1,
-                    &args
-                ).await;
+                let _ = ScriptInstanceDatumHandlers::call_async(&receiver_datum, &handler.1, &args)
+                    .await;
             }
         }
-        PlayerVMCommand::SetLingoScriptProperty { cast_lib, cast_member, prop_name, value } => {
+        PlayerVMCommand::SetLingoScriptProperty {
+            cast_lib,
+            cast_member,
+            prop_name,
+            value,
+        } => {
             use super::script::script_set_prop;
 
             reserve_player_mut(|player| {
@@ -1008,10 +1082,12 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
 
                 for (instance_id, instance_entry) in player.allocator.script_instances.iter() {
                     let instance = &instance_entry.script_instance;
-                    if instance.script.cast_lib == cast_lib && instance.script.cast_member == cast_member {
+                    if instance.script.cast_lib == cast_lib
+                        && instance.script.cast_member == cast_member
+                    {
                         matching_instances.push(ScriptInstanceRef::from_id(
                             instance_id as u32,
-                            instance_entry.ref_count.get()
+                            instance_entry.ref_count.get(),
                         ));
                     }
                 }

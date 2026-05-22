@@ -114,6 +114,18 @@ impl ShapeInfo {
             line_direction: 0,
         }
     }
+
+    pub fn is_stretched_fill_placeholder(&self, rendered_width: i32, rendered_height: i32) -> bool {
+        let authored_width = (self.rect_right - self.rect_left).abs().max(1) as i32;
+        let authored_height = (self.rect_bottom - self.rect_top).abs().max(1) as i32;
+
+        self.fill_type != 0
+            && self.line_thickness <= 1
+            && self.pattern == 1
+            && self.fore_color == 255
+            && self.back_color == 0
+            && (rendered_width > authored_width * 4 || rendered_height > authored_height * 4)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -133,29 +145,29 @@ pub enum Alignment {
 
 #[derive(Clone, Debug)]
 pub struct FieldInfo {
-    pub border: u8,              // Byte 0: borderSize (0-5)
-    pub margin: u8,              // Byte 1: gutterSize (0-5)
-    pub box_drop_shadow: u8,     // Byte 2: boxShadow (0-5)
-    pub box_type: u8,            // Byte 3: textType (0=adjust, 1=scroll, 2=fixed, 3=limit)
+    pub border: u8,          // Byte 0: borderSize (0-5)
+    pub margin: u8,          // Byte 1: gutterSize (0-5)
+    pub box_drop_shadow: u8, // Byte 2: boxShadow (0-5)
+    pub box_type: u8,        // Byte 3: textType (0=adjust, 1=scroll, 2=fixed, 3=limit)
 
-    pub alignment: i16,          // Bytes 4-5: textAlign (-1=right, 0=left, 1=center)
+    pub alignment: i16, // Bytes 4-5: textAlign (-1=right, 0=left, 1=center)
 
-    pub bgpal_r: u16,            // Bytes 6-7: background Red (QuickDraw u16)
-    pub bgpal_g: u16,            // Bytes 8-9: background Green (QuickDraw u16)
-    pub bgpal_b: u16,            // Bytes 10-11: background Blue (QuickDraw u16)
+    pub bgpal_r: u16, // Bytes 6-7: background Red (QuickDraw u16)
+    pub bgpal_g: u16, // Bytes 8-9: background Green (QuickDraw u16)
+    pub bgpal_b: u16, // Bytes 10-11: background Blue (QuickDraw u16)
 
-    pub scroll: u16,             // Bytes 12-13: scroll position
+    pub scroll: u16, // Bytes 12-13: scroll position
 
-    pub rect_left: i16,          // Bytes 14-15: initial rect left
-    pub rect_top: i16,           // Bytes 16-17: initial rect top
-    pub rect_right: i16,         // Bytes 18-19: initial rect right
-    pub rect_bottom: i16,        // Bytes 20-21: initial rect bottom
+    pub rect_left: i16,   // Bytes 14-15: initial rect left
+    pub rect_top: i16,    // Bytes 16-17: initial rect top
+    pub rect_right: i16,  // Bytes 18-19: initial rect right
+    pub rect_bottom: i16, // Bytes 20-21: initial rect bottom
 
-    pub max_height: u16,         // Bytes 22-23: maximum height
-    pub text_shadow: u8,         // Byte 24: text shadow
-    pub flags: u8,               // Byte 25: 0x1=editable, 0x2=autoTab, 0x4=don't wrap
+    pub max_height: u16, // Bytes 22-23: maximum height
+    pub text_shadow: u8, // Byte 24: text shadow
+    pub flags: u8,       // Byte 25: 0x1=editable, 0x2=autoTab, 0x4=don't wrap
 
-    pub text_height: u16,        // Bytes 26-27: actual text height
+    pub text_height: u16, // Bytes 26-27: actual text height
 }
 
 impl From<&[u8]> for FieldInfo {
@@ -223,24 +235,24 @@ impl FieldInfo {
     pub fn editable(&self) -> bool {
         (self.flags & 0x01) != 0
     }
-    
+
     pub fn auto_tab(&self) -> bool {
         (self.flags & 0x02) != 0
     }
-    
+
     pub fn wordwrap(&self) -> bool {
-        (self.flags & 0x04) == 0  // Inverted: 0=true, 1=false
+        (self.flags & 0x04) == 0 // Inverted: 0=true, 1=false
     }
-    
+
     pub fn alignment_str(&self) -> String {
         match self.alignment {
             0x0000 => "left".to_string(),
             0x0001 => "center".to_string(),
-            -1 => "right".to_string(),  // 0xFFFF as i16
+            -1 => "right".to_string(), // 0xFFFF as i16
             _ => "left".to_string(),
         }
     }
-    
+
     pub fn box_type_str(&self) -> String {
         match self.box_type {
             0 => "adjust".to_string(),
@@ -250,11 +262,11 @@ impl FieldInfo {
             _ => "adjust".to_string(),
         }
     }
-    
+
     pub fn font_name(&self) -> &str {
         // Note: font_type was removed from FieldInfo in D4/D5 format
         // Font information comes from STXT chunk instead
-        "Arial"  // Default font
+        "Arial" // Default font
     }
 
     /// Calculate field width from rect
@@ -319,8 +331,12 @@ impl BitmapInfo {
             let _ = reader.read_u16();
 
             // Bytes 18-19: regY, bytes 20-21: regX
-            if let Ok(val) = reader.read_i16() { reg_y = val; }
-            if let Ok(val) = reader.read_i16() { reg_x = val; }
+            if let Ok(val) = reader.read_i16() {
+                reg_y = val;
+            }
+            if let Ok(val) = reader.read_i16() {
+                reg_x = val;
+            }
 
             // D4/D5: byte 22 is padding (NOT flags), byte 23 is bitsPerPixel
             let _ = reader.read_u8(); // padding
@@ -365,14 +381,18 @@ impl BitmapInfo {
             let _ = reader.read_u16();
 
             // Bytes 18-19: regY, bytes 20-21: regX
-            if let Ok(val) = reader.read_i16() { reg_y = val; }
-            if let Ok(val) = reader.read_i16() { reg_x = val; }
+            if let Ok(val) = reader.read_i16() {
+                reg_y = val;
+            }
+            if let Ok(val) = reader.read_i16() {
+                reg_x = val;
+            }
 
             // Byte 22: updateFlags
             if let Ok(flags) = reader.read_u8() {
-                center_reg_point = (flags & 0x20) != 0;   // Bit 5: centerRegPoint
-                use_alpha = (flags & 0x10) != 0;           // Bit 4
-                trim_white_space = (flags & 0x80) == 0;    // Bit 7 (inverted!)
+                center_reg_point = (flags & 0x20) != 0; // Bit 5: centerRegPoint
+                use_alpha = (flags & 0x10) != 0; // Bit 4
+                trim_white_space = (flags & 0x80) == 0; // Bit 7 (inverted!)
             }
 
             // D6+: color image flag is pitch & 0x8000
@@ -555,9 +575,9 @@ impl From<&[u8]> for FilmLoopInfo {
 pub struct VectorShapeVertex {
     pub x: f32,
     pub y: f32,
-    pub handle1_x: f32,  // outgoing control offset (relative to vertex)
+    pub handle1_x: f32, // outgoing control offset (relative to vertex)
     pub handle1_y: f32,
-    pub handle2_x: f32,  // incoming control offset (relative to vertex)
+    pub handle2_x: f32, // incoming control offset (relative to vertex)
     pub handle2_y: f32,
 }
 
@@ -613,24 +633,24 @@ pub struct VectorShapeInfo {
     pub bg_color: (u8, u8, u8),
     pub end_color: (u8, u8, u8),
     pub stroke_width: f32,
-    pub fill_mode: u32,        // 0=none, 1=solid, 2=gradient
+    pub fill_mode: u32, // 0=none, 1=solid, 2=gradient
     pub closed: bool,
     pub vertices: Vec<VectorShapeVertex>,
     pub member_width: u32,
     pub member_height: u32,
     pub reg_point: (i16, i16),
-    pub gradient_type: String, // "linear" | "radial"
-    pub fill_scale: f32,       // percent (default 100.0)
-    pub fill_direction: f32,   // degrees
+    pub gradient_type: String,   // "linear" | "radial"
+    pub fill_scale: f32,         // percent (default 100.0)
+    pub fill_direction: f32,     // degrees
     pub fill_offset: (i32, i32), // (.x, .y)
     pub fill_cycles: i32,
-    pub scale_mode: String,    // "showAll" | "noBorder" | "exactFit" | "autoSize" | "noScale"
-    pub scale: f32,            // percent (default 100.0)
+    pub scale_mode: String, // "showAll" | "noBorder" | "exactFit" | "autoSize" | "noScale"
+    pub scale: f32,         // percent (default 100.0)
     pub antialias: bool,
     pub center_reg_point: bool,
     pub reg_point_vertex: i32, // not persisted; default 0
     pub direct_to_stage: bool,
-    pub origin_mode: String,   // "center" | "topLeft" | "point"
+    pub origin_mode: String, // "center" | "topLeft" | "point"
 }
 
 impl From<&[u8]> for VectorShapeInfo {
@@ -638,12 +658,16 @@ impl From<&[u8]> for VectorShapeInfo {
         let read_u32 = |off: usize| -> u32 {
             if off + 4 <= data.len() {
                 u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
-            } else { 0 }
+            } else {
+                0
+            }
         };
         let read_f32 = |off: usize| -> f32 {
             if off + 4 <= data.len() {
                 f32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
-            } else { 0.0 }
+            } else {
+                0.0
+            }
         };
 
         let direct_to_stage = read_u32(0x08) != 0;
@@ -667,15 +691,27 @@ impl From<&[u8]> for VectorShapeInfo {
         let fill_cycles = read_u32(0x9C) as i32;
 
         let origin_mode = match origin_mode_raw {
-            0 => "center", 1 => "topLeft", 2 => "point", _ => "center",
-        }.to_string();
+            0 => "center",
+            1 => "topLeft",
+            2 => "point",
+            _ => "center",
+        }
+        .to_string();
         let gradient_type = match gradient_type_raw {
-            0 => "linear", 1 => "radial", _ => "linear",
-        }.to_string();
+            0 => "linear",
+            1 => "radial",
+            _ => "linear",
+        }
+        .to_string();
         let scale_mode = match scale_mode_raw {
-            0 => "showAll", 1 => "noBorder", 2 => "exactFit",
-            3 => "autoSize", 4 => "noScale", _ => "autoSize",
-        }.to_string();
+            0 => "showAll",
+            1 => "noBorder",
+            2 => "exactFit",
+            3 => "autoSize",
+            4 => "noScale",
+            _ => "autoSize",
+        }
+        .to_string();
 
         // 4 colors at offsets 160/176/192/208, each: 4-byte marker (0x12) + 3x 4-byte RGB
         let parse_color = |base: usize| -> (u8, u8, u8) {
@@ -755,8 +791,13 @@ impl From<&[u8]> for VectorShapeInfo {
 
         debug!(
             "  FLSH parsed: stroke=({},{},{}), strokeW={}, fillMode={}, closed={}, verts={}",
-            stroke_color.0, stroke_color.1, stroke_color.2,
-            stroke_width, fill_mode, closed, vertices.len(),
+            stroke_color.0,
+            stroke_color.1,
+            stroke_color.2,
+            stroke_width,
+            fill_mode,
+            closed,
+            vertices.len(),
         );
         for (i, v) in vertices.iter().enumerate() {
             debug!(
@@ -799,15 +840,19 @@ fn parse_string_keyed_point(data: &[u8], pos: &mut usize) -> (String, (i32, i32)
     let read_u32 = |p: usize| -> u32 {
         if p + 4 <= data.len() {
             u32::from_be_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]])
-        } else { 0 }
+        } else {
+            0
+        }
     };
     let read_i32 = |p: usize| -> i32 {
         if p + 4 <= data.len() {
             i32::from_be_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]])
-        } else { 0 }
+        } else {
+            0
+        }
     };
 
-    *pos += 4;                                              // type marker (always 0x02)
+    *pos += 4; // type marker (always 0x02)
     let str_len = read_u32(*pos) as usize;
     *pos += 4;
     let key_name = if *pos + str_len <= data.len() {
@@ -816,7 +861,7 @@ fn parse_string_keyed_point(data: &[u8], pos: &mut usize) -> (String, (i32, i32)
         String::new()
     };
     *pos += str_len;
-    *pos += 4;                                              // datasize (always 8)
+    *pos += 4; // datasize (always 8)
     let loc_v = read_i32(*pos);
     *pos += 4;
     let loc_h = read_i32(*pos);
@@ -830,18 +875,22 @@ fn parse_hash_keyed_point(data: &[u8], pos: &mut usize) -> (u32, (i32, i32)) {
     let read_u32 = |p: usize| -> u32 {
         if p + 4 <= data.len() {
             u32::from_be_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]])
-        } else { 0 }
+        } else {
+            0
+        }
     };
     let read_i32 = |p: usize| -> i32 {
         if p + 4 <= data.len() {
             i32::from_be_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]])
-        } else { 0 }
+        } else {
+            0
+        }
     };
 
-    *pos += 4;                                              // type marker (always 0x02)
+    *pos += 4; // type marker (always 0x02)
     let key_hash = read_u32(*pos);
     *pos += 4;
-    *pos += 4;                                              // datasize (always 8)
+    *pos += 4; // datasize (always 8)
     let loc_v = read_i32(*pos);
     *pos += 4;
     let loc_h = read_i32(*pos);
@@ -881,35 +930,80 @@ pub struct Shockwave3dInfo {
 
 impl Shockwave3dInfo {
     pub fn from(bytes: &[u8]) -> Option<Shockwave3dInfo> {
-        if bytes.len() < 4 { return None; }
+        if bytes.len() < 4 {
+            return None;
+        }
         let str_len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
         // 4 (str_len) + str_len + 4 (unknown u32) + 4 ("3DPR") + 4 (block_size) = content start
         let o = 4 + str_len + 12;
-        if bytes.len() < o + 80 { return None; }
+        if bytes.len() < o + 80 {
+            return None;
+        }
 
         // o+0x00: unknown (6)
         // o+0x04: loops
         // o+0x08: duration
         // o+0x0C: direct_to_stage
         // o+0x10: animation_enabled
-        let loops             = u32::from_be_bytes([bytes[o+4],  bytes[o+5],  bytes[o+6],  bytes[o+7]])  != 0;
-        let duration          = u32::from_be_bytes([bytes[o+8],  bytes[o+9],  bytes[o+10], bytes[o+11]]);
-        let direct_to_stage   = u32::from_be_bytes([bytes[o+12], bytes[o+13], bytes[o+14], bytes[o+15]]) != 0;
-        let animation_enabled = u32::from_be_bytes([bytes[o+16], bytes[o+17], bytes[o+18], bytes[o+19]]) != 0;
+        let loops =
+            u32::from_be_bytes([bytes[o + 4], bytes[o + 5], bytes[o + 6], bytes[o + 7]]) != 0;
+        let duration =
+            u32::from_be_bytes([bytes[o + 8], bytes[o + 9], bytes[o + 10], bytes[o + 11]]);
+        let direct_to_stage =
+            u32::from_be_bytes([bytes[o + 12], bytes[o + 13], bytes[o + 14], bytes[o + 15]]) != 0;
+        let animation_enabled =
+            u32::from_be_bytes([bytes[o + 16], bytes[o + 17], bytes[o + 18], bytes[o + 19]]) != 0;
 
         // Verified offsets from hex dump (o = 0x1B):
         // reg_y  @ abs 0x56 → o+0x3B = 120
         // reg_x  @ abs 0x5A → o+0x3F = 160
         // rect   @ abs 0x5E, 0x62, 0x66, 0x6A → (left=0, top=0, bottom=240, right=320)
         // preload@ abs 0x6E → o+0x53 = 1
-        if bytes.len() < o + 0x57 { return None; }
-        let mut reg_y       = i32::from_be_bytes([bytes[o+0x3B], bytes[o+0x3C], bytes[o+0x3D], bytes[o+0x3E]]);
-        let mut reg_x       = i32::from_be_bytes([bytes[o+0x3F], bytes[o+0x40], bytes[o+0x41], bytes[o+0x42]]);
-        let rect_left   = i32::from_be_bytes([bytes[o+0x43], bytes[o+0x44], bytes[o+0x45], bytes[o+0x46]]);
-        let rect_top    = i32::from_be_bytes([bytes[o+0x47], bytes[o+0x48], bytes[o+0x49], bytes[o+0x4A]]);
-        let rect_bottom = i32::from_be_bytes([bytes[o+0x4B], bytes[o+0x4C], bytes[o+0x4D], bytes[o+0x4E]]);
-        let rect_right  = i32::from_be_bytes([bytes[o+0x4F], bytes[o+0x50], bytes[o+0x51], bytes[o+0x52]]);
-        let preload     = u32::from_be_bytes([bytes[o+0x53], bytes[o+0x54], bytes[o+0x55], bytes[o+0x56]]) != 0;
+        if bytes.len() < o + 0x57 {
+            return None;
+        }
+        let mut reg_y = i32::from_be_bytes([
+            bytes[o + 0x3B],
+            bytes[o + 0x3C],
+            bytes[o + 0x3D],
+            bytes[o + 0x3E],
+        ]);
+        let mut reg_x = i32::from_be_bytes([
+            bytes[o + 0x3F],
+            bytes[o + 0x40],
+            bytes[o + 0x41],
+            bytes[o + 0x42],
+        ]);
+        let rect_left = i32::from_be_bytes([
+            bytes[o + 0x43],
+            bytes[o + 0x44],
+            bytes[o + 0x45],
+            bytes[o + 0x46],
+        ]);
+        let rect_top = i32::from_be_bytes([
+            bytes[o + 0x47],
+            bytes[o + 0x48],
+            bytes[o + 0x49],
+            bytes[o + 0x4A],
+        ]);
+        let rect_bottom = i32::from_be_bytes([
+            bytes[o + 0x4B],
+            bytes[o + 0x4C],
+            bytes[o + 0x4D],
+            bytes[o + 0x4E],
+        ]);
+        let rect_right = i32::from_be_bytes([
+            bytes[o + 0x4F],
+            bytes[o + 0x50],
+            bytes[o + 0x51],
+            bytes[o + 0x52],
+        ]);
+        let preload = u32::from_be_bytes([
+            bytes[o + 0x53],
+            bytes[o + 0x54],
+            bytes[o + 0x55],
+            bytes[o + 0x56],
+        ]) != 0;
 
         // Parse extended properties (camera, colors) from the tail of the 3DPR block.
         // These are stored as typed records: 0x16=vector(3 floats), 0x12=color(3 u32s), 0x03=string
@@ -922,16 +1016,33 @@ impl Shockwave3dInfo {
         // Scan for type markers after preload
         let mut scan = o + 0x57;
         while scan + 4 <= bytes.len() {
-            let marker = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]);
+            let marker = u32::from_be_bytes([
+                bytes[scan],
+                bytes[scan + 1],
+                bytes[scan + 2],
+                bytes[scan + 3],
+            ]);
             match marker {
                 0x03 => {
                     // String: 4-byte len + chars
                     scan += 4;
-                    if scan + 4 > bytes.len() { break; }
-                    let slen = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]) as usize;
+                    if scan + 4 > bytes.len() {
+                        break;
+                    }
+                    let slen = u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]) as usize;
                     scan += 4;
-                    if scan + slen > bytes.len() { break; }
-                    let s: String = bytes[scan..scan+slen].iter().map(|&b| b as char).collect();
+                    if scan + slen > bytes.len() {
+                        break;
+                    }
+                    let s: String = bytes[scan..scan + slen]
+                        .iter()
+                        .map(|&b| b as char)
+                        .collect();
                     if s == "DefaultView" || s.ends_with("View") || s.ends_with("view") {
                         found_view_name = true;
                     }
@@ -940,10 +1051,27 @@ impl Shockwave3dInfo {
                 0x16 => {
                     // Vector: 3 BE floats + 4 extra bytes
                     scan += 4;
-                    if scan + 16 > bytes.len() { break; }
-                    let f1 = f32::from_bits(u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]));
-                    let f2 = f32::from_bits(u32::from_be_bytes([bytes[scan+4], bytes[scan+5], bytes[scan+6], bytes[scan+7]]));
-                    let f3 = f32::from_bits(u32::from_be_bytes([bytes[scan+8], bytes[scan+9], bytes[scan+10], bytes[scan+11]]));
+                    if scan + 16 > bytes.len() {
+                        break;
+                    }
+                    let f1 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]));
+                    let f2 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan + 4],
+                        bytes[scan + 5],
+                        bytes[scan + 6],
+                        bytes[scan + 7],
+                    ]));
+                    let f3 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan + 8],
+                        bytes[scan + 9],
+                        bytes[scan + 10],
+                        bytes[scan + 11],
+                    ]));
                     scan += 16; // 3 floats + 4 unknown bytes
 
                     if found_view_name {
@@ -957,10 +1085,27 @@ impl Shockwave3dInfo {
                 0x12 => {
                     // Color: 3 u32 components (as bytes)
                     scan += 4;
-                    if scan + 12 > bytes.len() { break; }
-                    let r = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]) as u8;
-                    let g = u32::from_be_bytes([bytes[scan+4], bytes[scan+5], bytes[scan+6], bytes[scan+7]]) as u8;
-                    let b = u32::from_be_bytes([bytes[scan+8], bytes[scan+9], bytes[scan+10], bytes[scan+11]]) as u8;
+                    if scan + 12 > bytes.len() {
+                        break;
+                    }
+                    let r = u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]) as u8;
+                    let g = u32::from_be_bytes([
+                        bytes[scan + 4],
+                        bytes[scan + 5],
+                        bytes[scan + 6],
+                        bytes[scan + 7],
+                    ]) as u8;
+                    let b = u32::from_be_bytes([
+                        bytes[scan + 8],
+                        bytes[scan + 9],
+                        bytes[scan + 10],
+                        bytes[scan + 11],
+                    ]) as u8;
                     scan += 12;
 
                     // First color after basic fields is diffuse, then bg, then ambient, then directional
@@ -986,35 +1131,86 @@ impl Shockwave3dInfo {
         let mut records: Vec<String> = Vec::new();
         scan = o + 0x57;
         while scan + 4 <= bytes.len() {
-            let marker = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]);
+            let marker = u32::from_be_bytes([
+                bytes[scan],
+                bytes[scan + 1],
+                bytes[scan + 2],
+                bytes[scan + 3],
+            ]);
             match marker {
                 0x03 => {
                     scan += 4;
-                    if scan + 4 > bytes.len() { break; }
-                    let slen = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]) as usize;
+                    if scan + 4 > bytes.len() {
+                        break;
+                    }
+                    let slen = u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]) as usize;
                     scan += 4;
-                    if scan + slen > bytes.len() { break; }
-                    let s: String = bytes[scan..scan+slen].iter().map(|&b| b as char).collect();
+                    if scan + slen > bytes.len() {
+                        break;
+                    }
+                    let s: String = bytes[scan..scan + slen]
+                        .iter()
+                        .map(|&b| b as char)
+                        .collect();
                     records.push(format!("STR \"{}\"", s));
                     all_strings.push(s);
                     scan += slen;
                 }
                 0x16 => {
                     scan += 4;
-                    if scan + 16 > bytes.len() { break; }
-                    let f1 = f32::from_bits(u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]));
-                    let f2 = f32::from_bits(u32::from_be_bytes([bytes[scan+4], bytes[scan+5], bytes[scan+6], bytes[scan+7]]));
-                    let f3 = f32::from_bits(u32::from_be_bytes([bytes[scan+8], bytes[scan+9], bytes[scan+10], bytes[scan+11]]));
+                    if scan + 16 > bytes.len() {
+                        break;
+                    }
+                    let f1 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]));
+                    let f2 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan + 4],
+                        bytes[scan + 5],
+                        bytes[scan + 6],
+                        bytes[scan + 7],
+                    ]));
+                    let f3 = f32::from_bits(u32::from_be_bytes([
+                        bytes[scan + 8],
+                        bytes[scan + 9],
+                        bytes[scan + 10],
+                        bytes[scan + 11],
+                    ]));
                     scan += 16;
                     records.push(format!("VEC ({:.2},{:.2},{:.2})", f1, f2, f3));
                     all_vectors.push((f1, f2, f3));
                 }
                 0x12 => {
                     scan += 4;
-                    if scan + 12 > bytes.len() { break; }
-                    let r = u32::from_be_bytes([bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3]]) as u8;
-                    let g = u32::from_be_bytes([bytes[scan+4], bytes[scan+5], bytes[scan+6], bytes[scan+7]]) as u8;
-                    let b = u32::from_be_bytes([bytes[scan+8], bytes[scan+9], bytes[scan+10], bytes[scan+11]]) as u8;
+                    if scan + 12 > bytes.len() {
+                        break;
+                    }
+                    let r = u32::from_be_bytes([
+                        bytes[scan],
+                        bytes[scan + 1],
+                        bytes[scan + 2],
+                        bytes[scan + 3],
+                    ]) as u8;
+                    let g = u32::from_be_bytes([
+                        bytes[scan + 4],
+                        bytes[scan + 5],
+                        bytes[scan + 6],
+                        bytes[scan + 7],
+                    ]) as u8;
+                    let b = u32::from_be_bytes([
+                        bytes[scan + 8],
+                        bytes[scan + 9],
+                        bytes[scan + 10],
+                        bytes[scan + 11],
+                    ]) as u8;
                     records.push(format!("CLR ({},{},{})", r, g, b));
                     all_colors.push((r, g, b));
                     scan += 12;
@@ -1022,10 +1218,20 @@ impl Shockwave3dInfo {
                 _ => {
                     // Log unknown markers with their raw bytes to detect misalignment
                     let raw = if scan + 8 <= bytes.len() {
-                        format!("{:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X}",
-                            bytes[scan], bytes[scan+1], bytes[scan+2], bytes[scan+3],
-                            bytes[scan+4], bytes[scan+5], bytes[scan+6], bytes[scan+7])
-                    } else { format!("{:08X}", marker) };
+                        format!(
+                            "{:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X}",
+                            bytes[scan],
+                            bytes[scan + 1],
+                            bytes[scan + 2],
+                            bytes[scan + 3],
+                            bytes[scan + 4],
+                            bytes[scan + 5],
+                            bytes[scan + 6],
+                            bytes[scan + 7]
+                        )
+                    } else {
+                        format!("{:08X}", marker)
+                    };
                     records.push(format!("??? marker=0x{:08X} raw={}", marker, raw));
                     scan += 4;
                 }
@@ -1037,7 +1243,11 @@ impl Shockwave3dInfo {
         let ambient_color = all_colors.get(2).copied();
 
         Some(Shockwave3dInfo {
-            loops, duration, direct_to_stage, animation_enabled, preload,
+            loops,
+            duration,
+            direct_to_stage,
+            animation_enabled,
+            preload,
             reg_point: (reg_x, reg_y),
             default_rect: (rect_left, rect_top, rect_right, rect_bottom),
             camera_position,
@@ -1106,9 +1316,9 @@ pub enum FlashClickMode {
 #[derive(Clone, Debug)]
 pub struct FlashInfo {
     // SWF-derived / cached fields
-    pub reg_point: (i32, i32),        // [6],[7] - center of flash rect
+    pub reg_point: (i32, i32),            // [6],[7] - center of flash rect
     pub flash_rect: (i32, i32, i32, i32), // [8],[9],[10],[11] - left,top,right,bottom
-    pub bg_color: u32,                // [13] - from SWF
+    pub bg_color: u32,                    // [13] - from SWF
 
     // Settings
     pub direct_to_stage: bool,        // [4]
@@ -1130,17 +1340,17 @@ pub struct FlashInfo {
     pub view_v: f32,                  // [32]
 
     // Display settings
-    pub center_reg_point: bool,       // [33]
-    pub quality: FlashQuality,        // [34]
-    pub is_static: bool,              // [35]
-    pub buttons_enabled: bool,        // [36]
-    pub actions_enabled: bool,        // [37]
+    pub center_reg_point: bool,              // [33]
+    pub quality: FlashQuality,               // [34]
+    pub is_static: bool,                     // [35]
+    pub buttons_enabled: bool,               // [36]
+    pub actions_enabled: bool,               // [37]
     pub event_pass_mode: FlashEventPassMode, // [38]
-    pub click_mode: FlashClickMode,   // [39]
-    pub poster_frame: u32,            // [40]
-    pub playback_mode: FlashPlaybackMode, // [41]
-    pub preload: bool,                // [42]
-    pub buffer_size: u32,             // [3]
+    pub click_mode: FlashClickMode,          // [39]
+    pub poster_frame: u32,                   // [40]
+    pub playback_mode: FlashPlaybackMode,    // [41]
+    pub preload: bool,                       // [42]
+    pub buffer_size: u32,                    // [3]
 
     // Strings
     pub source_file_name: String,
@@ -1183,7 +1393,12 @@ impl FlashInfo {
         let buffer_size = u32s[3];
         let direct_to_stage = u32s[4] != 0;
         let reg_point = (u32s[6] as i32, u32s[7] as i32);
-        let flash_rect = (u32s[8] as i32, u32s[9] as i32, u32s[10] as i32, u32s[11] as i32);
+        let flash_rect = (
+            u32s[8] as i32,
+            u32s[9] as i32,
+            u32s[10] as i32,
+            u32s[11] as i32,
+        );
         let bg_color = u32s[13];
         let image_enabled = u32s[14] != 0;
         let sound_enabled = u32s[15] != 0;
@@ -1319,7 +1534,7 @@ pub struct SoundInfo {
     pub channels: u16,
     pub sample_count: u32,
     pub duration: u32,
-    pub loop_enabled: bool, 
+    pub loop_enabled: bool,
     //pub compression_type: u16,
 }
 
@@ -1467,58 +1682,58 @@ impl FontInfo {
 #[derive(Clone, Debug, Default)]
 pub struct TextInfo {
     // Header fields
-    pub fourcc_length: u32,          // Offset 0-3: typically 4
-    pub fourcc: [u8; 4],             // Offset 4-7: "text"
-    pub data_length: u32,            // Offset 8-11: total data length
-    pub editable: bool,              // Offset 12-15: editable flag (0=false, 1=true)
+    pub fourcc_length: u32, // Offset 0-3: typically 4
+    pub fourcc: [u8; 4],    // Offset 4-7: "text"
+    pub data_length: u32,   // Offset 8-11: total data length
+    pub editable: bool,     // Offset 12-15: editable flag (0=false, 1=true)
 
     // Additional fields (offsets 16+)
-    pub box_type: u32,               // Offset 16-19: 0=#adjust, 1=#scroll, 2=#fixed
-    pub scroll_top: u32,             // Offset 20-23: scroll top position
-    pub auto_tab: bool,              // Offset 24-27: auto tab flag (0=false, 1=true)
-    pub direct_to_stage: bool,       // Offset 28-31: direct to stage flag
-    pub anti_alias: bool,            // Offset 32-35: anti-alias flag (0=false, 1=true)
-    pub anti_alias_threshold: u32,   // Offset 36-39: anti-alias threshold (default 14)
-    pub dont_wrap: bool,             // Offset 40-43: "don't wrap" flag (0=wrap, non-zero=don't wrap)
-    pub reserved_44: u32,            // Offset 44-47
-    pub height: u32,                 // Offset 48-51: height (17 in example)
-    pub width: u32,                  // Offset 52-55: width (98 in example)
-    pub kerning: bool,               // Offset 56-59: kerning flag
-    pub kerning_threshold: u32,      // Offset 60-63: kerning threshold value
-    pub use_hypertext_styles: bool,  // Offset 64-67: use hypertext styles flag
-    pub reg_y: i32,                  // Offset 68-71: registration point Y
-    pub reg_x: i32,                  // Offset 72-75: registration point X
-    pub center_reg_point: bool,      // Offset 76-79: center registration point flag
-    pub pre_render: u32,             // Offset 80-83: 0=#none, 1=#copyInk, 2=#otherInk
-    pub save_bitmap: bool,           // Offset 84-87: save bitmap flag
+    pub box_type: u32,              // Offset 16-19: 0=#adjust, 1=#scroll, 2=#fixed
+    pub scroll_top: u32,            // Offset 20-23: scroll top position
+    pub auto_tab: bool,             // Offset 24-27: auto tab flag (0=false, 1=true)
+    pub direct_to_stage: bool,      // Offset 28-31: direct to stage flag
+    pub anti_alias: bool,           // Offset 32-35: anti-alias flag (0=false, 1=true)
+    pub anti_alias_threshold: u32,  // Offset 36-39: anti-alias threshold (default 14)
+    pub dont_wrap: bool,            // Offset 40-43: "don't wrap" flag (0=wrap, non-zero=don't wrap)
+    pub reserved_44: u32,           // Offset 44-47
+    pub height: u32,                // Offset 48-51: height (17 in example)
+    pub width: u32,                 // Offset 52-55: width (98 in example)
+    pub kerning: bool,              // Offset 56-59: kerning flag
+    pub kerning_threshold: u32,     // Offset 60-63: kerning threshold value
+    pub use_hypertext_styles: bool, // Offset 64-67: use hypertext styles flag
+    pub reg_y: i32,                 // Offset 68-71: registration point Y
+    pub reg_x: i32,                 // Offset 72-75: registration point X
+    pub center_reg_point: bool,     // Offset 76-79: center registration point flag
+    pub pre_render: u32,            // Offset 80-83: 0=#none, 1=#copyInk, 2=#otherInk
+    pub save_bitmap: bool,          // Offset 84-87: save bitmap flag
     // 3TEX section starts at offset 88
-    pub tex_fourcc: [u8; 4],         // Offset 88-91: "3TEX"
-    pub tex_length: u32,             // Offset 92-95: 3TEX section length
-    pub display_face: i32,           // Offset 96-99: displayFace bitmask (-1=all, bit0=#front, bit1=#tunnel, bit2=#back)
-    pub tunnel_depth: u16,           // Offset 100-101: tunnel depth (e.g., 50, 69)
-    pub tex_unknown_102: u16,        // Offset 102-103
-    pub bevel_type: u32,             // Offset 104-107: 0=#none, 1=#miter, 2=#round
-    pub bevel_depth: u16,            // Offset 108-109: bevel depth (e.g., 1, 3)
-    pub tex_unknown_110: u16,        // Offset 110-111
-    pub tex_unknown_112: u32,        // Offset 112-115
-    pub smoothness: u32,             // Offset 116-119: smoothness (default 5)
-    pub tex_unknown_120: u32,        // Offset 120-123
-    pub display_mode: u32,           // Offset 124-127: 0=#normal, 1=#mode3d
-    pub directional_preset: u32,     // Offset 128-131: 0=#none, 1=#topLeft, 2=#topCenter, 3=#topRight, 4=#middleLeft, 5=#middleCenter, 6=#middleRight, 7=#bottomLeft, 8=#bottomCenter, 9=#bottomRight
-    pub texture_type: u32,           // Offset 132-135: 0=#none, 1=#default, 2=#member
-    pub reflectivity: u32,           // Offset 136-139: reflectivity (default 30)
-    pub directional_color: u32,      // Offset 140-143: RGB color (e.g., #777777 = 0x77777700)
-    pub ambient_color: u32,          // Offset 144-147: RGB color (e.g., #666666 = 0x66666600)
-    pub specular_color: u32,         // Offset 148-151: RGB color (e.g., #222222 = 0x22222200)
-    pub camera_position_x: f32,      // Offset 152-155: camera position X (e.g., 48.5)
-    pub camera_position_y: f32,      // Offset 156-159: camera position Y (e.g., 9.0)
-    pub camera_position_z: f32,      // Offset 160-163: camera position Z (e.g., 27.36)
-    pub camera_rotation_x: f32,      // Offset 168-171: camera rotation X
-    pub camera_rotation_y: f32,      // Offset 172-175: camera rotation Y
-    pub camera_rotation_z: f32,      // Offset 176-179: camera rotation Z
-    pub tex_unknown_180: u32,        // Offset 180-183
-    pub tex_unknown_184: u32,        // Offset 184-187
-    pub texture_member: String,      // Offset 188+: texture member reference string (e.g., "NoTexture", "(member 0 of castLib 0)")
+    pub tex_fourcc: [u8; 4],     // Offset 88-91: "3TEX"
+    pub tex_length: u32,         // Offset 92-95: 3TEX section length
+    pub display_face: i32, // Offset 96-99: displayFace bitmask (-1=all, bit0=#front, bit1=#tunnel, bit2=#back)
+    pub tunnel_depth: u16, // Offset 100-101: tunnel depth (e.g., 50, 69)
+    pub tex_unknown_102: u16, // Offset 102-103
+    pub bevel_type: u32,   // Offset 104-107: 0=#none, 1=#miter, 2=#round
+    pub bevel_depth: u16,  // Offset 108-109: bevel depth (e.g., 1, 3)
+    pub tex_unknown_110: u16, // Offset 110-111
+    pub tex_unknown_112: u32, // Offset 112-115
+    pub smoothness: u32,   // Offset 116-119: smoothness (default 5)
+    pub tex_unknown_120: u32, // Offset 120-123
+    pub display_mode: u32, // Offset 124-127: 0=#normal, 1=#mode3d
+    pub directional_preset: u32, // Offset 128-131: 0=#none, 1=#topLeft, 2=#topCenter, 3=#topRight, 4=#middleLeft, 5=#middleCenter, 6=#middleRight, 7=#bottomLeft, 8=#bottomCenter, 9=#bottomRight
+    pub texture_type: u32,       // Offset 132-135: 0=#none, 1=#default, 2=#member
+    pub reflectivity: u32,       // Offset 136-139: reflectivity (default 30)
+    pub directional_color: u32,  // Offset 140-143: RGB color (e.g., #777777 = 0x77777700)
+    pub ambient_color: u32,      // Offset 144-147: RGB color (e.g., #666666 = 0x66666600)
+    pub specular_color: u32,     // Offset 148-151: RGB color (e.g., #222222 = 0x22222200)
+    pub camera_position_x: f32,  // Offset 152-155: camera position X (e.g., 48.5)
+    pub camera_position_y: f32,  // Offset 156-159: camera position Y (e.g., 9.0)
+    pub camera_position_z: f32,  // Offset 160-163: camera position Z (e.g., 27.36)
+    pub camera_rotation_x: f32,  // Offset 168-171: camera rotation X
+    pub camera_rotation_y: f32,  // Offset 172-175: camera rotation Y
+    pub camera_rotation_z: f32,  // Offset 176-179: camera rotation Z
+    pub tex_unknown_180: u32,    // Offset 180-183
+    pub tex_unknown_184: u32,    // Offset 184-187
+    pub texture_member: String, // Offset 188+: texture member reference string (e.g., "NoTexture", "(member 0 of castLib 0)")
 
     // Raw data for further parsing
     pub raw_data: Vec<u8>,
@@ -1603,7 +1818,9 @@ impl From<&[u8]> for TextInfo {
         let tex_unknown_184 = 0;
         let mut texture_member_bytes = Vec::new();
         while let Ok(byte) = reader.read_u8() {
-            if byte == 0 { break; }
+            if byte == 0 {
+                break;
+            }
             texture_member_bytes.push(byte);
         }
         let texture_member = String::from_utf8_lossy(&texture_member_bytes).to_string();

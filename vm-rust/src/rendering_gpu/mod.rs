@@ -10,7 +10,7 @@ pub mod webgl2;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
-use crate::player::{bitmap::bitmap::Bitmap, DirPlayer};
+use crate::player::{DirPlayer, bitmap::bitmap::Bitmap};
 
 /// Renderer backend selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +57,10 @@ pub trait Renderer {
     fn canvas(&self) -> &HtmlCanvasElement;
 
     /// Set the preview member reference
-    fn set_preview_member_ref(&mut self, member_ref: Option<crate::player::cast_lib::CastMemberRef>);
+    fn set_preview_member_ref(
+        &mut self,
+        member_ref: Option<crate::player::cast_lib::CastMemberRef>,
+    );
 
     /// Set the preview container element
     fn set_preview_container_element(&mut self, container_element: Option<web_sys::HtmlElement>);
@@ -197,7 +200,10 @@ impl Renderer for DynamicRenderer {
         }
     }
 
-    fn set_preview_member_ref(&mut self, member_ref: Option<crate::player::cast_lib::CastMemberRef>) {
+    fn set_preview_member_ref(
+        &mut self,
+        member_ref: Option<crate::player::cast_lib::CastMemberRef>,
+    ) {
         match self {
             DynamicRenderer::Canvas2D(r) => r.preview_member_ref = member_ref,
             DynamicRenderer::WebGL2(r) => r.set_preview_member_ref(member_ref),

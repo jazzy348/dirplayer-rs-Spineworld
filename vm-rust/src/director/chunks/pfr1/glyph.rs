@@ -1,9 +1,8 @@
-/// PFR1 Glyph Parsers
-/// Includes: PFR1HeaderParser, PFR1DirectParser, BitmapGlyph parser, scoring
-
-use super::types::*;
 use super::log;
 use super::stroke_builder;
+/// PFR1 Glyph Parsers
+/// Includes: PFR1HeaderParser, PFR1DirectParser, BitmapGlyph parser, scoring
+use super::types::*;
 
 /// 16.16 fixed-point multiplication.
 /// Used by the rasterizer for Director-accurate advance width computation.
@@ -23,16 +22,16 @@ pub fn fixed_point_multiply16(a: i32, b: i32) -> i32 {
 
 /// Curve encoding tables for commands 9, 10, 13
 const CURVE_TABLE_9: [u32; 16] = [
-    0x0451, 0x0452, 0x0461, 0x0462, 0x0491, 0x0492, 0x04A1, 0x04A2,
-    0x0851, 0x0852, 0x0861, 0x0862, 0x0891, 0x0892, 0x08A1, 0x08A2,
+    0x0451, 0x0452, 0x0461, 0x0462, 0x0491, 0x0492, 0x04A1, 0x04A2, 0x0851, 0x0852, 0x0861, 0x0862,
+    0x0891, 0x0892, 0x08A1, 0x08A2,
 ];
 const CURVE_TABLE_10: [u32; 16] = [
-    0x0154, 0x0158, 0x0164, 0x0168, 0x0194, 0x0198, 0x01A4, 0x01A8,
-    0x0254, 0x0258, 0x0264, 0x0268, 0x0294, 0x0298, 0x02A4, 0x02A8,
+    0x0154, 0x0158, 0x0164, 0x0168, 0x0194, 0x0198, 0x01A4, 0x01A8, 0x0254, 0x0258, 0x0264, 0x0268,
+    0x0294, 0x0298, 0x02A4, 0x02A8,
 ];
 const CURVE_TABLE_13: [u32; 16] = [
-    0x0FFF, 0x03AA, 0x0CAA, 0x0AA3, 0x0AAC, 0x0AAA, 0x02AA, 0x08AA,
-    0x0AA2, 0x0AA8, 0x00AA, 0x0555, 0x0155, 0x0455, 0x0551, 0x0554,
+    0x0FFF, 0x03AA, 0x0CAA, 0x0AA3, 0x0AAC, 0x0AAA, 0x02AA, 0x08AA, 0x0AA2, 0x0AA8, 0x00AA, 0x0555,
+    0x0155, 0x0455, 0x0551, 0x0554,
 ];
 const CURVE_TABLE_14A: [u32; 8] = [1, 2, 4, 5, 6, 8, 9, 10];
 const CURVE_TABLE_14B: [u32; 4] = [5, 6, 9, 10];
@@ -356,8 +355,16 @@ impl<'a> Pfr1HeaderParser<'a> {
                 parser.cd4_mode_x = pf.private_type2_byte28;
                 parser.cd4_mode_y = pf.private_type2_byte29;
             } else {
-                parser.cd4_mode_x = if pf.private_mode_x == 0 { 4 } else { pf.private_mode_x };
-                parser.cd4_mode_y = if pf.private_mode_y == 0 { 4 } else { pf.private_mode_y };
+                parser.cd4_mode_x = if pf.private_mode_x == 0 {
+                    4
+                } else {
+                    pf.private_mode_x
+                };
+                parser.cd4_mode_y = if pf.private_mode_y == 0 {
+                    4
+                } else {
+                    pf.private_mode_y
+                };
             }
         }
 
@@ -435,10 +442,20 @@ impl<'a> Pfr1HeaderParser<'a> {
 
         if let Some(ref metrics) = self.font_metrics {
             if metrics.flip_y {
-                self.y_transform_flag = if self.y_transform_flag == 0 || self.y_transform_flag == 2 { 1 } else { 0 };
+                self.y_transform_flag = if self.y_transform_flag == 0 || self.y_transform_flag == 2
+                {
+                    1
+                } else {
+                    0
+                };
             }
             if metrics.flip_x {
-                self.x_transform_flag = if self.x_transform_flag == 0 || self.x_transform_flag == 2 { 1 } else { 0 };
+                self.x_transform_flag = if self.x_transform_flag == 0 || self.x_transform_flag == 2
+                {
+                    1
+                } else {
+                    0
+                };
             }
         }
 
@@ -520,7 +537,12 @@ impl<'a> Pfr1HeaderParser<'a> {
         self.accumulated_2164 = 0;
 
         let bounds = if self.bbox_x_max != 0 || self.bbox_y_max != 0 {
-            [self.bbox_x_min, self.bbox_y_min, self.bbox_x_max, self.bbox_y_max]
+            [
+                self.bbox_x_min,
+                self.bbox_y_min,
+                self.bbox_x_max,
+                self.bbox_y_max,
+            ]
         } else {
             [
                 0,
@@ -557,14 +579,16 @@ impl<'a> Pfr1HeaderParser<'a> {
         // base_offset = roundingBias2128
         self.base_offset = self.rounding_bias_2128;
 
-        self.boundary_values_532[0] =
-            (((self.rounding_bias_2128 + v53) >> self.shift_difference) - self.scaled_pow2 as i32) as i16;
-        self.boundary_values_532[1] =
-            (((self.rounding_bias_2128 + v59) >> self.shift_difference) - self.scaled_pow2 as i32) as i16;
-        self.boundary_values_532[2] =
-            (self.scaled_pow2 as i32 + ((self.rounding_bias_2128 + v52) >> self.shift_difference)) as i16;
-        self.boundary_values_532[3] =
-            (self.scaled_pow2 as i32 + ((self.rounding_bias_2128 + v25) >> self.shift_difference)) as i16;
+        self.boundary_values_532[0] = (((self.rounding_bias_2128 + v53) >> self.shift_difference)
+            - self.scaled_pow2 as i32) as i16;
+        self.boundary_values_532[1] = (((self.rounding_bias_2128 + v59) >> self.shift_difference)
+            - self.scaled_pow2 as i32) as i16;
+        self.boundary_values_532[2] = (self.scaled_pow2 as i32
+            + ((self.rounding_bias_2128 + v52) >> self.shift_difference))
+            as i16;
+        self.boundary_values_532[3] = (self.scaled_pow2 as i32
+            + ((self.rounding_bias_2128 + v25) >> self.shift_difference))
+            as i16;
     }
 
     /// Fixed-point division with rounding for matrix elements
@@ -603,8 +627,16 @@ impl<'a> Pfr1HeaderParser<'a> {
         let mut v25_final = 0;
 
         for pass in 0..2 {
-            let v21 = if pass == 0 { self.scaled_matrix_a } else { self.scaled_matrix_b };
-            let v15 = if pass == 0 { self.scaled_matrix_c } else { self.scaled_matrix_d };
+            let v21 = if pass == 0 {
+                self.scaled_matrix_a
+            } else {
+                self.scaled_matrix_b
+            };
+            let v15 = if pass == 0 {
+                self.scaled_matrix_c
+            } else {
+                self.scaled_matrix_d
+            };
 
             let v22 = bounds[0] as i32 * v21 as i32;
             let v23 = bounds[1] as i32 * v15 as i32;
@@ -620,15 +652,21 @@ impl<'a> Pfr1HeaderParser<'a> {
             for sw in 0..3 {
                 let (v27, v28) = match sw {
                     0 => {
-                        if v21 == 0 { continue; }
+                        if v21 == 0 {
+                            continue;
+                        }
                         ((bounds[2] - bounds[0]) as i32, v21 as i32)
                     }
                     1 => {
-                        if v15 == 0 { continue; }
+                        if v15 == 0 {
+                            continue;
+                        }
                         ((bounds[3] - bounds[1]) as i32, v15 as i32)
                     }
                     _ => {
-                        if v21 == 0 { continue; }
+                        if v21 == 0 {
+                            continue;
+                        }
                         ((bounds[0] - bounds[2]) as i32, v21 as i32)
                     }
                 };
@@ -731,9 +769,12 @@ impl<'a> Pfr1HeaderParser<'a> {
         if self.target_em_px > 0 {
             log(&format!(
                 "  [FontOffsets] xFlag={}, yFlag={}, offsetX={}, offsetY={}, bias={}, shiftAmt={}",
-                self.x_transform_flag, self.y_transform_flag,
-                self.font_offset_x, self.font_offset_y,
-                self.rounding_bias_2128, self.font_shift_amount
+                self.x_transform_flag,
+                self.y_transform_flag,
+                self.font_offset_x,
+                self.font_offset_y,
+                self.rounding_bias_2128,
+                self.font_shift_amount
             ));
         }
     }
@@ -764,7 +805,13 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// Apply component transform (offset + scale) through the matrix,
     /// then re-derive fontScale/flags from modified matrix.
-    fn apply_component_transform(&mut self, x_offset: i16, y_offset: i16, x_scale: i32, y_scale: i32) {
+    fn apply_component_transform(
+        &mut self,
+        x_offset: i16,
+        y_offset: i16,
+        x_scale: i32,
+        y_scale: i32,
+    ) {
         // Offset contribution through matrix
         self.accumulated_2156 += self.scaled_matrix_b as i32 * y_offset as i32
             + self.scaled_matrix_a as i32 * x_offset as i32;
@@ -896,8 +943,8 @@ impl<'a> Pfr1HeaderParser<'a> {
                 if self.pos < self.data.len() {
                     let count_byte = self.data[self.pos];
                     self.pos += 1;
-                    self.x_orus_count = (count_byte & 0x0F) as usize;        // Low nibble = X count
-                    self.y_orus_count = ((count_byte >> 4) & 0x0F) as usize;  // High nibble = Y count
+                    self.x_orus_count = (count_byte & 0x0F) as usize; // Low nibble = X count
+                    self.y_orus_count = ((count_byte >> 4) & 0x0F) as usize; // High nibble = Y count
                 }
             }
             2 | 3 => {
@@ -928,7 +975,9 @@ impl<'a> Pfr1HeaderParser<'a> {
             let extra_count = self.data[self.pos] as usize;
             self.pos += 1;
             for _ in 0..extra_count {
-                if self.pos + 1 >= self.data.len() { break; }
+                if self.pos + 1 >= self.data.len() {
+                    break;
+                }
                 let item_len = self.data[self.pos] as usize;
                 self.pos += item_len + 2; // Skip length + type + data
             }
@@ -953,7 +1002,11 @@ impl<'a> Pfr1HeaderParser<'a> {
         self.initialize_zone_tables();
 
         // uses exact glyph size - 1 as outline end position
-        self.outline_end_pos = if self.data.len() > 0 { self.data.len() - 1 } else { 0 };
+        self.outline_end_pos = if self.data.len() > 0 {
+            self.data.len() - 1
+        } else {
+            0
+        };
 
         // Scale output coordinates from secondary_scale space back to orus space.
         // The coordinate pipeline (compute_coord_shift + apply_transform_flags) right-shifts
@@ -996,13 +1049,16 @@ impl<'a> Pfr1HeaderParser<'a> {
         // Parse X control values with accumulative deltas
         let mut accum_x: i16 = 0;
         for i in 0..self.x_orus_count {
-            if self.pos >= self.data.len() { break; }
+            if self.pos >= self.data.len() {
+                break;
+            }
 
             let v8;
             if i == 0 {
                 v8 = x_enc_mode; // First X uses xEncMode from flags
             } else if flag_per_coord {
-                let result = self.read_ce9d_flag_nibble_cached(nibble_aligned, flag_cache, flag_cache_count);
+                let result =
+                    self.read_ce9d_flag_nibble_cached(nibble_aligned, flag_cache, flag_cache_count);
                 v8 = result.0;
                 nibble_aligned = result.1;
                 flag_cache = result.2;
@@ -1021,13 +1077,16 @@ impl<'a> Pfr1HeaderParser<'a> {
         // Parse Y control values with accumulative deltas
         let mut accum_y: i16 = 0;
         for i in 0..self.y_orus_count {
-            if self.pos >= self.data.len() { break; }
+            if self.pos >= self.data.len() {
+                break;
+            }
 
             let v8;
             if i == 0 {
                 v8 = y_enc_mode; // First Y uses yEncMode from flags
             } else if flag_per_coord {
-                let result = self.read_ce9d_flag_nibble_cached(nibble_aligned, flag_cache, flag_cache_count);
+                let result =
+                    self.read_ce9d_flag_nibble_cached(nibble_aligned, flag_cache, flag_cache_count);
                 v8 = result.0;
                 nibble_aligned = result.1;
                 flag_cache = result.2;
@@ -1064,7 +1123,12 @@ impl<'a> Pfr1HeaderParser<'a> {
     }
 
     /// Read flag nibble with caching
-    fn read_ce9d_flag_nibble_cached(&mut self, mut aligned: bool, mut cache: i32, mut count: i32) -> (i32, bool, i32, i32) {
+    fn read_ce9d_flag_nibble_cached(
+        &mut self,
+        mut aligned: bool,
+        mut cache: i32,
+        mut count: i32,
+    ) -> (i32, bool, i32, i32) {
         if count > 0 {
             // Use cached flag bits (shift right by 1 each time)
             let v13 = (cache >> 1) & 0x7F;
@@ -1092,7 +1156,12 @@ impl<'a> Pfr1HeaderParser<'a> {
     }
 
     /// Read a coordinate value
-    fn read_ce9d_coord_value_new(&mut self, v8: i32, three_byte_mode: bool, mut nibble_aligned: bool) -> (i16, bool) {
+    fn read_ce9d_coord_value_new(
+        &mut self,
+        v8: i32,
+        three_byte_mode: bool,
+        mut nibble_aligned: bool,
+    ) -> (i16, bool) {
         if self.pos >= self.data.len() {
             return (0, nibble_aligned);
         }
@@ -1124,16 +1193,30 @@ impl<'a> Pfr1HeaderParser<'a> {
                 // 3-byte encoding mode - full 16-bit values
                 let result;
                 if nibble_aligned {
-                    let b0_low = if self.pos > 0 { (self.data[self.pos - 1] & 0x0F) as i32 } else { 0 };
+                    let b0_low = if self.pos > 0 {
+                        (self.data[self.pos - 1] & 0x0F) as i32
+                    } else {
+                        0
+                    };
                     let b1 = self.data[self.pos] as i32;
                     self.pos += 1;
-                    let b2_high = if self.pos < self.data.len() { (self.data[self.pos] >> 4) as i32 } else { 0 };
+                    let b2_high = if self.pos < self.data.len() {
+                        (self.data[self.pos] >> 4) as i32
+                    } else {
+                        0
+                    };
                     result = ((b0_low << 12) | (b1 << 4) | b2_high) as i16;
                 } else {
                     let b0 = self.data[self.pos] as i32;
                     self.pos += 1;
-                    let b1 = if self.pos < self.data.len() { self.data[self.pos] as i32 } else { 0 };
-                    if self.pos < self.data.len() { self.pos += 1; }
+                    let b1 = if self.pos < self.data.len() {
+                        self.data[self.pos] as i32
+                    } else {
+                        0
+                    };
+                    if self.pos < self.data.len() {
+                        self.pos += 1;
+                    }
                     result = ((b0 << 8) | b1) as i16;
                 }
                 (result, nibble_aligned)
@@ -1148,7 +1231,9 @@ impl<'a> Pfr1HeaderParser<'a> {
                         let b = self.data[self.pos] as i32;
                         self.pos += 1;
                         b
-                    } else { 0 };
+                    } else {
+                        0
+                    };
                     // Sign-extend nibble: nibble >= 8 is negative
                     let shifted_nibble = ((low_nibble << 4) as i8) as i32;
                     result = (next_byte + multiplier * shifted_nibble) as i16;
@@ -1159,7 +1244,9 @@ impl<'a> Pfr1HeaderParser<'a> {
                     self.pos += 1;
                     let next_high_nibble = if self.pos < self.data.len() {
                         (self.data[self.pos] >> 4) as i32
-                    } else { 0 };
+                    } else {
+                        0
+                    };
                     result = (next_high_nibble + multiplier * signed_byte) as i16;
                     nibble_aligned = true;
                 }
@@ -1170,7 +1257,9 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// Low-level nibble reader (raw, toggle-first protocol for nibble commands)
     fn read_nibble_raw(&mut self) -> i32 {
-        if self.pos >= self.data.len() { return -1; }
+        if self.pos >= self.data.len() {
+            return -1;
+        }
 
         // Toggle first, then read
         self.nibble_high = !self.nibble_high;
@@ -1188,7 +1277,9 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// Read a nibble using toggle-first protocol
     fn read_nibble(&mut self) -> i32 {
-        if self.pos >= self.data.len() { return -1; }
+        if self.pos >= self.data.len() {
+            return -1;
+        }
 
         // Toggle first, then read
         self.nibble_high = !self.nibble_high;
@@ -1204,7 +1295,9 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// Read a byte-aligned value from nibble stream
     fn read_byte_aligned(&mut self) -> i32 {
-        if self.pos >= self.data.len() { return 0; }
+        if self.pos >= self.data.len() {
+            return 0;
+        }
 
         if self.nibble_high {
             // Cross-byte read: low nibble of current + high nibble of next
@@ -1239,7 +1332,9 @@ impl<'a> Pfr1HeaderParser<'a> {
             iterations += 1;
 
             // Termination check
-            if self.pos >= self.outline_end_pos && (self.pos != self.outline_end_pos || self.nibble_high) {
+            if self.pos >= self.outline_end_pos
+                && (self.pos != self.outline_end_pos || self.nibble_high)
+            {
                 break;
             }
             if self.pos >= self.data.len() {
@@ -1253,7 +1348,9 @@ impl<'a> Pfr1HeaderParser<'a> {
                 first_iteration = false;
             } else {
                 cmd = self.read_nibble();
-                if cmd < 0 { break; }
+                if cmd < 0 {
+                    break;
+                }
             }
 
             self.process_command(cmd);
@@ -1361,7 +1458,8 @@ impl<'a> Pfr1HeaderParser<'a> {
                     let x2 = self.ctrl_x[(c.saturating_sub(1)).min(cols - 1)] as f32;
 
                     if (x2 - x1).abs() > 1.0 {
-                        self.strokes.push(PfrStroke::line(x1, y, x2, y, stroke_width));
+                        self.strokes
+                            .push(PfrStroke::line(x1, y, x2, y, stroke_width));
                     }
                     start_col = -1;
                 }
@@ -1381,7 +1479,8 @@ impl<'a> Pfr1HeaderParser<'a> {
                     let y2 = self.ctrl_y[(r.saturating_sub(1)).min(rows - 1)] as f32;
 
                     if (y2 - y1).abs() > 1.0 {
-                        self.strokes.push(PfrStroke::line(x, y1, x, y2, stroke_width));
+                        self.strokes
+                            .push(PfrStroke::line(x, y1, x, y2, stroke_width));
                     }
                     start_row = -1;
                 }
@@ -1395,10 +1494,14 @@ impl<'a> Pfr1HeaderParser<'a> {
             let min_y = *self.ctrl_y.iter().min().unwrap_or(&0) as f32;
             let max_y = *self.ctrl_y.iter().max().unwrap_or(&0) as f32;
 
-            self.strokes.push(PfrStroke::line(min_x, min_y, min_x, max_y, stroke_width));
-            self.strokes.push(PfrStroke::line(max_x, min_y, max_x, max_y, stroke_width));
-            self.strokes.push(PfrStroke::line(min_x, min_y, max_x, min_y, stroke_width));
-            self.strokes.push(PfrStroke::line(min_x, max_y, max_x, max_y, stroke_width));
+            self.strokes
+                .push(PfrStroke::line(min_x, min_y, min_x, max_y, stroke_width));
+            self.strokes
+                .push(PfrStroke::line(max_x, min_y, max_x, max_y, stroke_width));
+            self.strokes
+                .push(PfrStroke::line(min_x, min_y, max_x, min_y, stroke_width));
+            self.strokes
+                .push(PfrStroke::line(min_x, max_y, max_x, max_y, stroke_width));
         }
     }
 
@@ -1420,7 +1523,9 @@ impl<'a> Pfr1HeaderParser<'a> {
     /// Process command 0 (small delta)
     fn process_small_delta(&mut self) {
         let nibble = self.read_nibble();
-        if nibble < 0 { return; }
+        if nibble < 0 {
+            return;
+        }
 
         let mut v44 = self.cur_x;
         let mut v45 = self.cur_y;
@@ -1545,7 +1650,9 @@ impl<'a> Pfr1HeaderParser<'a> {
     /// Process commands 5-6 (line with encoding)
     fn process_line_encoded(&mut self, add_point: bool) {
         let enc = self.read_nibble();
-        if enc < 0 { return; }
+        if enc < 0 {
+            return;
+        }
 
         let mut v44 = self.cur_x;
         let mut v45 = self.cur_y;
@@ -1561,10 +1668,13 @@ impl<'a> Pfr1HeaderParser<'a> {
             }
 
             let (out_x, out_y) = self.transform_point(self.cur_x, self.cur_y);
-            let (final_x, final_y) = self.apply_transform_flags_with_raw(self.cur_x, self.cur_y, out_x, out_y);
+            let (final_x, final_y) =
+                self.apply_transform_flags_with_raw(self.cur_x, self.cur_y, out_x, out_y);
             let scaled_x = final_x as f32 * self.orus_zero_scale;
             let scaled_y = final_y as f32 * self.orus_zero_scale;
-            self.current_contour.commands.push(PfrCmd::move_to(scaled_x, scaled_y));
+            self.current_contour
+                .commands
+                .push(PfrCmd::move_to(scaled_x, scaled_y));
         }
     }
 
@@ -1574,17 +1684,27 @@ impl<'a> Pfr1HeaderParser<'a> {
         let mut path: u32 = 0; // 49, 54, or 70
 
         match cmd {
-            7 => { v5 = 2210; path = 49; }
-            8 => { v5 = 680; path = 54; }
+            7 => {
+                v5 = 2210;
+                path = 49;
+            }
+            8 => {
+                v5 = 680;
+                path = 54;
+            }
             9 => {
                 let nib = self.read_nibble();
-                if nib < 0 { return; }
+                if nib < 0 {
+                    return;
+                }
                 v5 = CURVE_TABLE_9[nib as usize & 0x0F];
                 path = 49;
             }
             10 => {
                 let nib = self.read_nibble();
-                if nib < 0 { return; }
+                if nib < 0 {
+                    return;
+                }
                 v5 = CURVE_TABLE_10[nib as usize & 0x0F];
                 path = 54;
             }
@@ -1600,7 +1720,9 @@ impl<'a> Pfr1HeaderParser<'a> {
             }
             13 => {
                 let nib = self.read_nibble();
-                if nib < 0 { return; }
+                if nib < 0 {
+                    return;
+                }
                 v5 = CURVE_TABLE_13[nib as usize & 0x0F];
                 path = 70;
             }
@@ -1611,12 +1733,16 @@ impl<'a> Pfr1HeaderParser<'a> {
             }
             15 => {
                 let hi_nibble = self.read_nibble();
-                if hi_nibble < 0 { return; }
+                if hi_nibble < 0 {
+                    return;
+                }
                 let low_byte = self.read_byte_aligned() as u32;
                 v5 = low_byte + ((hi_nibble as u32) << 8);
                 path = 70;
             }
-            _ => { return; }
+            _ => {
+                return;
+            }
         }
 
         let mut v44 = self.cur_x;
@@ -1642,8 +1768,10 @@ impl<'a> Pfr1HeaderParser<'a> {
 
             self.read_encoded_coord_pair_into(((v5 >> 8) & 0xF) as i32, &mut ex, &mut ey);
 
-            v46 = c2x; v47 = c2y;
-            v48_0 = ex; v48_1 = ey;
+            v46 = c2x;
+            v47 = c2y;
+            v48_0 = ex;
+            v48_1 = ey;
         } else if path == 54 {
             self.read_encoded_coord_pair_into((v5 & 0xF) as i32, &mut v44, &mut v45);
 
@@ -1657,8 +1785,10 @@ impl<'a> Pfr1HeaderParser<'a> {
 
             self.read_encoded_coord_pair_into(((v5 >> 8) & 0xF) as i32, &mut ex, &mut ey);
 
-            v46 = c2x; v47 = c2y;
-            v48_0 = ex; v48_1 = ey;
+            v46 = c2x;
+            v47 = c2y;
+            v48_0 = ex;
+            v48_1 = ey;
         } else {
             v44 = v44.wrapping_add(self.cur_x.wrapping_sub(self.prev_x));
             v45 = v45.wrapping_add(self.cur_y.wrapping_sub(self.prev_y));
@@ -1673,13 +1803,15 @@ impl<'a> Pfr1HeaderParser<'a> {
             let mut ey = c2y;
             self.read_encoded_coord_pair_into(((v5 >> 8) & 0xF) as i32, &mut ex, &mut ey);
 
-            v46 = c2x; v47 = c2y;
-            v48_0 = ex; v48_1 = ey;
+            v46 = c2x;
+            v47 = c2y;
+            v48_0 = ex;
+            v48_1 = ey;
         }
 
         // Determine curve type using cross-product
         let cross = (v44 as i32 - start_x as i32) * (v48_1 as i32 - v45 as i32)
-                  - (v45 as i32 - start_y as i32) * (v48_0 as i32 - v44 as i32);
+            - (v45 as i32 - start_y as i32) * (v48_0 as i32 - v44 as i32);
 
         if cross == 0 {
             // Collinear - emit as line
@@ -1775,7 +1907,11 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// OrusLookup - control point coordinate lookup
     fn orus_lookup(&self, axis: i32, direction: i16) -> i16 {
-        let ctrl = if axis == 1 { &self.ctrl_y } else { &self.ctrl_x };
+        let ctrl = if axis == 1 {
+            &self.ctrl_y
+        } else {
+            &self.ctrl_x
+        };
         let current = if axis == 1 { self.cur_y } else { self.cur_x };
         let count = ctrl.len();
 
@@ -1809,12 +1945,17 @@ impl<'a> Pfr1HeaderParser<'a> {
             if v9 >= count {
                 return current;
             }
-            let v8 = (v9 as i32 + direction as i32 - 1).min(count as i32 - 1).max(0);
+            let v8 = (v9 as i32 + direction as i32 - 1)
+                .min(count as i32 - 1)
+                .max(0);
             ctrl[v8 as usize]
         } else {
             // Backward search
             let mut search_idx = count as i32;
-            while { search_idx -= 1; search_idx >= 0 } {
+            while {
+                search_idx -= 1;
+                search_idx >= 0
+            } {
                 if ctrl[search_idx as usize] < current {
                     let v8 = (search_idx + direction as i32 + 1).max(0);
                     return ctrl[v8 as usize];
@@ -1888,8 +2029,16 @@ impl<'a> Pfr1HeaderParser<'a> {
             }
         }
 
-        let mut last_interp = if axis == 1 { self.last_interp_y } else { self.last_interp_x };
-        let mut interp_accum = if axis == 1 { self.interp_accum_y } else { self.interp_accum_x };
+        let mut last_interp = if axis == 1 {
+            self.last_interp_y
+        } else {
+            self.last_interp_x
+        };
+        let mut interp_accum = if axis == 1 {
+            self.interp_accum_y
+        } else {
+            self.interp_accum_x
+        };
 
         if coord != last_interp {
             last_interp = coord;
@@ -1978,15 +2127,39 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     /// Apply zone transformation to a single coordinate.
     fn transform_coordinate(&mut self, coord: i16, axis: i32) -> i32 {
-        let zones = if axis == 1 { &self.zones_y } else { &self.zones_x };
-        let scalars = if axis == 1 { &self.scalars_y } else { &self.scalars_x };
-        let offsets = if axis == 1 { &self.offsets_y } else { &self.offsets_x };
-        let n_zones = if axis == 1 { self.n_zones_y } else { self.n_zones_x };
+        let zones = if axis == 1 {
+            &self.zones_y
+        } else {
+            &self.zones_x
+        };
+        let scalars = if axis == 1 {
+            &self.scalars_y
+        } else {
+            &self.scalars_x
+        };
+        let offsets = if axis == 1 {
+            &self.offsets_y
+        } else {
+            &self.offsets_x
+        };
+        let n_zones = if axis == 1 {
+            self.n_zones_y
+        } else {
+            self.n_zones_x
+        };
         let shift = self.shift_difference as i32;
 
         if n_zones == 0 || zones.is_empty() {
-            let scale = if axis == 1 { self.font_scale_y } else { self.font_scale_x };
-            let offset = if axis == 1 { self.font_offset_y } else { self.font_offset_x };
+            let scale = if axis == 1 {
+                self.font_scale_y
+            } else {
+                self.font_scale_x
+            };
+            let offset = if axis == 1 {
+                self.font_offset_y
+            } else {
+                self.font_offset_x
+            };
             return ((offset as i64 + coord as i64 * scale as i64) >> shift) as i32;
         }
 
@@ -1995,7 +2168,9 @@ impl<'a> Pfr1HeaderParser<'a> {
         while i < n_zones as usize && coord > zones[i] {
             i += 1;
         }
-        if i >= zones.len() { i = zones.len() - 1; }
+        if i >= zones.len() {
+            i = zones.len() - 1;
+        }
 
         ((offsets[i] as i64 + coord as i64 * scalars[i] as i64) >> shift) as i32
     }
@@ -2042,12 +2217,14 @@ impl<'a> Pfr1HeaderParser<'a> {
         self.scaled_y.clear();
 
         for &ctrl in &self.ctrl_x {
-            let scaled = (self.font_offset_x as i64 + self.font_scale_x as i64 * ctrl as i64) >> self.shift_difference;
+            let scaled = (self.font_offset_x as i64 + self.font_scale_x as i64 * ctrl as i64)
+                >> self.shift_difference;
             self.scaled_x.push(scaled as i16);
         }
 
         for &ctrl in &self.ctrl_y {
-            let scaled = (self.font_offset_y as i64 + self.font_scale_y as i64 * ctrl as i64) >> self.shift_difference;
+            let scaled = (self.font_offset_y as i64 + self.font_scale_y as i64 * ctrl as i64)
+                >> self.shift_difference;
             self.scaled_y.push(scaled as i16);
         }
 
@@ -2076,7 +2253,11 @@ impl<'a> Pfr1HeaderParser<'a> {
 
         if self.target_em_px > 0 {
             let dc = self.diag_char_code;
-            let dch = if dc >= 32 && dc < 127 { dc as u8 as char } else { '?' };
+            let dch = if dc >= 32 && dc < 127 {
+                dc as u8 as char
+            } else {
+                '?'
+            };
             log(&format!(
                 "    ZoneTables[{}'{}']: nZonesX={} nZonesY={} ctrlX={:?} ctrlY={:?}",
                 dc, dch, self.n_zones_x, self.n_zones_y, self.ctrl_x, self.ctrl_y
@@ -2092,9 +2273,19 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     fn initialize_zone_tables_for_axis(&mut self, axis: i32) {
         let (ctrl, scaled, font_scale, font_offset) = if axis == 1 {
-            (self.ctrl_y.clone(), self.scaled_y.clone(), self.font_scale_y, self.font_offset_y)
+            (
+                self.ctrl_y.clone(),
+                self.scaled_y.clone(),
+                self.font_scale_y,
+                self.font_offset_y,
+            )
         } else {
-            (self.ctrl_x.clone(), self.scaled_x.clone(), self.font_scale_x, self.font_offset_x)
+            (
+                self.ctrl_x.clone(),
+                self.scaled_x.clone(),
+                self.font_scale_x,
+                self.font_offset_x,
+            )
         };
 
         let mut zones = Vec::new();
@@ -2161,10 +2352,15 @@ impl<'a> Pfr1HeaderParser<'a> {
                 // FIX: Use UNTRUNCATED (font_offset + font_scale * ctrl) instead of (scaled << coord_shift).
                 // The truncation loses fractional bits (including rounding bias from font_offset),
                 // which shifts intermediate coordinates ~1px wrong for pixel fonts.
-                let cur_scaled_untruncated = font_offset as i32 + font_scale as i32 * cur_ctrl as i32;
-                let offset = self.base_offset + cur_scaled_untruncated - cur_ctrl as i32 * scalar as i32;
+                let cur_scaled_untruncated =
+                    font_offset as i32 + font_scale as i32 * cur_ctrl as i32;
+                let offset =
+                    self.base_offset + cur_scaled_untruncated - cur_ctrl as i32 * scalar as i32;
 
-                if zone_count > 0 && scalar == scalars[zone_count - 1] && offset == offsets[zone_count - 1] {
+                if zone_count > 0
+                    && scalar == scalars[zone_count - 1]
+                    && offset == offsets[zone_count - 1]
+                {
                     zones[zone_count - 1] = cur_ctrl;
                 } else {
                     scalars.push(scalar);
@@ -2181,8 +2377,12 @@ impl<'a> Pfr1HeaderParser<'a> {
         // Final zone: same untruncated offset fix as first zone
         scalars.push(font_scale);
         let last_zone_untrunc = font_offset as i32 + font_scale as i32 * last_ctrl as i32;
-        let final_offset = self.base_offset + last_zone_untrunc - font_scale as i32 * last_ctrl as i32;
-        if zone_count > 0 && scalars[zone_count] == scalars[zone_count - 1] && final_offset == offsets[zone_count - 1] {
+        let final_offset =
+            self.base_offset + last_zone_untrunc - font_scale as i32 * last_ctrl as i32;
+        if zone_count > 0
+            && scalars[zone_count] == scalars[zone_count - 1]
+            && final_offset == offsets[zone_count - 1]
+        {
             zones[zone_count - 1] = i16::MAX;
         } else {
             offsets.push(final_offset);
@@ -2216,7 +2416,8 @@ impl<'a> Pfr1HeaderParser<'a> {
         let scaled_y = final_y as f32 * self.orus_zero_scale;
 
         // Log first point of each contour (move_to) to show orus→pixel mapping
-        if self.target_em_px > 0 && self.current_contour.commands.is_empty() && !self.record_strokes {
+        if self.target_em_px > 0 && self.current_contour.commands.is_empty() && !self.record_strokes
+        {
             log(&format!(
                 "    [orus] raw=({},{}) zone=({},{}) final=({},{}) scaled=({:.1},{:.1})",
                 new_x, new_y, out_x, out_y, final_x, final_y, scaled_x, scaled_y
@@ -2248,9 +2449,13 @@ impl<'a> Pfr1HeaderParser<'a> {
                 self.first_point_orus_x = Some(new_x);
                 self.first_point_orus_y = Some(new_y);
             }
-            self.current_contour.commands.push(PfrCmd::move_to(scaled_x, scaled_y));
+            self.current_contour
+                .commands
+                .push(PfrCmd::move_to(scaled_x, scaled_y));
         } else {
-            self.current_contour.commands.push(PfrCmd::line_to(scaled_x, scaled_y));
+            self.current_contour
+                .commands
+                .push(PfrCmd::line_to(scaled_x, scaled_y));
         }
 
         self.cur_x = new_x;
@@ -2260,7 +2465,8 @@ impl<'a> Pfr1HeaderParser<'a> {
     /// Add point at current coordinates (for commands 5-6)
     fn add_point_only(&mut self) {
         let (out_x, out_y) = self.transform_point(self.cur_x, self.cur_y);
-        let (final_x, final_y) = self.apply_transform_flags_with_raw(self.cur_x, self.cur_y, out_x, out_y);
+        let (final_x, final_y) =
+            self.apply_transform_flags_with_raw(self.cur_x, self.cur_y, out_x, out_y);
         let scaled_x = final_x as f32 * self.orus_zero_scale;
         let scaled_y = final_y as f32 * self.orus_zero_scale;
 
@@ -2282,14 +2488,26 @@ impl<'a> Pfr1HeaderParser<'a> {
         }
 
         if self.current_contour.commands.is_empty() {
-            self.current_contour.commands.push(PfrCmd::move_to(scaled_x, scaled_y));
+            self.current_contour
+                .commands
+                .push(PfrCmd::move_to(scaled_x, scaled_y));
         } else {
-            self.current_contour.commands.push(PfrCmd::line_to(scaled_x, scaled_y));
+            self.current_contour
+                .commands
+                .push(PfrCmd::line_to(scaled_x, scaled_y));
         }
     }
 
     /// Add cubic bezier curve
-    fn add_cubic_bezier(&mut self, ctrl1_x: i16, ctrl1_y: i16, ctrl2_x: i16, ctrl2_y: i16, end_x: i16, end_y: i16) {
+    fn add_cubic_bezier(
+        &mut self,
+        ctrl1_x: i16,
+        ctrl1_y: i16,
+        ctrl2_x: i16,
+        ctrl2_y: i16,
+        end_x: i16,
+        end_y: i16,
+    ) {
         let (tc1x, tc1y) = self.transform_point(ctrl1_x, ctrl1_y);
         let (tc2x, tc2y) = self.transform_point(ctrl2_x, ctrl2_y);
         let (tex, tey) = self.transform_point(end_x, end_y);
@@ -2329,26 +2547,41 @@ impl<'a> Pfr1HeaderParser<'a> {
 
         if self.current_contour.commands.is_empty() {
             let (tpx, tpy) = self.transform_point(self.prev_x, self.prev_y);
-            let (fpx, fpy) = self.apply_transform_flags_with_raw(self.prev_x, self.prev_y, tpx, tpy);
+            let (fpx, fpy) =
+                self.apply_transform_flags_with_raw(self.prev_x, self.prev_y, tpx, tpy);
             self.current_contour.commands.push(PfrCmd::move_to(
                 fpx as f32 * self.orus_zero_scale,
                 fpy as f32 * self.orus_zero_scale,
             ));
         }
 
-        self.current_contour.commands.push(PfrCmd::curve_to(
-            sc1x, sc1y,
-            sc2x, sc2y,
-            sex, sey,
-        ));
+        self.current_contour
+            .commands
+            .push(PfrCmd::curve_to(sc1x, sc1y, sc2x, sc2y, sex, sey));
     }
 
     /// Add curve points (collinear case)
-    fn add_curve_points(&mut self, x0: i16, y0: i16, x1: i16, y1: i16, x2: i16, y2: i16, x3: i16, y3: i16) {
+    fn add_curve_points(
+        &mut self,
+        x0: i16,
+        y0: i16,
+        x1: i16,
+        y1: i16,
+        x2: i16,
+        y2: i16,
+        x3: i16,
+        y3: i16,
+    ) {
         let max_jump: i32 = 50000;
-        let jump_to_c1 = (x1 as i32 - x0 as i32).abs().max((y1 as i32 - y0 as i32).abs());
-        let jump_to_c2 = (x2 as i32 - x0 as i32).abs().max((y2 as i32 - y0 as i32).abs());
-        let jump_to_end = (x3 as i32 - x0 as i32).abs().max((y3 as i32 - y0 as i32).abs());
+        let jump_to_c1 = (x1 as i32 - x0 as i32)
+            .abs()
+            .max((y1 as i32 - y0 as i32).abs());
+        let jump_to_c2 = (x2 as i32 - x0 as i32)
+            .abs()
+            .max((y2 as i32 - y0 as i32).abs());
+        let jump_to_end = (x3 as i32 - x0 as i32)
+            .abs()
+            .max((y3 as i32 - y0 as i32).abs());
         if jump_to_c1 > max_jump || jump_to_c2 > max_jump || jump_to_end > max_jump {
             if !self.current_contour.commands.is_empty() {
                 self.finish_contour();
@@ -2411,7 +2644,9 @@ impl<'a> Pfr1HeaderParser<'a> {
         }
 
         if self.current_contour.commands.is_empty() {
-            self.current_contour.commands.push(PfrCmd::move_to(sx0, sy0));
+            self.current_contour
+                .commands
+                .push(PfrCmd::move_to(sx0, sy0));
         }
         self.current_contour
             .commands
@@ -2426,7 +2661,8 @@ impl<'a> Pfr1HeaderParser<'a> {
         const MAX_COMPOUND_DEPTH: u32 = 8;
         if self.depth >= MAX_COMPOUND_DEPTH {
             log(&format!(
-                "  [compound] depth limit ({}) reached, skipping", MAX_COMPOUND_DEPTH
+                "  [compound] depth limit ({}) reached, skipping",
+                MAX_COMPOUND_DEPTH
             ));
             return;
         }
@@ -2436,7 +2672,10 @@ impl<'a> Pfr1HeaderParser<'a> {
 
         log(&format!(
             "  [compound] {} components, gps_offset=0x{:X}, data[0]=0x{:02X}, data_len={}",
-            component_count, self.glyph_gps_offset, self.data[0], self.data.len()
+            component_count,
+            self.glyph_gps_offset,
+            self.data[0],
+            self.data.len()
         ));
 
         // Check for extra data (bit 6 of header)
@@ -2444,7 +2683,9 @@ impl<'a> Pfr1HeaderParser<'a> {
             let extra_count = self.data[self.pos] as usize;
             self.pos += 1;
             for _ in 0..extra_count {
-                if self.pos >= self.data.len() { break; }
+                if self.pos >= self.data.len() {
+                    break;
+                }
                 let len = self.data[self.pos] as usize;
                 self.pos += 1;
                 self.pos += len + 1; // Skip type byte + data
@@ -2467,7 +2708,9 @@ impl<'a> Pfr1HeaderParser<'a> {
         let mut records = Vec::new();
 
         for _ in 0..component_count {
-            if self.pos >= self.data.len() { break; }
+            if self.pos >= self.data.len() {
+                break;
+            }
 
             let format_byte = self.data[self.pos] as i32;
             self.pos += 1;
@@ -2482,16 +2725,31 @@ impl<'a> Pfr1HeaderParser<'a> {
             // Parse Y transform
             let (y_scale, y_offset) = self.parse_transform_modulo6(y_format);
             // Parse glyph offset
-            let (glyph_offset, subglyph_size) = self.parse_glyph_offset_modulo6(offset_format, &mut offset_accumulator);
+            let (glyph_offset, subglyph_size) =
+                self.parse_glyph_offset_modulo6(offset_format, &mut offset_accumulator);
 
             log(&format!(
                 "    comp[{}]: fmt={} (x={},y={},off={}), scale=({},{}), offset=({},{}), glyph_off=0x{:X}, size={}",
-                records.len(), format_byte, x_format, y_format, offset_format,
-                x_scale, y_scale, x_offset, y_offset, glyph_offset, subglyph_size
+                records.len(),
+                format_byte,
+                x_format,
+                y_format,
+                offset_format,
+                x_scale,
+                y_scale,
+                x_offset,
+                y_offset,
+                glyph_offset,
+                subglyph_size
             ));
 
             records.push(CompRecord {
-                x_scale, y_scale, x_offset, y_offset, glyph_offset, subglyph_size,
+                x_scale,
+                y_scale,
+                x_offset,
+                y_offset,
+                glyph_offset,
+                subglyph_size,
             });
         }
 
@@ -2509,7 +2767,8 @@ impl<'a> Pfr1HeaderParser<'a> {
         }
 
         // Build extended known offsets for sub-parsers (matching C# knownGpsOffsets mutation)
-        let mut extended_offsets: Vec<usize> = self.known_gps_offsets
+        let mut extended_offsets: Vec<usize> = self
+            .known_gps_offsets
             .map(|o| o.to_vec())
             .unwrap_or_default();
         for &off in &sorted_offsets {
@@ -2538,7 +2797,9 @@ impl<'a> Pfr1HeaderParser<'a> {
                 max_size.min(64) // Default limit
             };
 
-            if subglyph_size == 0 { continue; }
+            if subglyph_size == 0 {
+                continue;
+            }
 
             let subglyph_data = &self.gps_data[abs_pos..abs_pos + subglyph_size];
 
@@ -2548,8 +2809,16 @@ impl<'a> Pfr1HeaderParser<'a> {
             }
 
             // Treat scale=0 as identity (4096)
-            let comp_x_scale = if record.x_scale == 0 { 4096 } else { record.x_scale };
-            let comp_y_scale = if record.y_scale == 0 { 4096 } else { record.y_scale };
+            let comp_x_scale = if record.x_scale == 0 {
+                4096
+            } else {
+                record.x_scale
+            };
+            let comp_y_scale = if record.y_scale == 0 {
+                4096
+            } else {
+                record.y_scale
+            };
 
             // Create sub-parser and parse recursively
             let font_matrix = [self.matrix_a, self.matrix_b, self.matrix_c, self.matrix_d];
@@ -2564,7 +2833,7 @@ impl<'a> Pfr1HeaderParser<'a> {
                 self.gps_data,
                 self.gps_base,
                 self.gps_len,
-                glyph_offset,  // subglyph's GPS-section-relative offset
+                glyph_offset, // subglyph's GPS-section-relative offset
                 Some(&extended_offsets),
                 None,
                 self.font_metrics.as_ref(),
@@ -2589,18 +2858,29 @@ impl<'a> Pfr1HeaderParser<'a> {
             // Inherit parent's coord state and apply component transform through matrix
             sub_parser.copy_parent_coord_state(self);
             sub_parser.apply_component_transform(
-                record.x_offset as i16, record.y_offset as i16,
-                comp_x_scale, comp_y_scale,
+                record.x_offset as i16,
+                record.y_offset as i16,
+                comp_x_scale,
+                comp_y_scale,
             );
 
             let sub_glyph = sub_parser.parse();
             let sub_pts: usize = sub_glyph.contours.iter().map(|c| c.commands.len()).sum();
-            let data_preview: Vec<String> = subglyph_data.iter().take(8).map(|b| format!("{:02X}", b)).collect();
+            let data_preview: Vec<String> = subglyph_data
+                .iter()
+                .take(8)
+                .map(|b| format!("{:02X}", b))
+                .collect();
             log(&format!(
                 "    sub: abs_pos=0x{:X}, max_size={}, used_size={}, data=[{}], contours={}, pts={} fontScale=({},{})",
-                abs_pos, max_size, subglyph_size, data_preview.join(" "),
-                sub_glyph.contours.len(), sub_pts,
-                sub_parser.font_scale_x, sub_parser.font_scale_y
+                abs_pos,
+                max_size,
+                subglyph_size,
+                data_preview.join(" "),
+                sub_glyph.contours.len(),
+                sub_pts,
+                sub_parser.font_scale_x,
+                sub_parser.font_scale_y
             ));
             if !sub_glyph.contours.is_empty() {
                 // Offset and scale already applied through the matrix by apply_component_transform.
@@ -2613,14 +2893,24 @@ impl<'a> Pfr1HeaderParser<'a> {
         log(&format!(
             "  [compound] result: {} contours, {} total pts",
             self.contours.len(),
-            self.contours.iter().map(|c| c.commands.len()).sum::<usize>()
+            self.contours
+                .iter()
+                .map(|c| c.commands.len())
+                .sum::<usize>()
         ));
     }
 
     /// Apply component transform (scale + offset) and merge into this glyph.
     /// Only used for identity-scale components; non-identity-scale components use
     /// the first-point correction path in parse_compound_glyph.
-    fn merge_transformed_glyph(&mut self, source: &OutlineGlyph, x_offset: i16, y_offset: i16, x_scale: i16, y_scale: i16) {
+    fn merge_transformed_glyph(
+        &mut self,
+        source: &OutlineGlyph,
+        x_offset: i16,
+        y_offset: i16,
+        x_scale: i16,
+        y_scale: i16,
+    ) {
         if source.contours.is_empty() {
             return;
         }
@@ -2635,13 +2925,25 @@ impl<'a> Pfr1HeaderParser<'a> {
             1.0
         };
 
-        let x_sign = if self.x_transform_flag == 1 || self.x_transform_flag == 3 { -1.0 } else { 1.0 };
-        let y_sign = if self.y_transform_flag == 1 || self.y_transform_flag == 3 { -1.0 } else { 1.0 };
+        let x_sign = if self.x_transform_flag == 1 || self.x_transform_flag == 3 {
+            -1.0
+        } else {
+            1.0
+        };
+        let y_sign = if self.y_transform_flag == 1 || self.y_transform_flag == 3 {
+            -1.0
+        } else {
+            1.0
+        };
         // Add rounding bias to merge offset (Phase 15): compound glyph decomposition splits
         // the coordinate mapping into sub-glyph transform + merge offset. Without rounding,
         // the merge offset truncates toward zero, losing up to ~1px (e.g. apostrophe
         // in Volter_700 compound glyph positioned 1px too low).
-        let rounding = if self.coord_shift > 0 { 1i32 << (self.coord_shift - 1) } else { 0 };
+        let rounding = if self.coord_shift > 0 {
+            1i32 << (self.coord_shift - 1)
+        } else {
+            0
+        };
         let x_off = if self.target_em_px > 0 && self.coord_shift > 0 {
             let raw = (x_offset as i32 * self.font_scale_x as i32 + rounding) >> self.coord_shift;
             raw as f32 * x_sign
@@ -2782,7 +3084,8 @@ impl<'a> Pfr1HeaderParser<'a> {
             2 => {
                 // 2-byte relative — delta = size
                 if self.pos + 2 <= self.data.len() {
-                    let delta = ((self.data[self.pos] as i32) << 8) | (self.data[self.pos + 1] as i32);
+                    let delta =
+                        ((self.data[self.pos] as i32) << 8) | (self.data[self.pos + 1] as i32);
                     self.pos += 2;
                     subglyph_size = delta;
                     *accumulator -= delta;
@@ -2827,7 +3130,8 @@ impl<'a> Pfr1HeaderParser<'a> {
             6 => {
                 // 5-byte: 2-byte size + 3-byte absolute offset
                 if self.pos + 5 <= self.data.len() {
-                    subglyph_size = ((self.data[self.pos] as i32) << 8) | (self.data[self.pos + 1] as i32);
+                    subglyph_size =
+                        ((self.data[self.pos] as i32) << 8) | (self.data[self.pos + 1] as i32);
                     offset = ((self.data[self.pos + 2] as i32) << 16)
                         | ((self.data[self.pos + 3] as i32) << 8)
                         | (self.data[self.pos + 4] as i32);
@@ -2885,11 +3189,17 @@ impl<'a> Pfr1HeaderParser<'a> {
                 let mut max_x = f32::MIN;
                 for i in 0..n - 1 {
                     let cmd = &contour.commands[i];
-                    if cmd.x < min_x { min_x = cmd.x; }
-                    if cmd.x > max_x { max_x = cmd.x; }
+                    if cmd.x < min_x {
+                        min_x = cmd.x;
+                    }
+                    if cmd.x > max_x {
+                        max_x = cmd.x;
+                    }
                 }
                 let box_width = max_x - min_x;
-                if box_width < 1.0 { break; }
+                if box_width < 1.0 {
+                    break;
+                }
 
                 let ext_left = (min_x - last.x).max(0.0);
                 let ext_right = (last.x - max_x).max(0.0);
@@ -2906,13 +3216,19 @@ impl<'a> Pfr1HeaderParser<'a> {
 
     fn close_contours(&mut self) {
         for contour in &mut self.contours {
-            if contour.commands.is_empty() { continue; }
+            if contour.commands.is_empty() {
+                continue;
+            }
 
             let first = &contour.commands[0];
-            if first.cmd_type != PfrCmdType::MoveTo { continue; }
+            if first.cmd_type != PfrCmdType::MoveTo {
+                continue;
+            }
 
             let last = contour.commands.last().unwrap();
-            if last.cmd_type == PfrCmdType::Close { continue; }
+            if last.cmd_type == PfrCmdType::Close {
+                continue;
+            }
 
             let start_x = first.x;
             let start_y = first.y;
@@ -3125,9 +3441,7 @@ pub fn parse_bitmap_glyph(data: &[u8], char_code: u32) -> Option<BitmapGlyph> {
             }
             decode_rle_bitmap(remaining, x_size, y_size)
         }
-        _ => {
-            remaining.to_vec()
-        }
+        _ => remaining.to_vec(),
     };
 
     Some(BitmapGlyph {
@@ -3158,7 +3472,9 @@ fn decode_rle_bitmap(data: &[u8], width: u16, height: u16) -> Vec<u8> {
         let value = byte & 0x0F;
 
         for _ in 0..count {
-            if out_pos >= total_bits { break; }
+            if out_pos >= total_bits {
+                break;
+            }
             if value != 0 {
                 result[out_pos / 8] |= 1 << (7 - (out_pos % 8));
             }
@@ -3179,13 +3495,13 @@ pub fn score_glyph(glyph: &OutlineGlyph, is_header_parser: bool) -> i32 {
     score += glyph.contours.len() as i32 * 10;
 
     // Points per point
-    let total_points: usize = glyph.contours.iter()
-        .map(|c| c.commands.len())
-        .sum();
+    let total_points: usize = glyph.contours.iter().map(|c| c.commands.len()).sum();
     score += total_points as i32;
 
     // Curve bonus
-    let curve_count: usize = glyph.contours.iter()
+    let curve_count: usize = glyph
+        .contours
+        .iter()
         .flat_map(|c| &c.commands)
         .filter(|cmd| cmd.cmd_type == PfrCmdType::CurveTo)
         .count();
@@ -3211,8 +3527,12 @@ pub fn score_glyph(glyph: &OutlineGlyph, is_header_parser: bool) -> i32 {
     }
     let x_range = (max_x - min_x) as i32;
     let y_range = (max_y - min_y) as i32;
-    if x_range > 10 { score += 20; }
-    if y_range > 10 { score += 20; }
+    if x_range > 10 {
+        score += 20;
+    }
+    if y_range > 10 {
+        score += 20;
+    }
 
     score
 }
@@ -3220,7 +3540,8 @@ pub fn score_glyph(glyph: &OutlineGlyph, is_header_parser: bool) -> i32 {
 // ========== Utility ==========
 
 fn calculate_encoding_14(b: u32) -> u32 {
-    let v = CURVE_TABLE_14B[((b >> 3) & 3) as usize] + 16 * CURVE_TABLE_14A[((b >> 5) & 7) as usize];
+    let v =
+        CURVE_TABLE_14B[((b >> 3) & 3) as usize] + 16 * CURVE_TABLE_14A[((b >> 5) & 7) as usize];
     let v2 = v * 16;
     CURVE_TABLE_14A[(b & 7) as usize] + v2
 }
@@ -3246,7 +3567,11 @@ pub fn parse_glyph(
     let start = char_record.gps_offset as usize;
     let size = char_record.gps_size as usize;
     let char_code = char_record.char_code;
-    let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+    let ch = if char_code >= 32 && char_code < 127 {
+        char_code as u8 as char
+    } else {
+        '?'
+    };
 
     // Handle glyphs with no GPS data (gpsSize <= 1)
     // These are characters with no outline - spaces, control chars, null, etc.
@@ -3259,15 +3584,22 @@ pub fn parse_glyph(
     }
 
     if start + size > gps_data.len() {
-        log(&format!("    SKIP char {} ('{}') - gps out of range (start={}, size={}, gps_len={})",
-            char_code, ch, start, size, gps_data.len()));
+        log(&format!(
+            "    SKIP char {} ('{}') - gps out of range (start={}, size={}, gps_len={})",
+            char_code,
+            ch,
+            start,
+            size,
+            gps_data.len()
+        ));
         return None;
     }
 
     let glyph_data = &gps_data[start..start + size];
 
     // Detect compound glyph for diagnostic logging
-    let is_compound_detected = size > 0 && (glyph_data[0] >> 6) & 3 >= 2 && (glyph_data[0] & 0x3F) > 0;
+    let is_compound_detected =
+        size > 0 && (glyph_data[0] >> 6) & 3 >= 2 && (glyph_data[0] & 0x3F) > 0;
 
     // Try PFR1HeaderParser first (primary, +300 score bonus)
     let mut best_glyph: Option<OutlineGlyph> = None;
@@ -3279,7 +3611,11 @@ pub fn parse_glyph(
     let mut direct_contours = 0usize;
 
     {
-        let known_offsets = if known_gps_offsets.is_empty() { None } else { Some(known_gps_offsets) };
+        let known_offsets = if known_gps_offsets.is_empty() {
+            None
+        } else {
+            Some(known_gps_offsets)
+        };
 
         let mut parser = Pfr1HeaderParser::new(
             glyph_data,
@@ -3292,7 +3628,7 @@ pub fn parse_glyph(
             full_data,
             gps_section_offset as i32,
             gps_section_size,
-            start as i32,  // glyph's GPS-section-relative offset (for compound glyph offset accumulator)
+            start as i32, // glyph's GPS-section-relative offset (for compound glyph offset accumulator)
             known_offsets,
             physical_font,
             font_metrics,
@@ -3328,9 +3664,13 @@ pub fn parse_glyph(
     if is_compound_detected {
         log(&format!(
             "  [compound] char {} ('{}') winner={} hdr_contours={} dir_contours={} hdr_score={} dir_score={}",
-            char_code, ch,
+            char_code,
+            ch,
             if best_is_header { "header" } else { "direct" },
-            header_contours, direct_contours, header_score, direct_score
+            header_contours,
+            direct_contours,
+            header_score,
+            direct_score
         ));
     }
 
@@ -3338,8 +3678,10 @@ pub fn parse_glyph(
     // (it may be a legitimately empty glyph like a narrow space variant)
     if best_glyph.is_none() {
         if size > 1 {
-            log(&format!("    FAIL char {} ('{}') - no contours from either parser (hdr={}, dir={}, data[0]=0x{:02X}, size={})",
-                char_code, ch, header_contours, direct_contours, glyph_data[0], size));
+            log(&format!(
+                "    FAIL char {} ('{}') - no contours from either parser (hdr={}, dir={}, data[0]=0x{:02X}, size={})",
+                char_code, ch, header_contours, direct_contours, glyph_data[0], size
+            ));
         }
         // Still create an empty glyph so the character exists in the font map
         let mut glyph = OutlineGlyph::new();
@@ -3387,8 +3729,16 @@ pub fn parse_glyph(
         if max_coord > outline_res * 2.0 && max_coord > 0.0 {
             log(&format!(
                 "  [NORM] char {} ('{}') max_coord={:.1} outline_res={:.1} scale={:.4} bbox=({:.1},{:.1})..({:.1},{:.1}) compound={}",
-                char_code, ch, max_coord, outline_res, outline_res / max_coord,
-                min_x, min_y, max_x, max_y, is_compound_detected
+                char_code,
+                ch,
+                max_coord,
+                outline_res,
+                outline_res / max_coord,
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+                is_compound_detected
             ));
             let scale = outline_res / max_coord;
             for contour in &mut glyph.contours {

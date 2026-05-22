@@ -44,6 +44,8 @@ function getCaseInsensitiveValue(obj: Record<string, any>, key: string): string 
 
 const DIR_EXTENSIONS = ['.dcr', '.dxr', '.dir'];
 const DIR_MIME_TYPES = ['application/x-director', 'application/x-shockwave-director'];
+const processedDirElements = new WeakSet<Element>();
+const mountedDirMovies = new Set<string>();
 
 function hasDirExtension(url: string): boolean {
   try {
@@ -101,6 +103,31 @@ function parseObjectExternalParams(params: Record<string, string | null>): Recor
   return externalParams;
 }
 
+function normalizeMovieUrl(src: string): string {
+  try {
+    return new URL(src, document.baseURI).href;
+  } catch {
+    return src;
+  }
+}
+
+function mountedMovieKey(src: string, externalParams: Record<string, string>): string {
+  const params = Object.entries(externalParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key.toLowerCase()}=${value}`)
+    .join('&');
+  return `${normalizeMovieUrl(src)}?${params}`;
+}
+
+function claimMovieMount(src: string, externalParams: Record<string, string>): boolean {
+  const key = mountedMovieKey(src, externalParams);
+  if (mountedDirMovies.has(key)) {
+    return false;
+  }
+  mountedDirMovies.add(key);
+  return true;
+}
+
 function checkDirObject(object: HTMLObjectElement): { isDirObject: boolean; params: Record<string, string | null> } {
   const paramTags = object.getElementsByTagName('param');
   const params: Record<string, string | null> = Array.from(paramTags).reduce((acc, param) => {
@@ -124,6 +151,16 @@ function checkDirObject(object: HTMLObjectElement): { isDirObject: boolean; para
   };
 }
 
+function getDirectorObjectAncestor(element: HTMLElement): HTMLObjectElement | null {
+  const object = element.closest('object');
+  if (!(object instanceof HTMLObjectElement)) {
+    return null;
+  }
+
+  const { isDirObject } = checkDirObject(object);
+  return isDirObject ? object : null;
+}
+
 function renderPlayer(
   config: PolyfillConfig,
   mount: HTMLDivElement,
@@ -135,20 +172,18 @@ function renderPlayer(
 ) {
   const root = ReactDOM.createRoot(mount);
   root.render(
-    <React.StrictMode>
-      <StoreProvider store={store}>
-        <VMProvider systemFontPath={config.systemFontUrl} wasmUrl={config.wasmUrl}>
-          <EmbedPlayer
-            width={width}
-            height={height}
-            src={src}
-            externalParams={externalParams}
-            requireClickToPlay={config.requireClickToPlay}
-            enableGestures={enableGestures}
-          />
-        </VMProvider>
-      </StoreProvider>
-    </React.StrictMode>
+    <StoreProvider store={store}>
+      <VMProvider systemFontPath={config.systemFontUrl} wasmUrl={config.wasmUrl}>
+        <EmbedPlayer
+          width={width}
+          height={height}
+          src={src}
+          externalParams={externalParams}
+          requireClickToPlay={config.requireClickToPlay}
+          enableGestures={enableGestures}
+        />
+      </VMProvider>
+    </StoreProvider>
   );
 }
 
@@ -182,6 +217,17 @@ function resolveReplacementSize(element: HTMLElement): { width: string; height: 
 }
 
 function replaceDirEmbed(config: PolyfillConfig, element: HTMLEmbedElement) {
+  if (processedDirElements.has(element)) {
+    return;
+  }
+
+  const objectElement = getDirectorObjectAncestor(element);
+  if (objectElement && !processedDirElements.has(objectElement)) {
+    const { params } = checkDirObject(objectElement);
+    replaceDirObject(config, objectElement, params);
+    return;
+  }
+
   let { src } = element;
   if (!src) {
     src = element.getAttribute('data-src') || '';
@@ -189,10 +235,17 @@ function replaceDirEmbed(config: PolyfillConfig, element: HTMLEmbedElement) {
   const externalParams: Record<string, string> = parseEmbedExternalParams(element);
   Object.assign(externalParams, parseDataExternalParams(element));
 
+  if (!claimMovieMount(src, externalParams)) {
+    processedDirElements.add(element);
+    element.remove();
+    return;
+  }
+
   const enableGestures = element.hasAttribute('data-enable-gestures')
     || (element.parentElement?.tagName === 'OBJECT' && element.parentElement.hasAttribute('data-enable-gestures'))
     || undefined;
 
+  processedDirElements.add(element);
   let size = resolveReplacementSize(element);
   const newElement = document.createElement('div');
   if (element.parentElement && element.parentElement.tagName === 'OBJECT') {
@@ -207,6 +260,10 @@ function replaceDirEmbed(config: PolyfillConfig, element: HTMLEmbedElement) {
 }
 
 function replaceDirObject(config: PolyfillConfig, element: HTMLObjectElement, params: Record<string, string | null>) {
+  if (processedDirElements.has(element)) {
+    return;
+  }
+
   const src = getCaseInsensitiveValue(params, 'src');
   if (!src) {
     console.error('No src attribute found on object element', element);
@@ -216,9 +273,20 @@ function replaceDirObject(config: PolyfillConfig, element: HTMLObjectElement, pa
   const externalParams: Record<string, string> = parseObjectExternalParams(params);
   Object.assign(externalParams, parseDataExternalParams(element));
 
+  if (!claimMovieMount(src, externalParams)) {
+    processedDirElements.add(element);
+    element.remove();
+    return;
+  }
+
   const enableGestures = element.hasAttribute('data-enable-gestures')
     || getCaseInsensitiveValue(params, 'enableGestures') === 'true'
     || undefined;
+
+  processedDirElements.add(element);
+  for (const embed of Array.from(element.getElementsByTagName('embed'))) {
+    processedDirElements.add(embed);
+  }
 
   const newElement = document.createElement('div');
   element.replaceWith(newElement);
@@ -267,7 +335,7 @@ function replaceDirPlayerElements(config: PolyfillConfig) {
 
   const embeds = document.getElementsByTagName('embed');
   for (const embed of Array.from(embeds)) {
-    if (checkDirEmbed(embed)) {
+    if (!getDirectorObjectAncestor(embed) && checkDirEmbed(embed)) {
       replaceDirEmbed(config, embed);
     }
   }
@@ -296,11 +364,6 @@ function stealEmbedSrc(embed: HTMLEmbedElement) {
 
 function handleAddedNode(config: PolyfillConfig, node: Node) {
   if (!(node instanceof HTMLElement)) return;
-  if (node.tagName === 'EMBED' && checkDirEmbed(node as HTMLEmbedElement)) {
-    stealEmbedSrc(node as HTMLEmbedElement);
-    replaceDirEmbed(config, node as HTMLEmbedElement);
-    return;
-  }
   if (node.tagName === 'OBJECT') {
     const { isDirObject, params } = checkDirObject(node as HTMLObjectElement);
     if (isDirObject) {
@@ -308,17 +371,29 @@ function handleAddedNode(config: PolyfillConfig, node: Node) {
       return;
     }
   }
-  // Node is a container — scan its descendants for embeds/objects
-  for (const embed of Array.from(node.getElementsByTagName('embed'))) {
-    if (checkDirEmbed(embed as HTMLEmbedElement)) {
-      stealEmbedSrc(embed as HTMLEmbedElement);
-      replaceDirEmbed(config, embed as HTMLEmbedElement);
+  if (node.tagName === 'EMBED' && checkDirEmbed(node as HTMLEmbedElement)) {
+    const objectElement = getDirectorObjectAncestor(node);
+    if (objectElement) {
+      const { params } = checkDirObject(objectElement);
+      replaceDirObject(config, objectElement, params);
+    } else {
+      stealEmbedSrc(node as HTMLEmbedElement);
+      replaceDirEmbed(config, node as HTMLEmbedElement);
     }
+    return;
   }
+
+  // Node is a container; handle OBJECT wrappers before their fallback EMBEDs.
   for (const object of Array.from(node.getElementsByTagName('object'))) {
     const { isDirObject, params } = checkDirObject(object as HTMLObjectElement);
     if (isDirObject) {
       replaceDirObject(config, object as HTMLObjectElement, params);
+    }
+  }
+  for (const embed of Array.from(node.getElementsByTagName('embed'))) {
+    if (!getDirectorObjectAncestor(embed) && checkDirEmbed(embed as HTMLEmbedElement)) {
+      stealEmbedSrc(embed as HTMLEmbedElement);
+      replaceDirEmbed(config, embed as HTMLEmbedElement);
     }
   }
 }

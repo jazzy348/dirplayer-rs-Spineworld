@@ -1,10 +1,10 @@
-use std::collections::VecDeque;
 use fxhash::FxHashMap;
+use std::collections::VecDeque;
 use xml::reader::{EventReader, XmlEvent};
 
 use crate::{
     director::lingo::datum::{Datum, DatumType},
-    player::{reserve_player_mut, DatumRef, ScriptError},
+    player::{DatumRef, ScriptError, reserve_player_mut},
 };
 
 /// Represents a parsed XML node
@@ -53,7 +53,9 @@ impl XmlParserXtraInstance {
 
         for event in parser {
             match event {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                Ok(XmlEvent::StartElement {
+                    name, attributes, ..
+                }) => {
                     let node = XmlNode {
                         name: name.local_name,
                         attributes: attributes
@@ -131,9 +133,11 @@ impl XmlParserXtraInstance {
             }
             let attributes_value = player.alloc_datum(Datum::PropList(attr_pairs, false));
             let attr_name_key = player.alloc_datum(Datum::Symbol("attributeName".to_string()));
-            let attr_name_value = player.alloc_datum(Datum::List(DatumType::List, attr_name_refs, false));
+            let attr_name_value =
+                player.alloc_datum(Datum::List(DatumType::List, attr_name_refs, false));
             let attr_value_key = player.alloc_datum(Datum::Symbol("attributeValue".to_string()));
-            let attr_value_value = player.alloc_datum(Datum::List(DatumType::List, attr_value_refs, false));
+            let attr_value_value =
+                player.alloc_datum(Datum::List(DatumType::List, attr_value_refs, false));
 
             // Create #child list and collect #charData
             let child_key = player.alloc_datum(Datum::Symbol("child".to_string()));
@@ -201,9 +205,11 @@ impl XmlParserXtraInstance {
         }
         let attributes_value = player.alloc_datum(Datum::PropList(attr_pairs, false));
         let attr_name_key = player.alloc_datum(Datum::Symbol("attributeName".to_string()));
-        let attr_name_value = player.alloc_datum(Datum::List(DatumType::List, attr_name_refs, false));
+        let attr_name_value =
+            player.alloc_datum(Datum::List(DatumType::List, attr_name_refs, false));
         let attr_value_key = player.alloc_datum(Datum::Symbol("attributeValue".to_string()));
-        let attr_value_value = player.alloc_datum(Datum::List(DatumType::List, attr_value_refs, false));
+        let attr_value_value =
+            player.alloc_datum(Datum::List(DatumType::List, attr_value_refs, false));
 
         // Create #child list and collect #charData
         let child_key = player.alloc_datum(Datum::Symbol("child".to_string()));
@@ -226,8 +232,7 @@ impl XmlParserXtraInstance {
             }
         }
 
-        let children_value =
-            player.alloc_datum(Datum::List(DatumType::List, children_refs, false));
+        let children_value = player.alloc_datum(Datum::List(DatumType::List, children_refs, false));
 
         let chardata_key = player.alloc_datum(Datum::Symbol("charData".to_string()));
         let chardata_value = player.alloc_datum(Datum::String(char_data));
@@ -257,10 +262,7 @@ impl XmlParserXtraInstance {
     }
 
     /// Convert a text node to a prop list with empty name
-    fn text_node_to_prop_list_inner(
-        player: &mut crate::player::DirPlayer,
-        text: &str,
-    ) -> DatumRef {
+    fn text_node_to_prop_list_inner(player: &mut crate::player::DirPlayer, text: &str) -> DatumRef {
         let name_key = player.alloc_datum(Datum::Symbol("name".to_string()));
         let name_value = player.alloc_datum(Datum::String(String::new()));
 
@@ -274,8 +276,7 @@ impl XmlParserXtraInstance {
         let text_value = player.alloc_datum(Datum::String(text.to_string()));
 
         let child_key = player.alloc_datum(Datum::Symbol("child".to_string()));
-        let child_value =
-            player.alloc_datum(Datum::List(DatumType::List, VecDeque::new(), false));
+        let child_value = player.alloc_datum(Datum::List(DatumType::List, VecDeque::new(), false));
 
         let prop_list = Datum::PropList(
             VecDeque::from(vec![
@@ -292,9 +293,7 @@ impl XmlParserXtraInstance {
     }
 
     fn text_node_to_prop_list(text: &str) -> Result<DatumRef, ScriptError> {
-        reserve_player_mut(|player| {
-            Ok(Self::text_node_to_prop_list_inner(player, text))
-        })
+        reserve_player_mut(|player| Ok(Self::text_node_to_prop_list_inner(player, text)))
     }
 }
 
@@ -363,9 +362,9 @@ impl XmlParserXtraManager {
             }
             "geterror" => {
                 if let Some(ref error) = instance.error {
-                    reserve_player_mut(|player| {
-                        Ok(player.alloc_datum(Datum::String(error.clone())))
-                    })
+                    reserve_player_mut(
+                        |player| Ok(player.alloc_datum(Datum::String(error.clone()))),
+                    )
                 } else {
                     Ok(DatumRef::Void)
                 }
@@ -373,9 +372,7 @@ impl XmlParserXtraManager {
             "ignorewhitespace" => {
                 let ignore = crate::player::reserve_player_ref(|player| {
                     let arg = args.get(0).ok_or_else(|| {
-                        ScriptError::new(
-                            "ignoreWhiteSpace requires a boolean argument".to_string(),
-                        )
+                        ScriptError::new("ignoreWhiteSpace requires a boolean argument".to_string())
                     })?;
                     player.get_datum(arg).bool_value()
                 })?;
@@ -460,8 +457,7 @@ impl XmlParserXtraManager {
                     let idx = (index - 1) as usize;
                     if idx < root.attributes.len() {
                         reserve_player_mut(|player| {
-                            Ok(player
-                                .alloc_datum(Datum::String(root.attributes[idx].0.clone())))
+                            Ok(player.alloc_datum(Datum::String(root.attributes[idx].0.clone())))
                         })
                     } else {
                         Ok(DatumRef::Void)
@@ -489,9 +485,8 @@ impl XmlParserXtraManager {
                         let idx = (index - 1) as usize;
                         if idx < root.attributes.len() {
                             reserve_player_mut(|player| {
-                                Ok(player.alloc_datum(Datum::String(
-                                    root.attributes[idx].1.clone(),
-                                )))
+                                Ok(player
+                                    .alloc_datum(Datum::String(root.attributes[idx].1.clone())))
                             })
                         } else {
                             Ok(DatumRef::Void)
@@ -542,8 +537,7 @@ impl XmlParserXtraManager {
                             if idx < root.attributes.len() {
                                 reserve_player_mut(|player| {
                                     let (name, value) = &root.attributes[idx];
-                                    let name_ref =
-                                        player.alloc_datum(Datum::String(name.clone()));
+                                    let name_ref = player.alloc_datum(Datum::String(name.clone()));
                                     let value_ref =
                                         player.alloc_datum(Datum::String(value.clone()));
                                     Ok(player.alloc_datum(Datum::List(
@@ -570,9 +564,7 @@ impl XmlParserXtraManager {
     }
 }
 
-pub fn borrow_xmlparser_manager_mut<T>(
-    callback: impl FnOnce(&mut XmlParserXtraManager) -> T,
-) -> T {
+pub fn borrow_xmlparser_manager_mut<T>(callback: impl FnOnce(&mut XmlParserXtraManager) -> T) -> T {
     let manager = unsafe { XMLPARSER_XTRA_MANAGER_OPT.as_mut().unwrap() };
     callback(manager)
 }
@@ -636,7 +628,9 @@ pub fn dedup_duplicate_attributes(xml: &str) -> String {
         while j < bytes.len() {
             let ch = bytes[j];
             if let Some(q) = in_quote {
-                if ch == q { in_quote = None; }
+                if ch == q {
+                    in_quote = None;
+                }
             } else if ch == b'"' || ch == b'\'' {
                 in_quote = Some(ch);
             } else if ch == b'>' {
@@ -661,68 +655,105 @@ pub fn dedup_duplicate_attributes(xml: &str) -> String {
 /// keeping only the last occurrence of each attribute name.
 fn rewrite_tag_dedup(tag: &str) -> String {
     // Fast path: tags without `=` have no attributes.
-    if !tag.contains('=') { return tag.to_string(); }
+    if !tag.contains('=') {
+        return tag.to_string();
+    }
 
     let bytes = tag.as_bytes();
     // Find end of element name: after `<` (or `</`), up to whitespace or `/`/`>`.
     let mut p = 1; // skip `<`
-    if p < bytes.len() && bytes[p] == b'/' { p += 1; } // `</…>`
+    if p < bytes.len() && bytes[p] == b'/' {
+        p += 1;
+    } // `</…>`
     let name_start = p;
     while p < bytes.len() {
         let ch = bytes[p];
-        if ch.is_ascii_whitespace() || ch == b'/' || ch == b'>' { break; }
+        if ch.is_ascii_whitespace() || ch == b'/' || ch == b'>' {
+            break;
+        }
         p += 1;
     }
     let name_end = p;
-    if name_start == name_end { return tag.to_string(); }
+    if name_start == name_end {
+        return tag.to_string();
+    }
 
     // Parse attributes: (name, value, with_quotes_string) tuples, in order.
     #[derive(Default)]
-    struct Attr { name: String, raw: String }
+    struct Attr {
+        name: String,
+        raw: String,
+    }
     let mut attrs: Vec<Attr> = Vec::new();
 
     let mut q = p;
     while q < bytes.len() {
         // Skip whitespace.
-        while q < bytes.len() && bytes[q].is_ascii_whitespace() { q += 1; }
+        while q < bytes.len() && bytes[q].is_ascii_whitespace() {
+            q += 1;
+        }
         // End of tag?
-        if q >= bytes.len() || bytes[q] == b'/' || bytes[q] == b'>' { break; }
+        if q >= bytes.len() || bytes[q] == b'/' || bytes[q] == b'>' {
+            break;
+        }
         // Read attribute name.
         let a_name_start = q;
         while q < bytes.len() {
             let ch = bytes[q];
-            if ch.is_ascii_whitespace() || ch == b'=' || ch == b'/' || ch == b'>' { break; }
+            if ch.is_ascii_whitespace() || ch == b'=' || ch == b'/' || ch == b'>' {
+                break;
+            }
             q += 1;
         }
         let a_name_end = q;
-        if a_name_start == a_name_end { break; }
+        if a_name_start == a_name_end {
+            break;
+        }
         let a_name = &tag[a_name_start..a_name_end];
         // Skip whitespace + `=` + whitespace.
-        while q < bytes.len() && bytes[q].is_ascii_whitespace() { q += 1; }
+        while q < bytes.len() && bytes[q].is_ascii_whitespace() {
+            q += 1;
+        }
         if q >= bytes.len() || bytes[q] != b'=' {
             // Valueless attribute (rare in Director) — keep as-is.
-            attrs.push(Attr { name: a_name.to_string(), raw: a_name.to_string() });
+            attrs.push(Attr {
+                name: a_name.to_string(),
+                raw: a_name.to_string(),
+            });
             continue;
         }
         q += 1;
-        while q < bytes.len() && bytes[q].is_ascii_whitespace() { q += 1; }
-        if q >= bytes.len() { break; }
+        while q < bytes.len() && bytes[q].is_ascii_whitespace() {
+            q += 1;
+        }
+        if q >= bytes.len() {
+            break;
+        }
         // Read quoted or unquoted value.
         let v_start = q;
         let quote = bytes[q];
         if quote == b'"' || quote == b'\'' {
             q += 1;
-            while q < bytes.len() && bytes[q] != quote { q += 1; }
-            if q < bytes.len() { q += 1; } // consume closing quote
+            while q < bytes.len() && bytes[q] != quote {
+                q += 1;
+            }
+            if q < bytes.len() {
+                q += 1;
+            } // consume closing quote
         } else {
             while q < bytes.len() {
                 let ch = bytes[q];
-                if ch.is_ascii_whitespace() || ch == b'/' || ch == b'>' { break; }
+                if ch.is_ascii_whitespace() || ch == b'/' || ch == b'>' {
+                    break;
+                }
                 q += 1;
             }
         }
         let raw = format!("{}={}", a_name, &tag[v_start..q]);
-        attrs.push(Attr { name: a_name.to_string(), raw });
+        attrs.push(Attr {
+            name: a_name.to_string(),
+            raw,
+        });
     }
 
     // Deduplicate: keep only the LAST occurrence of each name.
@@ -738,12 +769,18 @@ fn rewrite_tag_dedup(tag: &str) -> String {
     let suffix = {
         // Trailing `/` or just `>`.
         let end = bytes.len() - 1; // index of `>`
-        if end > 0 && bytes[end - 1] == b'/' { "/>" } else { ">" }
+        if end > 0 && bytes[end - 1] == b'/' {
+            "/>"
+        } else {
+            ">"
+        }
     };
     let mut rebuilt = String::with_capacity(tag.len());
     rebuilt.push_str(&tag[0..name_end]);
     for (idx, attr) in attrs.iter().enumerate() {
-        if !keep[idx] { continue; }
+        if !keep[idx] {
+            continue;
+        }
         rebuilt.push(' ');
         rebuilt.push_str(&attr.raw);
     }

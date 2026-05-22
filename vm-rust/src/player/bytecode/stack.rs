@@ -1,14 +1,16 @@
-use std::collections::VecDeque;
 use crate::{
     director::lingo::datum::{Datum, DatumType},
     player::{
+        DatumRef, HandlerExecutionResult, PLAYER_OPT, ScriptError,
         context_vars::player_get_context_var,
         handlers::datum_handlers::script::ScriptDatumHandlers,
         reserve_player_mut,
-        script::{get_current_handler_def, get_current_script, get_current_variable_multiplier, get_name},
-        DatumRef, HandlerExecutionResult, ScriptError, PLAYER_OPT,
+        script::{
+            get_current_handler_def, get_current_script, get_current_variable_multiplier, get_name,
+        },
     },
 };
+use std::collections::VecDeque;
 
 use super::handler_manager::BytecodeHandlerContext;
 
@@ -28,11 +30,11 @@ impl StackBytecodeHandler {
     pub fn push_f32(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
             let obj_value = player.get_ctx_current_bytecode(ctx).obj as u32;
-            
+
             // Interpret the 32 bits as f32, THEN convert to f64
             let float_f32 = f32::from_bits(obj_value);
             let float_f64 = float_f32 as f64;
-            
+
             let datum_ref = player.alloc_datum(Datum::Float(float_f64));
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
             scope.stack.push(datum_ref);
@@ -93,7 +95,9 @@ impl StackBytecodeHandler {
         Ok(HandlerExecutionResult::Advance)
     }
 
-    pub fn push_var_ref(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
+    pub fn push_var_ref(
+        ctx: &BytecodeHandlerContext,
+    ) -> Result<HandlerExecutionResult, ScriptError> {
         let player = unsafe { PLAYER_OPT.as_mut().unwrap() };
         let name_id = player.get_ctx_current_bytecode(ctx).obj;
         let symbol_name = get_name(&player, &ctx, name_id as u16).unwrap();
@@ -216,7 +220,11 @@ impl StackBytecodeHandler {
                     let handler = get_current_handler_def(player, ctx);
                     let name_id = handler.local_name_ids[id as usize];
                     let scope = player.scopes.get(ctx.scope_ref).unwrap();
-                    scope.locals.get(&name_id).cloned().unwrap_or(DatumRef::Void)
+                    scope
+                        .locals
+                        .get(&name_id)
+                        .cloned()
+                        .unwrap_or(DatumRef::Void)
                 }
                 _ => {
                     // For other var types (field etc.), fall back to the standard path
@@ -226,13 +234,7 @@ impl StackBytecodeHandler {
                     } else {
                         None
                     };
-                    player_get_context_var(
-                        player,
-                        &id_ref,
-                        cast_id_ref.as_ref(),
-                        var_type,
-                        ctx,
-                    )?
+                    player_get_context_var(player, &id_ref, cast_id_ref.as_ref(), var_type, ctx)?
                 }
             };
 
@@ -266,7 +268,8 @@ impl StackBytecodeHandler {
                     if let Some(script_ref) = player
                         .movie
                         .cast_manager
-                        .find_member_ref_by_name(&script_name) {
+                        .find_member_ref_by_name(&script_name)
+                    {
                         player.alloc_datum(Datum::ScriptRef(script_ref))
                     } else {
                         return Err(ScriptError::new(format!(
@@ -280,8 +283,9 @@ impl StackBytecodeHandler {
                 }
                 _ => {
                     return Err(ScriptError::new(
-                        "First argument to new script must be script name or CastMember".to_string(),
-                    ))
+                        "First argument to new script must be script name or CastMember"
+                            .to_string(),
+                    ));
                 }
             };
 

@@ -61,7 +61,7 @@ pub struct MeshState {
 
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    pub tex_coords: Vec<Vec<[f32; 2]>>,    // one vec per texcoord layer
+    pub tex_coords: Vec<Vec<[f32; 2]>>, // one vec per texcoord layer
     pub bone_indices: Vec<Vec<u32>>,
     pub bone_weights: Vec<Vec<f32>>,
     pub faces: Vec<[u32; 3]>,

@@ -2,9 +2,10 @@ use std::collections::VecDeque;
 
 use crate::{
     director::lingo::datum::{
-        datum_bool, Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType,
+        Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool,
     },
     player::{
+        DatumRef, DirPlayer, ScriptError,
         bitmap::bitmap,
         bitmap::bitmap::{Bitmap, BuiltInPalette, PaletteRef},
         bitmap::drawing::CopyPixelsParams,
@@ -12,19 +13,19 @@ use crate::{
         bitmap::palette_map::PaletteMap,
         cast_lib::CastMemberRef,
         font::{
-            bitmap_font_copy_char_scaled, get_text_index_at_pos, measure_text, BitmapFont, DrawTextParams,
+            BitmapFont, DrawTextParams, bitmap_font_copy_char_scaled, get_text_index_at_pos,
+            measure_text,
         },
         handlers::datum_handlers::{
             cast_member_ref::borrow_member_mut, string_chunk::StringChunkUtils,
         },
-        DatumRef, DirPlayer, ScriptError,
     },
 };
 
-use crate::player::cast_member::CastMemberType;
 use crate::player::ColorRef;
-use std::borrow::Borrow;
+use crate::player::cast_member::CastMemberType;
 use log::debug;
+use std::borrow::Borrow;
 use wasm_bindgen::JsCast;
 
 // Simple HTML parser without external dependencies
@@ -37,8 +38,8 @@ pub struct HtmlStyle {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
-    pub kerning: i32,       // Kerning amount (from XMED Section 7 dword98, stored as fixed-point * 65536)
-    pub char_spacing: i32,  // Character spacing in pixels (from XMED Section 7 dword9C, stored as fixed-point * 65536)
+    pub kerning: i32, // Kerning amount (from XMED Section 7 dword98, stored as fixed-point * 65536)
+    pub char_spacing: i32, // Character spacing in pixels (from XMED Section 7 dword9C, stored as fixed-point * 65536)
 }
 
 impl Default for HtmlStyle {
@@ -148,7 +149,11 @@ impl HtmlParser {
                     if tag.starts_with('/') {
                         let closing_tag = tag_lower[1..].split_whitespace().next().unwrap_or("");
                         // Check if closing a non-content tag
-                        if closing_tag == "head" || closing_tag == "title" || closing_tag == "script" || closing_tag == "style" {
+                        if closing_tag == "head"
+                            || closing_tag == "title"
+                            || closing_tag == "script"
+                            || closing_tag == "style"
+                        {
                             if skip_content_depth > 0 {
                                 skip_content_depth -= 1;
                             }
@@ -160,11 +165,18 @@ impl HtmlParser {
                         let mut new_style = style_stack.last().unwrap().clone();
 
                         // Get the tag name, handling self-closing tags like <br/> or <br />
-                        let tag_name = tag_lower.split_whitespace().next().unwrap_or("")
+                        let tag_name = tag_lower
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
                             .trim_end_matches('/');
 
                         // Check if entering a non-content tag
-                        if tag_name == "head" || tag_name == "title" || tag_name == "script" || tag_name == "style" {
+                        if tag_name == "head"
+                            || tag_name == "title"
+                            || tag_name == "script"
+                            || tag_name == "style"
+                        {
                             skip_content_depth += 1;
                         } else if skip_content_depth == 0 {
                             // Only process content tags when not inside non-content section
@@ -196,7 +208,8 @@ impl HtmlParser {
                                 "p" => {
                                     // Handle paragraph tag - may have align attribute
                                     // Add newline before paragraph if not at start
-                                    if !spans.is_empty() && !spans.last().unwrap().text.ends_with('\n')
+                                    if !spans.is_empty()
+                                        && !spans.last().unwrap().text.ends_with('\n')
                                     {
                                         spans.push(StyledSpan {
                                             text: "\n".to_string(),
@@ -205,7 +218,8 @@ impl HtmlParser {
                                     }
                                 }
                                 "center" => {
-                                    if !spans.is_empty() && !spans.last().unwrap().text.ends_with('\n')
+                                    if !spans.is_empty()
+                                        && !spans.last().unwrap().text.ends_with('\n')
                                     {
                                         spans.push(StyledSpan {
                                             text: "\n".to_string(),
@@ -441,8 +455,15 @@ impl FontMemberHandlers {
         fixed_line_space: u16,
     ) -> (u16, u16) {
         Self::measure_text_native_styled(
-            text, font_name, font_size, None,
-            word_wrap, max_width, top_spacing, bottom_spacing, fixed_line_space,
+            text,
+            font_name,
+            font_size,
+            None,
+            word_wrap,
+            max_width,
+            top_spacing,
+            bottom_spacing,
+            fixed_line_space,
         )
     }
 
@@ -476,11 +497,7 @@ impl FontMemberHandlers {
         };
         canvas.set_width(1);
         canvas.set_height(1);
-        let ctx: web_sys::CanvasRenderingContext2d = match canvas
-            .get_context("2d")
-            .ok()
-            .flatten()
-        {
+        let ctx: web_sys::CanvasRenderingContext2d = match canvas.get_context("2d").ok().flatten() {
             Some(c) => match c.dyn_into() {
                 Ok(ctx) => ctx,
                 Err(_) => return (100, font_size.max(12)),
@@ -490,8 +507,12 @@ impl FontMemberHandlers {
 
         let mut parts: Vec<String> = Vec::new();
         if let Some(s) = font_style {
-            if s & 0x02 != 0 { parts.push("italic".to_string()); }
-            if s & 0x01 != 0 { parts.push("bold".to_string()); }
+            if s & 0x02 != 0 {
+                parts.push("italic".to_string());
+            }
+            if s & 0x01 != 0 {
+                parts.push("bold".to_string());
+            }
         }
         parts.push(format!("{}px", font_size));
         parts.push(font_name.to_string());
@@ -528,7 +549,10 @@ impl FontMemberHandlers {
                     } else {
                         format!("{} {}", current, word)
                     };
-                    let w = ctx.measure_text(&candidate).map(|m| m.width()).unwrap_or(0.0);
+                    let w = ctx
+                        .measure_text(&candidate)
+                        .map(|m| m.width())
+                        .unwrap_or(0.0);
                     if w > wrap_width && !current.is_empty() {
                         let line_w = ctx.measure_text(&current).map(|m| m.width()).unwrap_or(0.0);
                         total_width = total_width.max(line_w);
@@ -557,7 +581,10 @@ impl FontMemberHandlers {
             top_spacing.max(0) as f64 + line_height + (line_count as f64 - 1.0) * line_step
         };
 
-        (total_width.ceil().max(1.0) as u16, total_height.ceil().max(1.0) as u16)
+        (
+            total_width.ceil().max(1.0) as u16,
+            total_height.ceil().max(1.0) as u16,
+        )
     }
 
     /// Render styled text using browser's native Canvas2D fillText() for smooth, anti-aliased text
@@ -591,9 +618,23 @@ impl FontMemberHandlers {
         par_runs: &[crate::director::chunks::xmedia_styled_text::ParRun],
     ) -> Result<(), ScriptError> {
         Self::render_native_text_to_bitmap_with_caret(
-            bitmap, spans, start_x, start_y, render_width, render_height,
-            alignment, max_width, word_wrap, sprite_color, fixed_line_space,
-            top_spacing, bottom_spacing, tab_stops, par_infos, par_runs, None,
+            bitmap,
+            spans,
+            start_x,
+            start_y,
+            render_width,
+            render_height,
+            alignment,
+            max_width,
+            word_wrap,
+            sprite_color,
+            fixed_line_space,
+            top_spacing,
+            bottom_spacing,
+            tab_stops,
+            par_infos,
+            par_runs,
+            None,
         )
     }
 
@@ -655,7 +696,12 @@ impl FontMemberHandlers {
         // This avoids color-dependent anti-aliasing artifacts from Canvas2D.
         // Coverage is then mapped to the bitmap as: black text on white background.
         ctx.set_fill_style_str("rgb(0,0,0)");
-        ctx.fill_rect(0.0, 0.0, render_width.max(1) as f64, render_height.max(1) as f64);
+        ctx.fill_rect(
+            0.0,
+            0.0,
+            render_width.max(1) as f64,
+            render_height.max(1) as f64,
+        );
 
         // Set text baseline to top for consistent positioning
         ctx.set_text_baseline("top");
@@ -725,7 +771,11 @@ impl FontMemberHandlers {
             font_parts.push(font_face);
 
             let color = if let Some(c) = style.color {
-                (((c >> 16) & 0xFF) as u8, ((c >> 8) & 0xFF) as u8, (c & 0xFF) as u8)
+                (
+                    ((c >> 16) & 0xFF) as u8,
+                    ((c >> 8) & 0xFF) as u8,
+                    (c & 0xFF) as u8,
+                )
             } else {
                 fallback_color
             };
@@ -914,7 +964,6 @@ impl FontMemberHandlers {
         if !current_line.segments.is_empty() || lines.is_empty() {
             lines.push(current_line);
         }
-
 
         // Map a text-character position to its par_info index via par_runs.
         // Returns None when no par_info data is available so callers can
@@ -1127,11 +1176,22 @@ impl FontMemberHandlers {
                     }
                 }
             }
-            let text_preview = spans.first().map(|s| &s.text[..s.text.len().min(5)]).unwrap_or("?");
+            let text_preview = spans
+                .first()
+                .map(|s| &s.text[..s.text.len().min(5)])
+                .unwrap_or("?");
             debug!(
                 "[canvas-debug] text='{}' canvas={}x{} nonblack={}/{} first={}",
-                text_preview, canvas_width, canvas_height, nonblack, total_px,
-                if first_nb.is_empty() { "NONE".to_string() } else { first_nb }
+                text_preview,
+                canvas_width,
+                canvas_height,
+                nonblack,
+                total_px,
+                if first_nb.is_empty() {
+                    "NONE".to_string()
+                } else {
+                    first_nb
+                }
             );
         }
 
@@ -1172,16 +1232,30 @@ impl FontMemberHandlers {
 
                 // Only write pixels where text was actually rendered (coverage > 0).
                 // Background pixels stay at the bitmap's pre-fill (transparent for text.image).
-                if coverage == 0 { continue; }
+                if coverage == 0 {
+                    continue;
+                }
 
                 // Write foreColor with coverage-based alpha.
                 // This produces: text pixels = foreColor at full/partial alpha,
                 // background = transparent (preserved from bitmap pre-fill).
                 let dest_idx = (dest_y as usize * bitmap.width as usize + dest_x as usize) * 4;
                 if dest_idx + 3 < bitmap.data.len() {
-                    let fg_r = spans.first().and_then(|s| s.style.color).map(|c| ((c >> 16) & 0xFF) as u8).unwrap_or(0);
-                    let fg_g = spans.first().and_then(|s| s.style.color).map(|c| ((c >> 8) & 0xFF) as u8).unwrap_or(0);
-                    let fg_b = spans.first().and_then(|s| s.style.color).map(|c| (c & 0xFF) as u8).unwrap_or(0);
+                    let fg_r = spans
+                        .first()
+                        .and_then(|s| s.style.color)
+                        .map(|c| ((c >> 16) & 0xFF) as u8)
+                        .unwrap_or(0);
+                    let fg_g = spans
+                        .first()
+                        .and_then(|s| s.style.color)
+                        .map(|c| ((c >> 8) & 0xFF) as u8)
+                        .unwrap_or(0);
+                    let fg_b = spans
+                        .first()
+                        .and_then(|s| s.style.color)
+                        .map(|c| (c & 0xFF) as u8)
+                        .unwrap_or(0);
                     bitmap.data[dest_idx] = fg_r;
                     bitmap.data[dest_idx + 1] = fg_g;
                     bitmap.data[dest_idx + 2] = fg_b;
@@ -1210,25 +1284,40 @@ impl FontMemberHandlers {
                 let x_start = match alignment {
                     TextAlignment::Left => 0.0,
                     TextAlignment::Center => {
-                        if max_width > 0 { ((max_width as f64) - line.width) / 2.0 } else { 0.0 }
+                        if max_width > 0 {
+                            ((max_width as f64) - line.width) / 2.0
+                        } else {
+                            0.0
+                        }
                     }
                     TextAlignment::Right => {
-                        if max_width > 0 { (max_width as f64) - line.width } else { 0.0 }
+                        if max_width > 0 {
+                            (max_width as f64) - line.width
+                        } else {
+                            0.0
+                        }
                     }
                     TextAlignment::Justify => 0.0,
-                }.max(0.0);
+                }
+                .max(0.0);
                 let line_byte_start = line.segments.first().map(|s| s.start_byte).unwrap_or(0);
-                let line_byte_end = line.segments.last()
+                let line_byte_end = line
+                    .segments
+                    .last()
                     .map(|s| s.start_byte + s.text.len())
                     .unwrap_or(line_byte_start);
 
                 // Resolve a byte offset within this line to a pixel x by walking
                 // segments and using Canvas2D measureText for the prefix inside
                 // the segment that contains the offset.
-                let pixel_x_for_byte = |byte: usize, ctx: &web_sys::CanvasRenderingContext2d| -> f64 {
+                let pixel_x_for_byte = |byte: usize,
+                                        ctx: &web_sys::CanvasRenderingContext2d|
+                 -> f64 {
                     let mut x = x_start;
                     for segment in &line.segments {
-                        if segment.is_tab { continue; }
+                        if segment.is_tab {
+                            continue;
+                        }
                         let seg_end = segment.start_byte + segment.text.len();
                         if byte <= segment.start_byte {
                             return x;
@@ -1243,12 +1332,12 @@ impl FontMemberHandlers {
                         // and a raw slice would panic. Rounding DOWN
                         // means the prefix excludes a half-finished char.
                         let mut clamped = inner.min(segment.text.len());
-                        while clamped > 0 && !segment.text.is_char_boundary(clamped) { clamped -= 1; }
+                        while clamped > 0 && !segment.text.is_char_boundary(clamped) {
+                            clamped -= 1;
+                        }
                         let prefix = &segment.text[..clamped];
                         ctx.set_font(&segment.style.font);
-                        let prefix_w = ctx.measure_text(prefix)
-                            .map(|m| m.width())
-                            .unwrap_or(0.0);
+                        let prefix_w = ctx.measure_text(prefix).map(|m| m.width()).unwrap_or(0.0);
                         return x + prefix_w;
                     }
                     x
@@ -1266,12 +1355,13 @@ impl FontMemberHandlers {
                         // Selection wraps to next line — show the trailing space.
                         x1 = x0 + line.max_font_px.max(8.0) * 0.4;
                     }
-                    if x1 <= x0 { continue; }
+                    if x1 <= x0 {
+                        continue;
+                    }
                     let left = (start_x + (x0).round() as i32).max(0);
                     let right = (start_x + (x1).round() as i32).max(0);
                     let top = (start_y + line_top_y.round() as i32).max(0);
-                    let bottom = (top + line_h.round() as i32)
-                        .min(bitmap.height as i32);
+                    let bottom = (top + line_h.round() as i32).min(bitmap.height as i32);
                     let right = right.min(bitmap.width as i32);
                     let left = left.min(right);
                     // Composite the selection BEHIND the already-rasterized
@@ -1287,18 +1377,28 @@ impl FontMemberHandlers {
                     for py in top..bottom {
                         for px in left..right {
                             let idx = ((py as usize) * bitmap.width as usize + px as usize) * 4;
-                            if idx + 3 >= bitmap.data.len() { continue; }
+                            if idx + 3 >= bitmap.data.len() {
+                                continue;
+                            }
                             let a = bitmap.data[idx + 3] as u32;
                             if a == 0 {
-                                bitmap.data[idx]     = selection_color.0;
+                                bitmap.data[idx] = selection_color.0;
                                 bitmap.data[idx + 1] = selection_color.1;
                                 bitmap.data[idx + 2] = selection_color.2;
                                 bitmap.data[idx + 3] = 255;
                             } else if a < 255 {
                                 let inv = 255 - a;
-                                bitmap.data[idx]     = ((bitmap.data[idx]     as u32 * a + selection_color.0 as u32 * inv) / 255) as u8;
-                                bitmap.data[idx + 1] = ((bitmap.data[idx + 1] as u32 * a + selection_color.1 as u32 * inv) / 255) as u8;
-                                bitmap.data[idx + 2] = ((bitmap.data[idx + 2] as u32 * a + selection_color.2 as u32 * inv) / 255) as u8;
+                                bitmap.data[idx] = ((bitmap.data[idx] as u32 * a
+                                    + selection_color.0 as u32 * inv)
+                                    / 255) as u8;
+                                bitmap.data[idx + 1] = ((bitmap.data[idx + 1] as u32 * a
+                                    + selection_color.1 as u32 * inv)
+                                    / 255)
+                                    as u8;
+                                bitmap.data[idx + 2] = ((bitmap.data[idx + 2] as u32 * a
+                                    + selection_color.2 as u32 * inv)
+                                    / 255)
+                                    as u8;
                                 bitmap.data[idx + 3] = 255;
                             }
                         }
@@ -1385,9 +1485,7 @@ impl FontMemberHandlers {
 
         // Get requested font size from style
         // Font size in points approximately equals pixel height at 96 DPI
-        let requested_font_size = first_style
-            .and_then(|s| s.font_size)
-            .unwrap_or(12) as i32; // Default to 12pt if not specified
+        let requested_font_size = first_style.and_then(|s| s.font_size).unwrap_or(12) as i32; // Default to 12pt if not specified
 
         // Scale based on actual character height vs requested pixel height
         // The requested font_size (in points) should map to approximately that many pixels in height
@@ -1401,8 +1499,10 @@ impl FontMemberHandlers {
         debug!(
             "ðŸ“ Font scaling: requested={}pt, native_char={}x{} -> scaled={}x{}",
             requested_font_size,
-            font.char_width, font.char_height,
-            scaled_char_width, scaled_char_height
+            font.char_width,
+            font.char_height,
+            scaled_char_width,
+            scaled_char_height
         );
 
         // Use scaled dimensions for layout
@@ -1441,7 +1541,8 @@ impl FontMemberHandlers {
             }
 
             // Calculate line width using proportional per-character advances
-            let line_width: i32 = line.chars()
+            let line_width: i32 = line
+                .chars()
                 .map(|c| {
                     let advance = font.get_char_advance_for(c) as i32;
                     (advance * requested_font_size) / native_char_height
@@ -1477,7 +1578,9 @@ impl FontMemberHandlers {
                 }
 
                 // Calculate proportional advance for this character
-                let char_advance = ((font.get_char_advance_for(ch) as i32) * requested_font_size / native_char_height).max(1);
+                let char_advance = ((font.get_char_advance_for(ch) as i32) * requested_font_size
+                    / native_char_height)
+                    .max(1);
 
                 // For space character, just advance position without drawing
                 if ch == ' ' {
@@ -1491,17 +1594,31 @@ impl FontMemberHandlers {
 
                 // Draw the character with scaling (use full cell width for source mapping)
                 bitmap_font_copy_char_scaled(
-                    font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                    char_x, y, char_width, char_height,
-                    palettes, &params
+                    font,
+                    font_bitmap,
+                    crate::io::encoding::glyph_byte_for(ch),
+                    bitmap,
+                    char_x,
+                    y,
+                    char_width,
+                    char_height,
+                    palettes,
+                    &params,
                 );
 
                 // Simulate bold by drawing again with 1px offset
                 if is_bold {
                     bitmap_font_copy_char_scaled(
-                        font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                        char_x + 1, y, char_width, char_height,
-                        palettes, &params
+                        font,
+                        font_bitmap,
+                        crate::io::encoding::glyph_byte_for(ch),
+                        bitmap,
+                        char_x + 1,
+                        y,
+                        char_width,
+                        char_height,
+                        palettes,
+                        &params,
                     );
                 }
 
@@ -1511,10 +1628,12 @@ impl FontMemberHandlers {
                     if underline_y < bitmap.height as i32 {
                         for ux in char_x..(char_x + char_advance).min(bitmap.width as i32) {
                             if ux >= 0 {
-                                let idx = (underline_y as usize * bitmap.width as usize + ux as usize) * 4;
+                                let idx = (underline_y as usize * bitmap.width as usize
+                                    + ux as usize)
+                                    * 4;
                                 if idx + 3 < bitmap.data.len() {
                                     // Draw underline pixel (use foreground color)
-                                    bitmap.data[idx] = 0;     // R
+                                    bitmap.data[idx] = 0; // R
                                     bitmap.data[idx + 1] = 0; // G
                                     bitmap.data[idx + 2] = 0; // B
                                     bitmap.data[idx + 3] = 255; // A
@@ -1732,7 +1851,8 @@ impl FontMemberHandlers {
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     bitmap.draw_text(
@@ -1762,10 +1882,7 @@ impl FontMemberHandlers {
             "center" => Ok(TextAlignment::Center),
             "right" => Ok(TextAlignment::Right),
             "justify" => Ok(TextAlignment::Justify),
-            _ => Err(ScriptError::new(format!(
-                "Invalid alignment '{}'",
-                s
-            ))),
+            _ => Err(ScriptError::new(format!("Invalid alignment '{}'", s))),
         }
     }
 
@@ -1845,8 +1962,14 @@ impl FontMemberHandlers {
                             .into(),
                         );
 
-                        let (width, height) =
-                            measure_text(&text_clone, &font, None, fixed_line_space, top_spacing, 0);
+                        let (width, height) = measure_text(
+                            &text_clone,
+                            &font,
+                            None,
+                            fixed_line_space,
+                            top_spacing,
+                            0,
+                        );
 
                         match prop {
                             "rect" => Ok(Datum::Rect([0.0, 0.0, width as f64, height as f64], 0)),
@@ -1902,7 +2025,8 @@ impl FontMemberHandlers {
                                     original_dst_rect: None,
                                     bg_color_explicit: false,
                                     fore_color_explicit: false,
-                                    ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                                    ink9_mask_bitmap: None,
+                                    ink9_mask_offset: (0, 0),
                                 };
 
                                 if let Some(mask) = mask {
@@ -1939,8 +2063,7 @@ impl FontMemberHandlers {
                                 // Text member `.image` rasterizes fresh each
                                 // call; refcount via DatumRef so the snapshot
                                 // is freed when the script's reference drops.
-                                let bitmap_ref =
-                                    player.bitmap_manager.add_ephemeral_bitmap(bitmap);
+                                let bitmap_ref = player.bitmap_manager.add_ephemeral_bitmap(bitmap);
                                 Ok(Datum::BitmapRef(bitmap_ref))
                             }
                             _ => unreachable!(),
@@ -2014,7 +2137,7 @@ impl FontMemberHandlers {
                             return Err(ScriptError::new(format!(
                                 "Cannot set castMember prop '{}' for Font member",
                                 prop
-                            )))
+                            )));
                         }
                     }
                 } else {

@@ -15,12 +15,20 @@ impl<'a> W3dBlockReader<'a> {
     }
 
     pub fn remaining(&self) -> usize {
-        if self.pos >= self.data.len() { 0 } else { self.data.len() - self.pos }
+        if self.pos >= self.data.len() {
+            0
+        } else {
+            self.data.len() - self.pos
+        }
     }
 
     pub fn read_u8(&mut self) -> Result<u8, String> {
         if self.pos >= self.data.len() {
-            return Err(format!("W3dBlockReader: read_u8 at {}, len={}", self.pos, self.data.len()));
+            return Err(format!(
+                "W3dBlockReader: read_u8 at {}, len={}",
+                self.pos,
+                self.data.len()
+            ));
         }
         let v = self.data[self.pos];
         self.pos += 1;
@@ -54,9 +62,17 @@ impl<'a> W3dBlockReader<'a> {
             return Ok(String::new());
         }
         if self.pos + len > self.data.len() {
-            return Err(format!("W3dBlockReader: read_ifx_string len={} at {}, data_len={}", len, self.pos, self.data.len()));
+            return Err(format!(
+                "W3dBlockReader: read_ifx_string len={} at {}, data_len={}",
+                len,
+                self.pos,
+                self.data.len()
+            ));
         }
-        let s: String = self.data[self.pos..self.pos + len].iter().map(|&b| b as char).collect();
+        let s: String = self.data[self.pos..self.pos + len]
+            .iter()
+            .map(|&b| b as char)
+            .collect();
         self.pos += len;
         Ok(s)
     }
@@ -70,7 +86,12 @@ impl<'a> W3dBlockReader<'a> {
     }
 
     pub fn read_vec4(&mut self) -> Result<[f32; 4], String> {
-        Ok([self.read_f32()?, self.read_f32()?, self.read_f32()?, self.read_f32()?])
+        Ok([
+            self.read_f32()?,
+            self.read_f32()?,
+            self.read_f32()?,
+            self.read_f32()?,
+        ])
     }
 
     pub fn read_color_rgba(&mut self) -> Result<[f32; 4], String> {

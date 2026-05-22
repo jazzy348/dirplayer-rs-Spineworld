@@ -1,11 +1,17 @@
-use std::collections::VecDeque;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use num_derive::FromPrimitive;
 
 use crate::player::{
-    DirPlayer, ScriptError, bitmap::{bitmap::PaletteRef, manager::BitmapRef, mask::BitmapMask}, cast_lib::CastMemberRef, cast_member::Media, datum_ref::DatumRef, script_ref::ScriptInstanceRef, sprite::{ColorRef, CursorRef}
+    DirPlayer, ScriptError,
+    bitmap::{bitmap::PaletteRef, manager::BitmapRef, mask::BitmapMask},
+    cast_lib::CastMemberRef,
+    cast_member::Media,
+    datum_ref::DatumRef,
+    script_ref::ScriptInstanceRef,
+    sprite::{ColorRef, CursorRef},
 };
 
 #[allow(dead_code)]
@@ -48,6 +54,7 @@ pub enum DatumType {
     PlayerRef,
     MovieRef,
     MouseRef,
+    GlobalRef,
     XmlRef,
     DateRef,
     MathRef,
@@ -71,8 +78,8 @@ pub enum StringChunkType {
 impl From<&str> for StringChunkType {
     fn from(s: &str) -> Self {
         match s {
-            "item" | "items"  => StringChunkType::Item,
-            "word" | "words"  => StringChunkType::Word,
+            "item" | "items" => StringChunkType::Item,
+            "word" | "words" => StringChunkType::Word,
             "char" | "chars" => StringChunkType::Char,
             "line" | "lines" => StringChunkType::Line,
             _ => panic!("Invalid string chunk type"),
@@ -225,6 +232,7 @@ pub enum Datum {
     PlayerRef,
     MovieRef,
     MouseRef,
+    GlobalRef,
     XmlRef(u32),
     DateRef(u32),
     MathRef(u32),
@@ -278,6 +286,7 @@ impl DatumType {
             DatumType::Matte => "matte",
             DatumType::PlayerRef => "player_ref",
             DatumType::MovieRef => "movie_ref",
+            DatumType::GlobalRef => "global_ref",
             DatumType::XmlRef => "xml",
             DatumType::DateRef => "date",
             DatumType::MathRef => "math",
@@ -328,6 +337,7 @@ impl Datum {
             Datum::PlayerRef => DatumType::PlayerRef,
             Datum::MovieRef => DatumType::MovieRef,
             Datum::MouseRef => DatumType::MouseRef,
+            Datum::GlobalRef => DatumType::GlobalRef,
             Datum::XmlRef(_) => DatumType::XmlRef,
             Datum::DateRef(_) => DatumType::DateRef,
             Datum::MathRef(_) => DatumType::MathRef,
@@ -357,15 +367,20 @@ impl Datum {
             Datum::Vector(v) => Ok(format!("[{},{},{}]", v[0], v[1], v[2])),
             Datum::Rect(r, f) => {
                 let fmt = |i: usize| {
-                    if Datum::inline_is_float(*f, i) { format!("{:.4}", r[i]) } else { format!("{}", r[i] as i32) }
+                    if Datum::inline_is_float(*f, i) {
+                        format!("{:.4}", r[i])
+                    } else {
+                        format!("{}", r[i] as i32)
+                    }
                 };
                 Ok(format!("({}, {}, {}, {})", fmt(0), fmt(1), fmt(2), fmt(3)))
-            },
+            }
             Datum::ColorRef(cr) => Ok(format!("{:?}", cr)),
             Datum::Void => Ok("VOID".to_string()),
             Datum::FlashObjectRef(fr) => Ok(fr.path.clone()),
             Datum::CastMember(member_ref) => Ok(format!(
-                "(member {} of castLib {})", member_ref.cast_member, member_ref.cast_lib
+                "(member {} of castLib {})",
+                member_ref.cast_member, member_ref.cast_lib
             )),
             _ => Err(ScriptError::new(format!(
                 "Cannot convert datum type {} to string",
@@ -383,10 +398,20 @@ impl Datum {
             Datum::Vector(v) => Ok(Cow::Owned(format!("[{},{},{}]", v[0], v[1], v[2]))),
             Datum::Rect(r, f) => {
                 let fmt = |i: usize| {
-                    if Datum::inline_is_float(*f, i) { format!("{:.4}", r[i]) } else { format!("{}", r[i] as i32) }
+                    if Datum::inline_is_float(*f, i) {
+                        format!("{:.4}", r[i])
+                    } else {
+                        format!("{}", r[i] as i32)
+                    }
                 };
-                Ok(Cow::Owned(format!("({}, {}, {}, {})", fmt(0), fmt(1), fmt(2), fmt(3))))
-            },
+                Ok(Cow::Owned(format!(
+                    "({}, {}, {}, {})",
+                    fmt(0),
+                    fmt(1),
+                    fmt(2),
+                    fmt(3)
+                )))
+            }
             Datum::ColorRef(cr) => Ok(Cow::Owned(format!("{:?}", cr))),
             Datum::Void => Ok(Cow::Borrowed("VOID")),
             _ => Err(ScriptError::new(format!(
@@ -539,7 +564,7 @@ impl Datum {
             Datum::Symbol(s) => {
                 let lower = s.to_lowercase();
                 Ok(lower != "false")
-            },
+            }
             _ => Err(ScriptError::new("Cannot convert datum to bool".to_string())),
         }
     }
@@ -601,18 +626,14 @@ impl Datum {
     pub fn to_rect_inline(&self) -> Result<([f64; 4], u8), ScriptError> {
         match self {
             Datum::Rect(vals, flags) => Ok((*vals, *flags)),
-            _ => Err(ScriptError::new(
-                "Cannot convert datum to rect".to_string(),
-            )),
+            _ => Err(ScriptError::new("Cannot convert datum to rect".to_string())),
         }
     }
 
     pub fn to_rect_inline_mut(&mut self) -> Result<(&mut [f64; 4], &mut u8), ScriptError> {
         match self {
             Datum::Rect(vals, flags) => Ok((vals, flags)),
-            _ => Err(ScriptError::new(
-                "Cannot convert datum to rect".to_string(),
-            )),
+            _ => Err(ScriptError::new("Cannot convert datum to rect".to_string())),
         }
     }
 
@@ -672,9 +693,10 @@ impl Datum {
                     Datum::Void => "Void".to_string(),
                     _ => format!("{:?}", self.type_enum()),
                 };
-                Err(ScriptError::new(
-                    format!("Cannot convert {} to bitmap ref", detail),
-                ))
+                Err(ScriptError::new(format!(
+                    "Cannot convert {} to bitmap ref",
+                    detail
+                )))
             }
         }
     }
@@ -799,6 +821,7 @@ impl Datum {
         match player.get_datum(datum_ref) {
             Datum::Int(n) => Ok(*n as f64),
             Datum::Float(f) => Ok(*f),
+            Datum::Void | Datum::Null => Ok(0.0),
             other => Err(ScriptError::new(format!(
                 "Rect/Point component must be numeric, got {}",
                 other.type_str()
@@ -828,6 +851,7 @@ impl Datum {
         match d {
             Datum::Int(n) => Ok((*n as f64, false)),
             Datum::Float(f) => Ok((*f, true)),
+            Datum::Void | Datum::Null => Ok((0.0, false)),
             other => Err(ScriptError::new(format!(
                 "Point/Rect component must be numeric, got {}",
                 other.type_str()
@@ -872,11 +896,7 @@ impl Datum {
 }
 
 pub fn datum_bool(val: bool) -> Datum {
-    if val {
-        DATUM_TRUE
-    } else {
-        DATUM_FALSE
-    }
+    if val { DATUM_TRUE } else { DATUM_FALSE }
 }
 
 pub const DATUM_TRUE: Datum = Datum::Int(1);

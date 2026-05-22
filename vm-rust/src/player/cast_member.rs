@@ -7,18 +7,27 @@ use log::{debug, warn};
 use crate::CastMemberRef;
 
 use super::{
+    ScriptError,
     bitmap::{
-        bitmap::{decode_jpeg_bitmap, decompress_bitmap, Bitmap, BuiltInPalette, PaletteRef},
+        bitmap::{Bitmap, BuiltInPalette, PaletteRef, decode_jpeg_bitmap, decompress_bitmap},
         manager::{BitmapManager, BitmapRef},
     },
     score::Score,
     sprite::ColorRef,
-    ScriptError,
 };
 use crate::director::{
-    chunks::{cast_member::CastMemberDef, score::{ScoreChunk, ScoreChunkHeader, ScoreFrameData}, xmedia::PfrFont, xmedia::XMediaChunk, sound::SoundChunk, Chunk, cast_member::CastMemberChunk},
+    chunks::{
+        Chunk,
+        cast_member::CastMemberChunk,
+        cast_member::CastMemberDef,
+        score::{ScoreChunk, ScoreChunkHeader, ScoreFrameData},
+        sound::SoundChunk,
+        xmedia::PfrFont,
+        xmedia::XMediaChunk,
+    },
     enums::{
-        BitmapInfo, FilmLoopInfo, FontInfo, MemberType, ScriptType, ShapeInfo, Shockwave3dInfo, TextMemberData, SoundInfo, FieldInfo, TextInfo,
+        BitmapInfo, FieldInfo, FilmLoopInfo, FontInfo, MemberType, ScriptType, ShapeInfo,
+        Shockwave3dInfo, SoundInfo, TextInfo, TextMemberData,
     },
     lingo::script::ScriptContext,
 };
@@ -38,8 +47,11 @@ pub struct CastMember {
 #[derive(Clone)]
 pub enum Media {
     Field(FieldMember),
-    Bitmap { bitmap: Bitmap, reg_point: (i16, i16) },
-    Palette(PaletteMember)
+    Bitmap {
+        bitmap: Bitmap,
+        reg_point: (i16, i16),
+    },
+    Palette(PaletteMember),
 }
 
 #[derive(Clone, Default)]
@@ -50,15 +62,15 @@ pub struct FieldMember {
     pub font: String,
     pub font_style: String,
     pub font_size: u16,
-    pub font_id: Option<u16>, // STXT font ID for lookup by ID
-    pub text_height: u16,  // Text area height from FieldInfo (for dimension calculations)
-    pub fixed_line_space: u16,  // Line spacing for text rendering
+    pub font_id: Option<u16>,  // STXT font ID for lookup by ID
+    pub text_height: u16,      // Text area height from FieldInfo (for dimension calculations)
+    pub fixed_line_space: u16, // Line spacing for text rendering
     pub top_spacing: i16,
     pub box_type: String,
     pub anti_alias: bool,
     pub width: u16,
-    pub height: u16,  // Field member height from FieldInfo
-    pub rect_left: i16,   // Initial rect from FieldInfo
+    pub height: u16,    // Field member height from FieldInfo
+    pub rect_left: i16, // Initial rect from FieldInfo
     pub rect_top: i16,
     pub rect_right: i16,
     pub rect_bottom: i16,
@@ -70,8 +82,8 @@ pub struct FieldMember {
     pub drop_shadow: u16,
     pub scroll_top: u16,
     pub hilite: bool,
-    pub fore_color: Option<ColorRef>,  // From STXT formatting run color (>> 8)
-    pub back_color: Option<ColorRef>,  // From FieldInfo bg RGB (& 0xff)
+    pub fore_color: Option<ColorRef>, // From STXT formatting run color (>> 8)
+    pub back_color: Option<ColorRef>, // From FieldInfo bg RGB (& 0xff)
     // Runtime selection state. Convention: sel_start <= sel_end. Equal values mean caret;
     // otherwise it's a selection range. sel_anchor remembers the drag/shift origin so
     // shift+arrow and drag-to-select extend in the right direction.
@@ -123,15 +135,15 @@ pub struct ButtonMember {
 /// Director supports #left, #center, and #right tab types.
 #[derive(Clone, Debug)]
 pub struct TabStop {
-    pub tab_type: String,   // "left", "center", or "right"
-    pub position: i32,      // pixel position from left edge
+    pub tab_type: String, // "left", "center", or "right"
+    pub position: i32,    // pixel position from left edge
 }
 
 #[derive(Clone)]
 pub struct TextMember {
     pub text: String,
-    pub html_source: String,  // Original HTML string when set via html property
-    pub rtf_source: String,   // Original RTF string when set via RTF property
+    pub html_source: String, // Original HTML string when set via html property
+    pub rtf_source: String,  // Original RTF string when set via RTF property
     pub alignment: String,
     pub box_type: String,
     pub word_wrap: bool,
@@ -144,6 +156,7 @@ pub struct TextMember {
     pub bottom_spacing: i16,
     pub width: u16,
     pub height: u16,
+    pub scroll_top: u32,
     pub char_spacing: i32,
     pub tab_stops: Vec<TabStop>,
     pub html_styled_spans: Vec<StyledSpan>,
@@ -248,7 +261,11 @@ impl FieldMember {
         let was_at_end = self.sel_start == self.sel_end && self.sel_end >= old_len;
         self.text = new_text;
         let new_len = self.text.len() as i32;
-        let caret = if was_at_end { new_len } else { self.sel_end.clamp(0, new_len) };
+        let caret = if was_at_end {
+            new_len
+        } else {
+            self.sel_end.clamp(0, new_len)
+        };
         self.sel_start = caret;
         self.sel_end = caret;
         self.sel_anchor = caret;
@@ -274,13 +291,15 @@ impl FieldMember {
             font_style: "plain".to_string(),
             font_size: 12,
             font_id: None,
-            text_height: field_info.text_height,  // Text area height for dimension calculations
-            fixed_line_space: 0,  // Use default line spacing for text rendering
+            text_height: field_info.text_height, // Text area height for dimension calculations
+            fixed_line_space: 0,                 // Use default line spacing for text rendering
             top_spacing: field_info.scroll as i16,
             box_type: field_info.box_type_str(),
             anti_alias: false,
-            width: field_info.width(),  // Calculated from rect
-            height: (field_info.text_height + 2 * field_info.border as u16 + 2 * field_info.margin as u16),  // Member height: text_height + borders + margins
+            width: field_info.width(), // Calculated from rect
+            height: (field_info.text_height
+                + 2 * field_info.border as u16
+                + 2 * field_info.margin as u16), // Member height: text_height + borders + margins
             rect_left: field_info.rect_left,
             rect_top: field_info.rect_top,
             rect_right: field_info.rect_right,
@@ -313,7 +332,11 @@ impl TextMember {
         let was_at_end = self.sel_start == self.sel_end && self.sel_end >= old_len;
         self.text = new_text;
         let new_len = self.text.len() as i32;
-        let caret = if was_at_end { new_len } else { self.sel_end.clamp(0, new_len) };
+        let caret = if was_at_end {
+            new_len
+        } else {
+            self.sel_end.clamp(0, new_len)
+        };
         self.sel_start = caret;
         self.sel_end = caret;
         self.sel_anchor = caret;
@@ -336,6 +359,7 @@ impl TextMember {
             anti_alias: false,
             width: 100,
             height: 20,
+            scroll_top: 0,
             char_spacing: 0,
             tab_stops: Vec::new(),
             html_styled_spans: Vec::new(),
@@ -362,13 +386,17 @@ impl TextMember {
         let ti = self.info.as_ref();
 
         // Use TextInfo 3TEX colors for lighting, fall back to text foreground color
-        let (cr, cg, cb) = self.html_styled_spans.first()
+        let (cr, cg, cb) = self
+            .html_styled_spans
+            .first()
             .and_then(|s| s.style.color)
-            .map(|c| (
-                ((c >> 16) & 0xFF) as u8,
-                ((c >> 8) & 0xFF) as u8,
-                (c & 0xFF) as u8,
-            ))
+            .map(|c| {
+                (
+                    ((c >> 16) & 0xFF) as u8,
+                    ((c >> 8) & 0xFF) as u8,
+                    (c & 0xFF) as u8,
+                )
+            })
             .unwrap_or((255, 255, 255));
         let (dir_r, dir_g, dir_b) = ti
             .map(|i| TextInfo::color_to_rgb(i.directional_color))
@@ -385,9 +413,19 @@ impl TextMember {
         scene.materials.push(W3dMaterial {
             name: "TextMaterial".to_string(),
             diffuse: [0.0, 0.0, 0.0, 1.0], // Director text3D defaults diffuseColor to #000000
-            ambient: [amb_r as f32 / 255.0, amb_g as f32 / 255.0, amb_b as f32 / 255.0, 1.0],
+            ambient: [
+                amb_r as f32 / 255.0,
+                amb_g as f32 / 255.0,
+                amb_b as f32 / 255.0,
+                1.0,
+            ],
             emissive: [0.0, 0.0, 0.0, 1.0],
-            specular: [spec_r as f32 / 255.0, spec_g as f32 / 255.0, spec_b as f32 / 255.0, 1.0],
+            specular: [
+                spec_r as f32 / 255.0,
+                spec_g as f32 / 255.0,
+                spec_b as f32 / 255.0,
+                1.0,
+            ],
             reflectivity,
             opacity: 1.0,
             shininess: 50.0,
@@ -397,18 +435,35 @@ impl TextMember {
         }
 
         // Update directional light color from TextInfo
-        if let Some(light) = scene.lights.iter_mut().find(|l| l.name == "DefaultDirectional") {
-            light.color = [dir_r as f32 / 255.0, dir_g as f32 / 255.0, dir_b as f32 / 255.0];
+        if let Some(light) = scene
+            .lights
+            .iter_mut()
+            .find(|l| l.name == "DefaultDirectional")
+        {
+            light.color = [
+                dir_r as f32 / 255.0,
+                dir_g as f32 / 255.0,
+                dir_b as f32 / 255.0,
+            ];
         }
         if let Some(light) = scene.lights.iter_mut().find(|l| l.name == "DefaultAmbient") {
-            light.color = [amb_r as f32 / 255.0, amb_g as f32 / 255.0, amb_b as f32 / 255.0];
+            light.color = [
+                amb_r as f32 / 255.0,
+                amb_g as f32 / 255.0,
+                amb_b as f32 / 255.0,
+            ];
         }
 
         // Apply directionalPreset to light node transform (3D Z-up version)
         if let Some(ti) = ti {
             if ti.directional_preset > 0 && ti.directional_preset <= 9 {
-                if let Some(light_node) = scene.nodes.iter_mut().find(|n| n.name == "DefaultDirectional") {
-                    light_node.transform = Self::directional_preset_to_transform_3d(ti.directional_preset);
+                if let Some(light_node) = scene
+                    .nodes
+                    .iter_mut()
+                    .find(|n| n.name == "DefaultDirectional")
+                {
+                    light_node.transform =
+                        Self::directional_preset_to_transform_3d(ti.directional_preset);
                 }
             }
         }
@@ -419,7 +474,11 @@ impl TextMember {
         let default_fov = 34.516_f32;
         let cam_pos: Option<(f32, f32, f32)> = ti
             .map(|i| {
-                let (mut px, mut py, mut pz) = (i.camera_position_x, i.camera_position_y, i.camera_position_z);
+                let (mut px, mut py, mut pz) = (
+                    i.camera_position_x,
+                    i.camera_position_y,
+                    i.camera_position_z,
+                );
                 if px == 0.0 && py == 0.0 {
                     // Auto-compute: center camera on text box
                     let w = self.width as f32;
@@ -434,8 +493,13 @@ impl TextMember {
                 (px, py, pz)
             })
             .filter(|&(x, y, z)| x != 0.0 || y != 0.0 || z != 0.0);
-        let cam_rot: Option<(f32, f32, f32)> = ti
-            .map(|i| (i.camera_rotation_x, i.camera_rotation_y, i.camera_rotation_z));
+        let cam_rot: Option<(f32, f32, f32)> = ti.map(|i| {
+            (
+                i.camera_rotation_x,
+                i.camera_rotation_y,
+                i.camera_rotation_z,
+            )
+        });
         if let Some((px, py, pz)) = cam_pos {
             // Override DefaultView camera transform with TextInfo values
             if let Some(cam_node) = scene.nodes.iter_mut().find(|n| n.name == "DefaultView") {
@@ -448,10 +512,22 @@ impl TextMember {
                 let (sy, cy) = (ry_rad.sin(), ry_rad.cos());
                 let (sz, cz) = (rz_rad.sin(), rz_rad.cos());
                 cam_node.transform = [
-                    (cy*cz) as f32, (cy*sz) as f32, (-sy) as f32, 0.0,
-                    (sx*sy*cz - cx*sz) as f32, (sx*sy*sz + cx*cz) as f32, (sx*cy) as f32, 0.0,
-                    (cx*sy*cz + sx*sz) as f32, (cx*sy*sz - sx*cz) as f32, (cx*cy) as f32, 0.0,
-                    px, py, pz, 1.0,
+                    (cy * cz) as f32,
+                    (cy * sz) as f32,
+                    (-sy) as f32,
+                    0.0,
+                    (sx * sy * cz - cx * sz) as f32,
+                    (sx * sy * sz + cx * cz) as f32,
+                    (sx * cy) as f32,
+                    0.0,
+                    (cx * sy * cz + sx * sz) as f32,
+                    (cx * sy * sz - sx * cz) as f32,
+                    (cx * cy) as f32,
+                    0.0,
+                    px,
+                    py,
+                    pz,
+                    1.0,
                 ];
                 // Text3D is rendered into a dynamically sized sprite/FBO. Using the
                 // static empty-world 640x480 viewport here distorts the projection
@@ -462,10 +538,13 @@ impl TextMember {
         }
 
         // Model resource for extruded text — mesh populated by ensure_text3d()
-        scene.model_resources.insert("Text".to_string(), ModelResourceInfo {
-            name: "Text".to_string(),
-            ..Default::default()
-        });
+        scene.model_resources.insert(
+            "Text".to_string(),
+            ModelResourceInfo {
+                name: "Text".to_string(),
+                ..Default::default()
+            },
+        );
         scene.nodes.push(W3dNode {
             name: "Text".to_string(),
             node_type: W3dNodeType::Model,
@@ -473,9 +552,14 @@ impl TextMember {
             resource_name: "Text".to_string(),
             model_resource_name: "Text".to_string(),
             shader_name: "DefaultShader".to_string(),
-            transform: [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
-            near_plane: 1.0, far_plane: 10000.0, fov: 30.0,
-            screen_width: 640, screen_height: 480,
+            transform: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            near_plane: 1.0,
+            far_plane: 10000.0,
+            fov: 30.0,
+            screen_width: 640,
+            screen_height: 480,
         });
 
         let info = Shockwave3dInfo {
@@ -526,15 +610,19 @@ impl TextMember {
         // L direction: x component from left/right, y from top/bottom, z always -1 for front face
         let (lx, ly): (f32, f32) = match preset {
             1 => (-1.0, -1.0), // topLeft
-            2 => ( 0.0, -1.0), // topCenter
-            3 => ( 1.0, -1.0), // topRight
-            4 => (-1.0,  0.0), // middleLeft
-            5 => ( 0.0,  0.0), // middleCenter
-            6 => ( 1.0,  0.0), // middleRight
-            7 => (-1.0,  1.0), // bottomLeft
-            8 => ( 0.0,  1.0), // bottomCenter
-            9 => ( 1.0,  1.0), // bottomRight
-            _ => return [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+            2 => (0.0, -1.0),  // topCenter
+            3 => (1.0, -1.0),  // topRight
+            4 => (-1.0, 0.0),  // middleLeft
+            5 => (0.0, 0.0),   // middleCenter
+            6 => (1.0, 0.0),   // middleRight
+            7 => (-1.0, 1.0),  // bottomLeft
+            8 => (0.0, 1.0),   // bottomCenter
+            9 => (1.0, 1.0),   // bottomRight
+            _ => {
+                return [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ];
+            }
         };
         let lz: f32 = -1.0;
         let len = (lx * lx + ly * ly + lz * lz).sqrt();
@@ -542,7 +630,11 @@ impl TextMember {
         // Z axis of transform = -L (shader extracts -Z as light direction)
         let z = [-l[0], -l[1], -l[2]];
         // Build orthonormal basis: X = normalize(up × Z), Y = Z × X
-        let up = if z[1].abs() < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+        let up = if z[1].abs() < 0.9 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
         let mut x = [
             up[1] * z[2] - up[2] * z[1],
             up[2] * z[0] - up[0] * z[2],
@@ -556,10 +648,7 @@ impl TextMember {
             z[0] * x[1] - z[1] * x[0],
         ];
         [
-            x[0], x[1], x[2], 0.0,
-            y[0], y[1], y[2], 0.0,
-            z[0], z[1], z[2], 0.0,
-            0.0,  0.0,  0.0,  1.0,
+            x[0], x[1], x[2], 0.0, y[0], y[1], y[2], 0.0, z[0], z[1], z[2], 0.0, 0.0, 0.0, 0.0, 1.0,
         ]
     }
 
@@ -567,21 +656,45 @@ impl TextMember {
     /// "top" = +Z, "left" = -X, light has forward component toward -Y.
     pub(crate) fn directional_preset_to_transform_3d(preset: u32) -> [f32; 16] {
         let (lx, lz): (f32, f32) = match preset {
-            1 => (-1.0,  1.0), 2 => ( 0.0,  1.0), 3 => ( 1.0,  1.0),
-            4 => (-1.0,  0.0), 5 => ( 0.0,  0.0), 6 => ( 1.0,  0.0),
-            7 => (-1.0, -1.0), 8 => ( 0.0, -1.0), 9 => ( 1.0, -1.0),
-            _ => return [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+            1 => (-1.0, 1.0),
+            2 => (0.0, 1.0),
+            3 => (1.0, 1.0),
+            4 => (-1.0, 0.0),
+            5 => (0.0, 0.0),
+            6 => (1.0, 0.0),
+            7 => (-1.0, -1.0),
+            8 => (0.0, -1.0),
+            9 => (1.0, -1.0),
+            _ => {
+                return [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ];
+            }
         };
         let ly: f32 = -0.75;
-        let len = (lx*lx + ly*ly + lz*lz).sqrt();
-        let l = [lx/len, ly/len, lz/len];
+        let len = (lx * lx + ly * ly + lz * lz).sqrt();
+        let l = [lx / len, ly / len, lz / len];
         let z = [l[0], l[1], l[2]];
-        let up = if z[2].abs() < 0.9 { [0.0,0.0,1.0] } else { [0.0,1.0,0.0] };
-        let mut x = [up[1]*z[2]-up[2]*z[1], up[2]*z[0]-up[0]*z[2], up[0]*z[1]-up[1]*z[0]];
-        let xl = (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]).sqrt();
-        x = [x[0]/xl, x[1]/xl, x[2]/xl];
-        let y = [z[1]*x[2]-z[2]*x[1], z[2]*x[0]-z[0]*x[2], z[0]*x[1]-z[1]*x[0]];
-        [x[0],x[1],x[2],0.0, y[0],y[1],y[2],0.0, z[0],z[1],z[2],0.0, 0.0,0.0,0.0,1.0]
+        let up = if z[2].abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let mut x = [
+            up[1] * z[2] - up[2] * z[1],
+            up[2] * z[0] - up[0] * z[2],
+            up[0] * z[1] - up[1] * z[0],
+        ];
+        let xl = (x[0] * x[0] + x[1] * x[1] + x[2] * x[2]).sqrt();
+        x = [x[0] / xl, x[1] / xl, x[2] / xl];
+        let y = [
+            z[1] * x[2] - z[2] * x[1],
+            z[2] * x[0] - z[0] * x[2],
+            z[0] * x[1] - z[1] * x[0],
+        ];
+        [
+            x[0], x[1], x[2], 0.0, y[0], y[1], y[2], 0.0, z[0], z[1], z[2], 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]
     }
 
     pub fn has_html_styling(&self) -> bool {
@@ -634,7 +747,7 @@ pub struct VectorShapeMember {
     pub bg_color: (u8, u8, u8),
     pub end_color: (u8, u8, u8),
     pub stroke_width: f32,
-    pub fill_mode: u32,     // 0=none, 1=solid, 2=gradient
+    pub fill_mode: u32, // 0=none, 1=solid, 2=gradient
     pub closed: bool,
     pub vertices: Vec<VectorShapeVertex>,
     /// Bounding box computed from vertices + control points + stroke padding.
@@ -655,19 +768,19 @@ pub struct VectorShapeMember {
     // Confirmed offsets from triangulating two FLSH payloads (figure8
     // members #9 and #13 / Slider Groove). Enum / bool fields are still
     // mapped to defaults until a third payload disambiguates them.
-    pub reg_point: (i16, i16),    // FLSH 0x14 / 0x10  (x / y)
-    pub gradient_type: String,    // default "linear"  (FLSH offset TBD)
-    pub fill_scale: f32,          // FLSH 0x38, default 100.0
-    pub fill_direction: f32,      // FLSH 0x3C, degrees, default 0.0
-    pub fill_offset: (i32, i32),  // FLSH 0x40 / 0x44, default (0, 0)
-    pub fill_cycles: i32,         // default 1  (FLSH offset TBD)
-    pub scale_mode: String,       // default "autoSize"  (FLSH offset TBD)
-    pub scale: f32,               // FLSH 0x50, percent, default 100.0
-    pub antialias: bool,          // default true  (FLSH offset TBD)
-    pub center_reg_point: bool,   // default false (FLSH offset TBD)
-    pub reg_point_vertex: i32,    // default 0     (FLSH offset TBD)
-    pub direct_to_stage: bool,    // default false (FLSH offset TBD)
-    pub origin_mode: String,      // default "center" (FLSH offset TBD)
+    pub reg_point: (i16, i16),   // FLSH 0x14 / 0x10  (x / y)
+    pub gradient_type: String,   // default "linear"  (FLSH offset TBD)
+    pub fill_scale: f32,         // FLSH 0x38, default 100.0
+    pub fill_direction: f32,     // FLSH 0x3C, degrees, default 0.0
+    pub fill_offset: (i32, i32), // FLSH 0x40 / 0x44, default (0, 0)
+    pub fill_cycles: i32,        // default 1  (FLSH offset TBD)
+    pub scale_mode: String,      // default "autoSize"  (FLSH offset TBD)
+    pub scale: f32,              // FLSH 0x50, percent, default 100.0
+    pub antialias: bool,         // default true  (FLSH offset TBD)
+    pub center_reg_point: bool,  // default false (FLSH offset TBD)
+    pub reg_point_vertex: i32,   // default 0     (FLSH offset TBD)
+    pub direct_to_stage: bool,   // default false (FLSH offset TBD)
+    pub origin_mode: String,     // default "center" (FLSH offset TBD)
 }
 
 impl VectorShapeMember {
@@ -692,8 +805,12 @@ impl VectorShapeMember {
     }
     /// The vertex-bounding-box dimensions. Used by the rasterizer to size
     /// the bitmap that backs `member.image`.
-    pub fn bbox_width(&self) -> f32 { self.bbox_right - self.bbox_left }
-    pub fn bbox_height(&self) -> f32 { self.bbox_bottom - self.bbox_top }
+    pub fn bbox_width(&self) -> f32 {
+        self.bbox_right - self.bbox_left
+    }
+    pub fn bbox_height(&self) -> f32 {
+        self.bbox_bottom - self.bbox_top
+    }
 }
 
 impl From<crate::director::enums::VectorShapeInfo> for VectorShapeMember {
@@ -814,7 +931,11 @@ impl FlashMember {
     /// but for some members it's left as 0,0,0,0 — fall back to parsing the
     /// SWF header so width/height aren't reported as zero.
     pub fn effective_rect(&self) -> (i32, i32, i32, i32) {
-        let cached = self.flash_info.as_ref().map(|fi| fi.flash_rect).unwrap_or((0, 0, 0, 0));
+        let cached = self
+            .flash_info
+            .as_ref()
+            .map(|fi| fi.flash_rect)
+            .unwrap_or((0, 0, 0, 0));
         if cached != (0, 0, 0, 0) {
             return cached;
         }
@@ -870,7 +991,9 @@ pub struct Shockwave3dMember {
 impl Shockwave3dMember {
     /// Get mutable access to the parsed scene (uses Rc::make_mut for copy-on-write)
     pub fn scene_mut(&mut self) -> Option<&mut crate::director::chunks::w3d::types::W3dScene> {
-        self.parsed_scene.as_mut().map(|rc| std::rc::Rc::make_mut(rc))
+        self.parsed_scene
+            .as_mut()
+            .map(|rc| std::rc::Rc::make_mut(rc))
     }
 }
 
@@ -878,10 +1001,10 @@ impl Shockwave3dMember {
 pub struct QueuedMotion {
     pub name: String,
     pub looped: bool,
-    pub start_time: f32,   // seconds
-    pub end_time: f32,     // seconds, -1.0 = full duration
+    pub start_time: f32, // seconds
+    pub end_time: f32,   // seconds, -1.0 = full duration
     pub scale: f32,
-    pub offset: f32,       // seconds, -1.0 = #synchronized
+    pub offset: f32, // seconds, -1.0 = #synchronized
 }
 
 /// Mutable runtime state for a Shockwave 3D member (animation, transforms, etc.)
@@ -904,9 +1027,9 @@ pub struct Shockwave3dRuntimeState {
     pub motion_ended: bool,
     /// Previous motion for crossfade blending
     pub previous_motion: Option<String>,
-    pub blend_weight: f32,       // 0.0 = all previous, 1.0 = all current
-    pub blend_duration: f32,     // total blend time in seconds
-    pub blend_elapsed: f32,      // time spent blending
+    pub blend_weight: f32,   // 0.0 = all previous, 1.0 = all current
+    pub blend_duration: f32, // total blend time in seconds
+    pub blend_elapsed: f32,  // time spent blending
 
     // ─── Per-node overrides (keyed by node name) ───
     /// Transform overrides for nodes (set via Lingo) — used by renderer
@@ -1056,7 +1179,11 @@ pub struct LodState {
 
 impl Default for LodState {
     fn default() -> Self {
-        Self { level: 100, auto_mode: true, bias: 100.0 }
+        Self {
+            level: 100,
+            auto_mode: true,
+            bias: 100.0,
+        }
     }
 }
 
@@ -1070,7 +1197,12 @@ pub struct SdsState {
 
 impl Default for SdsState {
     fn default() -> Self {
-        Self { depth: 1, tension: 0.0, error: 0.0, enabled: true }
+        Self {
+            depth: 1,
+            tension: 0.0,
+            error: 0.0,
+            enabled: true,
+        }
     }
 }
 
@@ -1098,7 +1230,7 @@ pub struct MeshDeformTextureLayer {
 #[derive(Clone, Debug)]
 pub struct EmitterState {
     pub num_particles: i32,
-    pub mode: String,       // "burst" or "stream"
+    pub mode: String, // "burst" or "stream"
     pub is_loop: bool,
     pub direction: [f64; 3],
     pub region: [f64; 3],
@@ -1139,19 +1271,22 @@ pub struct ParticleSystemState {
     pub wind: [f32; 3],
     pub drag: f32,
     pub initial_speed: f32,
-    pub speed_range: f32,  // random speed variation
+    pub speed_range: f32, // random speed variation
     pub direction: [f32; 3],
     pub emitter_position: [f32; 3],
-    pub emitter_shape: u8,      // 0=point, 1=line, 2=plane, 3=sphere, 4=cube, 5=cylinder
+    pub emitter_shape: u8, // 0=point, 1=line, 2=plane, 3=sphere, 4=cube, 5=cylinder
     pub emitter_size: [f32; 3], // dimensions of emitter shape
-    pub angle_range: f32,       // emission cone angle (0 = parallel, PI = hemisphere)
+    pub angle_range: f32,  // emission cone angle (0 = parallel, PI = hemisphere)
     pub particle_size: f32,
 }
 
 impl Shockwave3dRuntimeState {
     /// Create runtime state initialized with camera data from the 3DPR info
     /// and optionally auto-start animation if animationEnabled is set.
-    pub fn from_info(info: &Shockwave3dInfo, scene: Option<&crate::director::chunks::w3d::types::W3dScene>) -> Self {
+    pub fn from_info(
+        info: &Shockwave3dInfo,
+        scene: Option<&crate::director::chunks::w3d::types::W3dScene>,
+    ) -> Self {
         let mut state = Self {
             play_rate: 1.0,
             animation_scale: 1.0,
@@ -1191,18 +1326,36 @@ impl Shockwave3dRuntimeState {
 
             // Rotation = Rz * Ry * Rx (column-major)
             let m = [
-                cy*cz,              cy*sz,              -sy,     0.0,
-                sx*sy*cz - cx*sz,   sx*sy*sz + cx*cz,   sx*cy,  0.0,
-                cx*sy*cz + sx*sz,   cx*sy*sz - sx*cz,   cx*cy,  0.0,
-                px,                 py,                 pz,      1.0,
+                cy * cz,
+                cy * sz,
+                -sy,
+                0.0,
+                sx * sy * cz - cx * sz,
+                sx * sy * sz + cx * cz,
+                sx * cy,
+                0.0,
+                cx * sy * cz + sx * sz,
+                cx * sy * sz - sx * cz,
+                cx * cy,
+                0.0,
+                px,
+                py,
+                pz,
+                1.0,
             ];
             // Insert only under the scene node name (case-insensitive lookups handle the rest)
-            let cam_key = scene.map(|s| {
-                s.nodes.iter()
-                    .find(|n| n.node_type == crate::director::chunks::w3d::types::W3dNodeType::View
-                        && n.name.eq_ignore_ascii_case("defaultview"))
-                    .map(|n| n.name.clone())
-            }).flatten().unwrap_or_else(|| "DefaultView".to_string());
+            let cam_key = scene
+                .map(|s| {
+                    s.nodes
+                        .iter()
+                        .find(|n| {
+                            n.node_type == crate::director::chunks::w3d::types::W3dNodeType::View
+                                && n.name.eq_ignore_ascii_case("defaultview")
+                        })
+                        .map(|n| n.name.clone())
+                })
+                .flatten()
+                .unwrap_or_else(|| "DefaultView".to_string());
             state.node_transforms.insert(cam_key, m);
         }
         if let Some(bg) = info.bg_color {
@@ -1255,7 +1408,9 @@ impl ParticleSystemState {
 
     pub fn update(&mut self, dt: f32) {
         for i in 0..self.max_particles {
-            if i >= self.ages.len() { break; }
+            if i >= self.ages.len() {
+                break;
+            }
 
             self.ages[i] += dt;
 
@@ -1269,15 +1424,20 @@ impl ParticleSystemState {
                 let r2 = ((hash >> 8) & 0xFF) as f32 / 255.0 - 0.5;
                 let r3 = ((hash >> 16) & 0xFF) as f32 / 255.0 - 0.5;
                 let offset = match self.emitter_shape {
-                    1 => [r1 * self.emitter_size[0], 0.0, 0.0],              // line
+                    1 => [r1 * self.emitter_size[0], 0.0, 0.0], // line
                     2 => [r1 * self.emitter_size[0], 0.0, r2 * self.emitter_size[2]], // plane
-                    3 => {                                                      // sphere
-                        let len = (r1*r1 + r2*r2 + r3*r3).sqrt().max(0.01);
+                    3 => {
+                        // sphere
+                        let len = (r1 * r1 + r2 * r2 + r3 * r3).sqrt().max(0.01);
                         let s = self.emitter_size[0] * ((hash & 0xFF) as f32 / 255.0);
-                        [r1/len * s, r2/len * s, r3/len * s]
+                        [r1 / len * s, r2 / len * s, r3 / len * s]
                     }
-                    4 => [r1 * self.emitter_size[0], r2 * self.emitter_size[1], r3 * self.emitter_size[2]], // cube
-                    _ => [0.0, 0.0, 0.0],                                      // point
+                    4 => [
+                        r1 * self.emitter_size[0],
+                        r2 * self.emitter_size[1],
+                        r3 * self.emitter_size[2],
+                    ], // cube
+                    _ => [0.0, 0.0, 0.0], // point
                 };
                 self.positions[i] = [
                     self.emitter_position[0] + offset[0],
@@ -1306,9 +1466,12 @@ impl ParticleSystemState {
                 // Apply wind drag
                 if self.drag > 0.0 {
                     let factor = 1.0 - self.drag * dt;
-                    self.velocities[i][0] = self.velocities[i][0] * factor + self.wind[0] * self.drag * dt;
-                    self.velocities[i][1] = self.velocities[i][1] * factor + self.wind[1] * self.drag * dt;
-                    self.velocities[i][2] = self.velocities[i][2] * factor + self.wind[2] * self.drag * dt;
+                    self.velocities[i][0] =
+                        self.velocities[i][0] * factor + self.wind[0] * self.drag * dt;
+                    self.velocities[i][1] =
+                        self.velocities[i][1] * factor + self.wind[1] * self.drag * dt;
+                    self.velocities[i][2] =
+                        self.velocities[i][2] * factor + self.wind[2] * self.drag * dt;
                 }
 
                 // Integrate position
@@ -1341,8 +1504,6 @@ pub struct FontMember {
 }
 
 // ---- Havok Physics Member ----
-
-
 
 // RapierWorld and HavokCollisionFilter removed — replaced by native Havok physics
 
@@ -1432,12 +1593,36 @@ impl HavokRigidBody {
         // polyhedron integrator (PPC InertialTensorComputer 0x5d3c0).
         let d = 20.0_f64;
         let f = 1.0 / 12.0;
-        let unit_diag = f * (d*d + d*d); // (dy²+dz²)/12 with dx=dy=dz
-        let unit_i = [unit_diag, 0.0, 0.0, 0.0, unit_diag, 0.0, 0.0, 0.0, unit_diag];
-        let i_tensor = [unit_i[0]*mass, 0.0, 0.0, 0.0, unit_i[4]*mass, 0.0, 0.0, 0.0, unit_i[8]*mass];
+        let unit_diag = f * (d * d + d * d); // (dy²+dz²)/12 with dx=dy=dz
+        let unit_i = [
+            unit_diag, 0.0, 0.0, 0.0, unit_diag, 0.0, 0.0, 0.0, unit_diag,
+        ];
+        let i_tensor = [
+            unit_i[0] * mass,
+            0.0,
+            0.0,
+            0.0,
+            unit_i[4] * mass,
+            0.0,
+            0.0,
+            0.0,
+            unit_i[8] * mass,
+        ];
         let inv_i = if mass > 0.0 && unit_diag > 0.0 {
-            [1.0/i_tensor[0], 0.0, 0.0, 0.0, 1.0/i_tensor[4], 0.0, 0.0, 0.0, 1.0/i_tensor[8]]
-        } else { [0.0; 9] };
+            [
+                1.0 / i_tensor[0],
+                0.0,
+                0.0,
+                0.0,
+                1.0 / i_tensor[4],
+                0.0,
+                0.0,
+                0.0,
+                1.0 / i_tensor[8],
+            ]
+        } else {
+            [0.0; 9]
+        };
         Self {
             name: name.to_string(),
             position: [0.0; 3],
@@ -1592,7 +1777,7 @@ impl HavokAngularDashpot {
 #[derive(Clone, Debug)]
 pub struct HavokCollisionInterest {
     pub rb_name1: String,
-    pub rb_name2: String,  // or "#all"
+    pub rb_name2: String, // or "#all"
     pub frequency: f64,
     pub threshold: f64,
     pub handler_name: Option<String>,
@@ -1625,7 +1810,7 @@ pub struct HavokPhysicsState {
     pub linear_dashpots: Vec<HavokLinearDashpot>,
     pub angular_dashpots: Vec<HavokAngularDashpot>,
     pub collision_interests: Vec<HavokCollisionInterest>,
-    pub step_callbacks: Vec<(String, crate::player::DatumRef)>,  // (handler_name, script_instance)
+    pub step_callbacks: Vec<(String, crate::player::DatumRef)>, // (handler_name, script_instance)
     pub disabled_collision_pairs: Vec<(String, String)>,
     pub hke_data: Vec<u8>,
     /// Ground Z for native Havok ground constraint (flat plane fallback)
@@ -1633,7 +1818,8 @@ pub struct HavokPhysicsState {
     /// Half-extent Z for ground collision (car body extends this far below position)
     pub ground_body_half_z: f64,
     /// Collision meshes from HKE data (positioned in world space)
-    pub collision_meshes: Vec<crate::player::handlers::datum_handlers::cast_member::havok_physics::CollisionMesh>,
+    pub collision_meshes:
+        Vec<crate::player::handlers::datum_handlers::cast_member::havok_physics::CollisionMesh>,
     /// Cached collision list from last step (for Lingo collisionList property)
     pub collision_list_cache: Vec<HavokCollisionInfo>,
     /// Whether to use the raycast-based ground constraint hack (SuperSonic-specific).
@@ -1720,10 +1906,13 @@ pub struct HavokPhysicsMember {
 
 impl fmt::Debug for HavokPhysicsMember {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "HavokPhysicsMember(initialized={}, bodies={}, springs={})",
+        write!(
+            f,
+            "HavokPhysicsMember(initialized={}, bodies={}, springs={})",
             self.state.initialized,
             self.state.rigid_bodies.len(),
-            self.state.springs.len())
+            self.state.springs.len()
+        )
     }
 }
 
@@ -1883,7 +2072,13 @@ impl CastMemberType {
             Self::Sound(_) => "sound",
             Self::Font(_) => "font",
             Self::Flash(_) => "flash",
-            Self::Shockwave3d(w3d) => if w3d.converted_from_text { "text" } else { "shockwave3d" },
+            Self::Shockwave3d(w3d) => {
+                if w3d.converted_from_text {
+                    "text"
+                } else {
+                    "shockwave3d"
+                }
+            }
             Self::HavokPhysics(_) => "havok",
             _ => "unknown",
         };
@@ -1997,16 +2192,16 @@ impl CastMemberType {
 
     pub fn as_flash(&self) -> Option<&FlashMember> {
         return match self {
-            Self::Flash(data) => { Some(data) }
-            _ => { None }
-        }
+            Self::Flash(data) => Some(data),
+            _ => None,
+        };
     }
 
     pub fn as_flash_mut(&mut self) -> Option<&mut FlashMember> {
         return match self {
-            Self::Flash(data) => { Some(data) }
-            _ => { None }
-        }
+            Self::Flash(data) => Some(data),
+            _ => None,
+        };
     }
 
     pub fn as_shockwave3d(&self) -> Option<&Shockwave3dMember> {
@@ -2081,12 +2276,22 @@ impl CastMember {
             }
         }
         // Then try sndH + sndS combination
-        let snd_header = def.children.iter()
+        let snd_header = def
+            .children
+            .iter()
             .filter_map(|c| c.as_ref())
-            .find_map(|c| match c { Chunk::SndHeader(h) => Some(h), _ => None });
-        let snd_samples = def.children.iter()
+            .find_map(|c| match c {
+                Chunk::SndHeader(h) => Some(h),
+                _ => None,
+            });
+        let snd_samples = def
+            .children
+            .iter()
             .filter_map(|c| c.as_ref())
-            .find_map(|c| match c { Chunk::SndSamples(d) => Some(d), _ => None });
+            .find_map(|c| match c {
+                Chunk::SndSamples(d) => Some(d),
+                _ => None,
+            });
         if let (Some(header), Some(samples)) = (snd_header, snd_samples) {
             return Some(SoundChunk::from_snd_header_and_samples(header, samples));
         }
@@ -2100,10 +2305,18 @@ impl CastMember {
             Some(Chunk::CastMember(_)) => false,
             _ => false,
         });
-        if has_direct { return true; }
+        if has_direct {
+            return true;
+        }
         // Check for sndH + sndS
-        let has_header = def.children.iter().any(|c| matches!(c, Some(Chunk::SndHeader(_))));
-        let has_samples = def.children.iter().any(|c| matches!(c, Some(Chunk::SndSamples(_))));
+        let has_header = def
+            .children
+            .iter()
+            .any(|c| matches!(c, Some(Chunk::SndHeader(_))));
+        let has_samples = def
+            .children
+            .iter()
+            .any(|c| matches!(c, Some(Chunk::SndSamples(_))));
         has_header && has_samples
     }
 
@@ -2160,7 +2373,11 @@ impl CastMember {
     /// The coordinate system for filmloop sprites is relative to this initial_rect.
     /// When rendering, sprite positions are translated by subtracting initial_rect.left/top.
     fn compute_filmloop_initial_rect(
-        frame_channel_data: &[(u32, u16, crate::director::chunks::score::ScoreFrameChannelData)],
+        frame_channel_data: &[(
+            u32,
+            u16,
+            crate::director::chunks::score::ScoreFrameChannelData,
+        )],
         _reg_point: (i16, i16),
     ) -> super::geometry::IntRect {
         let mut min_x = i32::MAX;
@@ -2180,14 +2397,16 @@ impl CastMember {
             // with non-zero width/height and the sprite-record geometry encoding
             // an oval/rect/etc. directly. Coke Studios' nav_circleanim uses this
             // to draw a radar-ping animation as growing concentric ovals.
-            let is_inline_shape = data.cast_lib == 0xFFFE && data.cast_member == 0
+            let is_inline_shape = data.cast_lib == 0xFFFE
+                && data.cast_member == 0
                 && (data.width > 0 || data.height > 0);
 
             // Skip empty sprites (no cast member assigned, and not an inline shape).
             // Also skip sprites with cast_lib == 0 which are typically invalid/placeholder entries
             // (cast_lib 65535 is valid - it's used for internal/embedded casts;
             //  cast_lib 65534 is the inline-shape sentinel handled above).
-            if (data.cast_member == 0 && !is_inline_shape) || data.cast_lib == 0
+            if (data.cast_member == 0 && !is_inline_shape)
+                || data.cast_lib == 0
                 || (data.width == 0 && data.height == 0)
             {
                 continue;
@@ -2203,9 +2422,18 @@ impl CastMember {
 
             debug!(
                 "FilmLoop initial_rect: frame {} channel {} cast {}:{} pos ({}, {}) size {}x{} -> bounds ({}, {}, {}, {})",
-                _frame_idx, channel_idx, data.cast_lib, data.cast_member,
-                data.pos_x, data.pos_y, data.width, data.height,
-                sprite_left, sprite_top, sprite_right, sprite_bottom
+                _frame_idx,
+                channel_idx,
+                data.cast_lib,
+                data.cast_member,
+                data.pos_x,
+                data.pos_y,
+                data.width,
+                data.height,
+                sprite_left,
+                sprite_top,
+                sprite_right,
+                sprite_bottom
             );
 
             if sprite_left < min_x {
@@ -2245,7 +2473,9 @@ impl CastMember {
     ) -> BitmapRef {
         // Search all children for the first Bitmap(BITD) chunk
         // (it may not be at index 0 — other slots can be None or other chunk types)
-        let bitd_chunk = member_def.children.iter()
+        let bitd_chunk = member_def
+            .children
+            .iter()
             .find_map(|c| c.as_ref().and_then(|chunk| chunk.as_bitmap()));
 
         if let Some(bitd_chunk) = bitd_chunk {
@@ -2275,7 +2505,11 @@ impl CastMember {
                             number, e
                         );
                         bitmap_manager.add_bitmap(Bitmap::new(
-                            1, 1, 8, 8, 0,
+                            1,
+                            1,
+                            8,
+                            8,
+                            0,
                             PaletteRef::BuiltIn(BuiltInPalette::GrayScale),
                         ))
                     }
@@ -2291,7 +2525,11 @@ impl CastMember {
                             number, e
                         );
                         bitmap_manager.add_bitmap(Bitmap::new(
-                            1, 1, 8, 8, 0,
+                            1,
+                            1,
+                            8,
+                            8,
+                            0,
                             PaletteRef::BuiltIn(BuiltInPalette::GrayScale),
                         ))
                     }
@@ -2312,13 +2550,30 @@ impl CastMember {
                 match decompressed {
                     Ok(new_bitmap) => bitmap_manager.add_bitmap(new_bitmap),
                     Err(e) => {
-                        warn!("[BMP] Failed to decode Raw data for member {}:{}: {}", cast_lib, number, e);
-                        bitmap_manager.add_bitmap(Bitmap::new(1, 1, 8, 8, 0, PaletteRef::BuiltIn(BuiltInPalette::GrayScale)))
+                        warn!(
+                            "[BMP] Failed to decode Raw data for member {}:{}: {}",
+                            cast_lib, number, e
+                        );
+                        bitmap_manager.add_bitmap(Bitmap::new(
+                            1,
+                            1,
+                            8,
+                            8,
+                            0,
+                            PaletteRef::BuiltIn(BuiltInPalette::GrayScale),
+                        ))
                     }
                 }
             } else {
                 warn!("No bitmap chunk found for member {}", number);
-                bitmap_manager.add_bitmap(Bitmap::new(1, 1, 8, 8, 0, PaletteRef::BuiltIn(BuiltInPalette::GrayScale)))
+                bitmap_manager.add_bitmap(Bitmap::new(
+                    1,
+                    1,
+                    8,
+                    8,
+                    0,
+                    PaletteRef::BuiltIn(BuiltInPalette::GrayScale),
+                ))
             }
         }
     }
@@ -2381,7 +2636,9 @@ impl CastMember {
                 let mut name = Vec::new();
 
                 for &b in &data[i..] {
-                    if b == 0 { break; }
+                    if b == 0 {
+                        break;
+                    }
                     if b.is_ascii_graphic() || b == b' ' {
                         name.push(b);
                     }
@@ -2397,15 +2654,19 @@ impl CastMember {
     }
 
     fn extract_pfr(member_def: &CastMemberDef) -> Option<PfrFont> {
-        member_def.children.iter()
-            .find_map(|c| match c {
-                Some(Chunk::XMedia(x)) if x.is_pfr_font() => x.parse_pfr_font(),
-                _ => None
-            })
+        member_def.children.iter().find_map(|c| match c {
+            Some(Chunk::XMedia(x)) if x.is_pfr_font() => x.parse_pfr_font(),
+            _ => None,
+        })
     }
 
     fn resolve_font_name(chunk: &CastMemberChunk, pfr: &Option<PfrFont>, number: u32) -> String {
-        if let Some(name) = chunk.member_info.as_ref().map(|i| i.name.clone()).filter(|n| !n.is_empty()) {
+        if let Some(name) = chunk
+            .member_info
+            .as_ref()
+            .map(|i| i.name.clone())
+            .filter(|n| !n.is_empty())
+        {
             return name;
         }
 
@@ -2429,7 +2690,7 @@ impl CastMember {
         bitmap_manager: &mut BitmapManager,
         target_height: usize,
     ) -> PfrBitmap {
-        use crate::director::chunks::pfr1::{rasterizer, parse_pfr1_font_with_target};
+        use crate::director::chunks::pfr1::{parse_pfr1_font_with_target, rasterizer};
 
         // Parse at target=0 to keep coordinates in ORU space. The rasterizer
         // handles ORU→pixel scaling using target_height / outline_res.
@@ -2481,8 +2742,10 @@ impl CastMember {
 
         bitmap.use_alpha = true;
 
-        debug!("✅ Finished assembling PFR bitmap ({} glyphs rendered).",
-            parsed_for_size.glyphs.len() + parsed_for_size.bitmap_glyphs.len());
+        debug!(
+            "✅ Finished assembling PFR bitmap ({} glyphs rendered).",
+            parsed_for_size.glyphs.len() + parsed_for_size.bitmap_glyphs.len()
+        );
 
         let bitmap_ref = bitmap_manager.add_bitmap(bitmap);
 
@@ -2502,20 +2765,34 @@ impl CastMember {
             "Processing Ole member #{} in cast lib {} (name: {})",
             number,
             cast_lib,
-            chunk.member_info.as_ref().map(|x| x.name.as_str()).unwrap_or("")
+            chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.name.as_str())
+                .unwrap_or("")
         );
     }
 
     fn log_found_swf(number: u32, sig: &[u8], len: usize) {
-        debug!("✅ Found SWF data in Ole member #{} (signature: {:?}, {} bytes)", number, sig, len);
+        debug!(
+            "✅ Found SWF data in Ole member #{} (signature: {:?}, {} bytes)",
+            number, sig, len
+        );
     }
 
     fn log_found_swf_at_offset(number: u32, sig: &[u8]) {
-        debug!("✅ Found SWF signature at offset 12 in Ole member #{}: {:?}", number, sig);
+        debug!(
+            "✅ Found SWF signature at offset 12 in Ole member #{}: {:?}",
+            number, sig
+        );
     }
 
     fn log_unknown_ole(number: u32, chunk: &CastMemberChunk) {
-        let name = chunk.member_info.as_ref().map(|x| x.name.as_str()).unwrap_or("");
+        let name = chunk
+            .member_info
+            .as_ref()
+            .map(|x| x.name.as_str())
+            .unwrap_or("");
         debug!(
             "Cast member #{} has unimplemented type: Ole (name: {})",
             number, name
@@ -2564,9 +2841,12 @@ impl CastMember {
             val
         };
 
-        let x_min = read_bits(bit_pos, nbits); bit_pos += nbits;
-        let x_max = read_bits(bit_pos, nbits); bit_pos += nbits;
-        let y_min = read_bits(bit_pos, nbits); bit_pos += nbits;
+        let x_min = read_bits(bit_pos, nbits);
+        bit_pos += nbits;
+        let x_max = read_bits(bit_pos, nbits);
+        bit_pos += nbits;
+        let y_min = read_bits(bit_pos, nbits);
+        bit_pos += nbits;
         let y_max = read_bits(bit_pos, nbits);
         let _ = bit_pos;
 
@@ -2595,9 +2875,21 @@ impl CastMember {
 
         CastMember {
             number,
-            name: chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
-            member_type: CastMemberType::Flash(FlashMember { data, reg_point, flash_info }),
+            name: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.name.to_owned())
+                .unwrap_or_default(),
+            comments: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.comments.to_owned())
+                .unwrap_or_default(),
+            member_type: CastMemberType::Flash(FlashMember {
+                data,
+                reg_point,
+                flash_info,
+            }),
             color: ColorRef::PaletteIndex(255),
             bg_color: ColorRef::PaletteIndex(0),
             reg_point: (0, 0),
@@ -2635,7 +2927,9 @@ impl CastMember {
             fov: 34.516,
             screen_width: 640,
             screen_height: 480,
-            transform: [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,100.0,1.0],
+            transform: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 100.0, 1.0,
+            ],
         });
         // Default ambient light
         scene.lights.push(W3dLight {
@@ -2663,15 +2957,16 @@ impl CastMember {
             resource_name: "DefaultDirectional".to_string(),
             model_resource_name: String::new(),
             shader_name: String::new(),
-            near_plane: 1.0, far_plane: 10000.0, fov: 30.0,
-            screen_width: 640, screen_height: 480,
+            near_plane: 1.0,
+            far_plane: 10000.0,
+            fov: 30.0,
+            screen_width: 640,
+            screen_height: 480,
             // Rotation: Z-axis points toward (0.5, 1.0, 0.7) normalized
             // -Z axis = (-0.37, -0.74, -0.52) is the light direction
             transform: [
-                0.88, 0.0, -0.47, 0.0,
-                -0.35, 0.67, -0.65, 0.0,
-                0.32, 0.74, 0.59, 0.0,
-                0.0, 0.0, 0.0, 1.0,
+                0.88, 0.0, -0.47, 0.0, -0.35, 0.67, -0.65, 0.0, 0.32, 0.74, 0.59, 0.0, 0.0, 0.0,
+                0.0, 1.0,
             ],
         });
         scene
@@ -2680,39 +2975,56 @@ impl CastMember {
     /// Check if OLE specific_data_raw is a Shockwave3D member.
     /// Format: 4-byte BE string length + "shockwave3d" + 3DPR data
     fn is_shockwave3d_ole(raw: &[u8]) -> bool {
-        if raw.len() < 15 { return false; }
+        if raw.len() < 15 {
+            return false;
+        }
         let str_len = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
-        if str_len == 0 || raw.len() < 4 + str_len { return false; }
+        if str_len == 0 || raw.len() < 4 + str_len {
+            return false;
+        }
         std::str::from_utf8(&raw[4..4 + str_len]).ok() == Some("shockwave3d")
     }
 
     /// Check if OLE specific_data_raw is a SWA (Shockwave Audio) member.
     /// Format: 4-byte BE string length + "swa" + Xtra-specific data with file path
     fn is_swa_ole(raw: &[u8]) -> bool {
-        if raw.len() < 7 { return false; }
+        if raw.len() < 7 {
+            return false;
+        }
         let str_len = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
-        if str_len == 0 || raw.len() < 4 + str_len { return false; }
+        if str_len == 0 || raw.len() < 4 + str_len {
+            return false;
+        }
         std::str::from_utf8(&raw[4..4 + str_len]).ok() == Some("swa")
     }
 
     fn is_havok_ole(raw: &[u8]) -> bool {
-        if raw.len() < 8 { return false; }
+        if raw.len() < 8 {
+            return false;
+        }
         let str_len = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
-        if str_len == 0 || str_len > 256 || raw.len() < 4 + str_len { return false; }
+        if str_len == 0 || str_len > 256 || raw.len() < 4 + str_len {
+            return false;
+        }
         let type_str = std::str::from_utf8(&raw[4..4 + str_len]).ok().unwrap_or("");
         type_str.eq_ignore_ascii_case("havok")
     }
 
     /// Check if this OLE member is a Havok member by examining both the specific_data_raw
     /// type string and the member info name/file_name fields.
-    fn is_havok_member_any(raw: &[u8], member_info: &Option<crate::director::chunks::cast_member_info::CastMemberInfoChunk>) -> bool {
+    fn is_havok_member_any(
+        raw: &[u8],
+        member_info: &Option<crate::director::chunks::cast_member_info::CastMemberInfoChunk>,
+    ) -> bool {
         // Check OLE type string first
         if Self::is_havok_ole(raw) {
             return true;
         }
         // Fall back to checking member_info file_name or exact name "havok"
         if let Some(info) = member_info {
-            if info.file_name.to_lowercase().contains("havok") || info.name.eq_ignore_ascii_case("havok") {
+            if info.file_name.to_lowercase().contains("havok")
+                || info.name.eq_ignore_ascii_case("havok")
+            {
                 return true;
             }
         }
@@ -2721,7 +3033,11 @@ impl CastMember {
 
     /// Try to parse OLE specific_data_raw as a vectorShape member.
     /// Format: 4-byte BE string length + "vectorShape" + 4-byte FLSH size + "FLSH" fourCC + 4-byte size + payload
-    fn try_parse_vector_shape(raw: &[u8], number: u32, chunk: &CastMemberChunk) -> Option<CastMember> {
+    fn try_parse_vector_shape(
+        raw: &[u8],
+        number: u32,
+        chunk: &CastMemberChunk,
+    ) -> Option<CastMember> {
         if raw.len() < 15 {
             return None;
         }
@@ -2738,7 +3054,10 @@ impl CastMember {
         // Parse FLSH block: after type string, we have 4-byte size + "FLSH" fourCC + payload
         let flsh_start = 4 + str_len;
         if raw.len() < flsh_start + 8 {
-            debug!("OLE member #{}: vectorShape too short for FLSH header", number);
+            debug!(
+                "OLE member #{}: vectorShape too short for FLSH header",
+                number
+            );
             return None;
         }
         let flsh_fourcc = &raw[flsh_start + 4..flsh_start + 8];
@@ -2776,7 +3095,11 @@ impl CastMember {
                 .as_ref()
                 .map(|x| x.name.to_owned())
                 .unwrap_or_default(),
-            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+            comments: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.comments.to_owned())
+                .unwrap_or_default(),
             member_type: CastMemberType::VectorShape(vector_member),
             color: ColorRef::PaletteIndex(255),
             bg_color: ColorRef::PaletteIndex(0),
@@ -2827,13 +3150,23 @@ impl CastMember {
         number: u32,
         chunk: &CastMemberChunk,
         bitmap_manager: &mut BitmapManager,
-    ) -> Option<CastMember>
-    {
+    ) -> Option<CastMember> {
         for opt_child in &member_def.children {
-            let Some(Chunk::XMedia(xm)) = opt_child else { continue };
+            let Some(Chunk::XMedia(xm)) = opt_child else {
+                continue;
+            };
 
-            let member_name = chunk.member_info.as_ref().map(|i| i.name.as_str()).unwrap_or("");
-            debug!("Checking XMedia child (member #{}, name='{}', {} bytes)", number, member_name, xm.raw_data.len());
+            let member_name = chunk
+                .member_info
+                .as_ref()
+                .map(|i| i.name.as_str())
+                .unwrap_or("");
+            debug!(
+                "Checking XMedia child (member #{}, name='{}', {} bytes)",
+                number,
+                member_name,
+                xm.raw_data.len()
+            );
 
             // 1) If SWF: return SWF
             if let Some(cm) = Self::try_parse_swf(xm.raw_data.to_vec(), number, chunk) {
@@ -2847,12 +3180,21 @@ impl CastMember {
                 let hke_data = xm.raw_data.clone();
                 debug!(
                     "Havok Physics member #{} detected in scan_children_for_ole (early), HKE data={} bytes",
-                    number, hke_data.len()
+                    number,
+                    hke_data.len()
                 );
                 return Some(CastMember {
                     number,
-                    name: chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-                    comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+                    name: chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.name.to_owned())
+                        .unwrap_or_default(),
+                    comments: chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.comments.to_owned())
+                        .unwrap_or_default(),
                     member_type: CastMemberType::HavokPhysics(HavokPhysicsMember::new(hke_data)),
                     color: ColorRef::PaletteIndex(255),
                     bg_color: ColorRef::PaletteIndex(0),
@@ -2864,7 +3206,12 @@ impl CastMember {
             // Only parse as styled text if the Ole type string is "text" or empty
             // (avoid mis-parsing raw binary data like lightmap coordinates as text)
             let ole_type = if chunk.specific_data_raw.len() >= 4 {
-                let str_len = u32::from_be_bytes([chunk.specific_data_raw[0], chunk.specific_data_raw[1], chunk.specific_data_raw[2], chunk.specific_data_raw[3]]) as usize;
+                let str_len = u32::from_be_bytes([
+                    chunk.specific_data_raw[0],
+                    chunk.specific_data_raw[1],
+                    chunk.specific_data_raw[2],
+                    chunk.specific_data_raw[3],
+                ]) as usize;
                 if str_len > 0 && chunk.specific_data_raw.len() >= 4 + str_len {
                     std::str::from_utf8(&chunk.specific_data_raw[4..4 + str_len]).unwrap_or("")
                 } else {
@@ -2875,7 +3222,9 @@ impl CastMember {
             };
             let is_text_ole = ole_type.is_empty() || ole_type == "text";
             if is_text_ole {
-                let hex_dump = xm.raw_data.clone()
+                let hex_dump = xm
+                    .raw_data
+                    .clone()
                     .iter()
                     .map(|b| format!("{:02X} ", b))
                     .collect::<Vec<String>>()
@@ -2883,7 +3232,11 @@ impl CastMember {
                 debug!(
                     "XMED X2 (text member #{} '{}', {} bytes):\n{}",
                     number,
-                    chunk.member_info.as_ref().map(|x| x.name.as_str()).unwrap_or(""),
+                    chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.name.as_str())
+                        .unwrap_or(""),
                     xm.raw_data.len(),
                     hex_dump
                 );
@@ -2904,20 +3257,27 @@ impl CastMember {
             if xm.is_shockwave3d() {
                 debug!(
                     "Detected as Shockwave3D (IFX) member #{}, {} bytes",
-                    number, xm.raw_data.len()
+                    number,
+                    xm.raw_data.len()
                 );
                 let w3d_data = xm.raw_data.clone();
                 let parsed_scene = if !w3d_data.is_empty() {
                     match crate::director::chunks::w3d::parse_w3d(&w3d_data) {
                         Ok(mut scene) => {
-                            debug!("W3D parsed: {} materials, {} nodes, {} meshes",
-                                scene.materials.len(), scene.nodes.len(), scene.clod_meshes.len());
+                            debug!(
+                                "W3D parsed: {} materials, {} nodes, {} meshes",
+                                scene.materials.len(),
+                                scene.nodes.len(),
+                                scene.clod_meshes.len()
+                            );
                             // Ensure DefaultShader exists
                             if !scene.shaders.iter().any(|s| s.name == "DefaultShader") {
-                                scene.shaders.push(crate::director::chunks::w3d::types::W3dShader {
-                                    name: "DefaultShader".to_string(),
-                                    ..Default::default()
-                                });
+                                scene.shaders.push(
+                                    crate::director::chunks::w3d::types::W3dShader {
+                                        name: "DefaultShader".to_string(),
+                                        ..Default::default()
+                                    },
+                                );
                             }
                             Some(std::rc::Rc::new(scene))
                         }
@@ -2929,20 +3289,46 @@ impl CastMember {
                 } else {
                     Some(std::rc::Rc::new(Self::create_empty_w3d_scene()))
                 };
-                let info = Shockwave3dInfo::from(&chunk.specific_data_raw)
-                    .unwrap_or(Shockwave3dInfo {
-                        loops: false, duration: 0, direct_to_stage: false,
-                        animation_enabled: false, preload: false,
-                        reg_point: (0, 0), default_rect: (0, 0, 320, 240),
-                        camera_position: None, camera_rotation: None,
-                        bg_color: None, ambient_color: None,
+                let info =
+                    Shockwave3dInfo::from(&chunk.specific_data_raw).unwrap_or(Shockwave3dInfo {
+                        loops: false,
+                        duration: 0,
+                        direct_to_stage: false,
+                        animation_enabled: false,
+                        preload: false,
+                        reg_point: (0, 0),
+                        default_rect: (0, 0, 320, 240),
+                        camera_position: None,
+                        camera_rotation: None,
+                        bg_color: None,
+                        ambient_color: None,
                     });
                 let source_scene = parsed_scene.clone();
                 return Some(CastMember {
                     number,
-                    name: chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-                    comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
-                    member_type: { let rs = Shockwave3dRuntimeState::from_info(&info, parsed_scene.as_deref()); CastMemberType::Shockwave3d(Shockwave3dMember { info: info.clone(), w3d_data, source_scene, parsed_scene, runtime_state: rs, converted_from_text: false, text3d_state: None, text3d_source: None }) },
+                    name: chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.name.to_owned())
+                        .unwrap_or_default(),
+                    comments: chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.comments.to_owned())
+                        .unwrap_or_default(),
+                    member_type: {
+                        let rs = Shockwave3dRuntimeState::from_info(&info, parsed_scene.as_deref());
+                        CastMemberType::Shockwave3d(Shockwave3dMember {
+                            info: info.clone(),
+                            w3d_data,
+                            source_scene,
+                            parsed_scene,
+                            runtime_state: rs,
+                            converted_from_text: false,
+                            text3d_state: None,
+                            text3d_source: None,
+                        })
+                    },
                     color: ColorRef::PaletteIndex(255),
                     bg_color: ColorRef::PaletteIndex(0),
                     reg_point: info.reg_point,
@@ -2953,15 +3339,24 @@ impl CastMember {
             let has_pfr = Self::extract_pfr(member_def).is_some();
             if has_pfr {
                 debug!("Detected as PFR font");
-                return Some(Self::parse_xmedia_font(member_def, number, chunk, xm, bitmap_manager));
+                return Some(Self::parse_xmedia_font(
+                    member_def,
+                    number,
+                    chunk,
+                    xm,
+                    bitmap_manager,
+                ));
             }
 
             // 5) No PFR font data — create a TextMember from the XMedia text content
             // Use the proper XMED parser to get clean text, fall back to empty
-            let text = xm.parse_styled_text()
+            let text = xm
+                .parse_styled_text()
                 .map(|st| st.text.clone())
                 .unwrap_or_default();
-            let member_name = chunk.member_info.as_ref()
+            let member_name = chunk
+                .member_info
+                .as_ref()
                 .map(|x| x.name.to_owned())
                 .unwrap_or_default();
             let mut text_member = TextMember::new();
@@ -2969,7 +3364,11 @@ impl CastMember {
             return Some(CastMember {
                 number,
                 name: member_name,
-                comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+                comments: chunk
+                    .member_info
+                    .as_ref()
+                    .map(|x| x.comments.to_owned())
+                    .unwrap_or_default(),
                 member_type: CastMemberType::Text(text_member),
                 color: ColorRef::PaletteIndex(255),
                 bg_color: ColorRef::PaletteIndex(0),
@@ -3001,14 +3400,21 @@ impl CastMember {
         let preview_font_name = Self::scan_font_name_from_xmedia(xm);
         let font_name = Self::resolve_font_name(chunk, &pfr, number);
 
-        let info_and_bitmap = Self::build_font_info_and_bitmap(
-            pfr,
-            chunk,
-            &font_name,
-            bitmap_manager,
-        );
+        let info_and_bitmap =
+            Self::build_font_info_and_bitmap(pfr, chunk, &font_name, bitmap_manager);
 
-        let (font_info, bitmap_ref, char_w, char_h, gc, gr, char_widths, first_char, pfr_parsed, pfr_data) = info_and_bitmap;
+        let (
+            font_info,
+            bitmap_ref,
+            char_w,
+            char_h,
+            gc,
+            gr,
+            char_widths,
+            first_char,
+            pfr_parsed,
+            pfr_data,
+        ) = info_and_bitmap;
 
         let member_name = chunk
             .member_info
@@ -3021,16 +3427,30 @@ impl CastMember {
              fixed_line_space=14 top_spacing=0 char_width={:?} char_height={:?} \
              grid_columns={:?} grid_rows={:?} first_char_num={:?} char_widths_len={} \
              bitmap_ref={:?} pfr_parsed={} pfr_data_len={}",
-            number, member_name, font_name, preview_text, preview_font_name,
-            char_w, char_h, gc, gr, first_char,
+            number,
+            member_name,
+            font_name,
+            preview_text,
+            preview_font_name,
+            char_w,
+            char_h,
+            gc,
+            gr,
+            first_char,
             char_widths.as_ref().map_or(0, |v| v.len()),
-            bitmap_ref, pfr_parsed.is_some(), pfr_data.as_ref().map_or(0, |d| d.len()),
+            bitmap_ref,
+            pfr_parsed.is_some(),
+            pfr_data.as_ref().map_or(0, |d| d.len()),
         );
 
         CastMember {
             number,
             name: member_name,
-            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+            comments: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.comments.to_owned())
+                .unwrap_or_default(),
             member_type: CastMemberType::Font(FontMember {
                 font_info,
                 preview_text,
@@ -3064,7 +3484,8 @@ impl CastMember {
         use crate::player::handlers::datum_handlers::cast_member::font::TextAlignment;
 
         debug!(
-            "[XMED] Creating TextMember from XMED styled text (member #{})", number
+            "[XMED] Creating TextMember from XMED styled text (member #{})",
+            number
         );
 
         let alignment_str = match styled_text.alignment {
@@ -3102,10 +3523,7 @@ impl CastMember {
             // reads this. Falls back to the first styled span's size, then
             // to max-of-spans, then to 12 (matches the prior behaviour
             // when 0x0005 is absent or empty).
-            let first_span_size = first_style
-                .font_size
-                .filter(|s| *s > 0)
-                .map(|s| s as u16);
+            let first_span_size = first_style.font_size.filter(|s| *s > 0).map(|s| s as u16);
             let fallback_max = styled_text
                 .styled_spans
                 .iter()
@@ -3118,7 +3536,10 @@ impl CastMember {
                 .or(first_span_size)
                 .unwrap_or(fallback_max);
             (
-                first_style.font_face.clone().unwrap_or_else(|| "Arial".to_string()),
+                first_style
+                    .font_face
+                    .clone()
+                    .unwrap_or_else(|| "Arial".to_string()),
                 chosen_size,
             )
         } else {
@@ -3139,14 +3560,19 @@ impl CastMember {
 
         debug!(
             "[XMED]   text='{}', alignment={}, font='{}', size={}, spans={}, word_wrap={}",
-            styled_text.text, alignment_str, font_name, font_size, styled_text.styled_spans.len(),
+            styled_text.text,
+            alignment_str,
+            font_name,
+            font_size,
+            styled_text.styled_spans.len(),
             styled_text.word_wrap
         );
 
         // Get TextInfo from specific_data if available; otherwise synthesize a default one
         // so runtime properties like centerRegPoint are always present on parsed text members.
         let text_info_from_chunk = chunk.specific_data.text_info().cloned();
-        let raw_looks_like_text_info = TextInfo::looks_like_text_info(chunk.specific_data_raw.as_slice());
+        let raw_looks_like_text_info =
+            TextInfo::looks_like_text_info(chunk.specific_data_raw.as_slice());
         let text_info_from_raw = if text_info_from_chunk.is_none() && raw_looks_like_text_info {
             Some(TextInfo::from(chunk.specific_data_raw.as_slice()))
         } else {
@@ -3319,7 +3745,9 @@ impl CastMember {
 
         // Fallback for older text member formats: parse raw text member data for dimensions.
         if box_w == 0 || box_h == 0 {
-            if let Some(text_member_data) = TextMemberData::from_raw_bytes(chunk.specific_data_raw.as_slice()) {
+            if let Some(text_member_data) =
+                TextMemberData::from_raw_bytes(chunk.specific_data_raw.as_slice())
+            {
                 if box_w == 0 && text_member_data.width > 0 {
                     box_w = text_member_data.width as u16;
                 }
@@ -3336,8 +3764,12 @@ impl CastMember {
             box_h = styled_text.page_height as u16;
         }
 
-        if box_w == 0 { box_w = 100; }
-        if box_h == 0 { box_h = 20; }
+        if box_w == 0 {
+            box_w = 100;
+        }
+        if box_h == 0 {
+            box_h = 20;
+        }
 
         // Keep synthesized TextInfo dimensions aligned with effective member box.
         text_info.width = box_w as u32;
@@ -3356,9 +3788,15 @@ impl CastMember {
             .first()
             .map(|s| {
                 let mut v = Vec::new();
-                if s.style.bold      { v.push("bold".to_string()); }
-                if s.style.italic    { v.push("italic".to_string()); }
-                if s.style.underline { v.push("underline".to_string()); }
+                if s.style.bold {
+                    v.push("bold".to_string());
+                }
+                if s.style.italic {
+                    v.push("italic".to_string());
+                }
+                if s.style.underline {
+                    v.push("underline".to_string());
+                }
                 v
             })
             .unwrap_or_default();
@@ -3387,7 +3825,10 @@ impl CastMember {
             bottom_spacing: styled_text.bottom_spacing as i16,
             width: box_w,
             height: box_h,
-            char_spacing: styled_text.styled_spans.first()
+            scroll_top: text_info.scroll_top,
+            char_spacing: styled_text
+                .styled_spans
+                .first()
                 .map(|s| s.style.char_spacing as i32)
                 .unwrap_or(0),
             tab_stops: Vec::new(),
@@ -3431,13 +3872,17 @@ impl CastMember {
 
         // Preserve XMED foreColor at the member level so it persists
         // even when Lingo sets member.text or member.html (which may clear styled span colors)
-        let member_color = text_member.html_styled_spans.first()
+        let member_color = text_member
+            .html_styled_spans
+            .first()
             .and_then(|s| s.style.color)
-            .map(|c| ColorRef::Rgb(
-                ((c >> 16) & 0xFF) as u8,
-                ((c >> 8) & 0xFF) as u8,
-                (c & 0xFF) as u8,
-            ))
+            .map(|c| {
+                ColorRef::Rgb(
+                    ((c >> 16) & 0xFF) as u8,
+                    ((c >> 8) & 0xFF) as u8,
+                    (c & 0xFF) as u8,
+                )
+            })
             .unwrap_or(ColorRef::PaletteIndex(255));
 
         // Extract XMED backColor from Section 0x0000 document header (indices 30-32).
@@ -3445,13 +3890,19 @@ impl CastMember {
             .map(|(r, g, b)| ColorRef::Rgb(r, g, b))
             .unwrap_or(ColorRef::PaletteIndex(0));
 
-        let reg_point = text_member.info.as_ref()
+        let reg_point = text_member
+            .info
+            .as_ref()
             .map(|info| (info.reg_x, info.reg_y))
             .unwrap_or((0, 0));
         CastMember {
             number,
             name: member_name,
-            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+            comments: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.comments.to_owned())
+                .unwrap_or_default(),
             member_type: CastMemberType::Text(text_member),
             color: member_color,
             bg_color: member_bg_color,
@@ -3467,15 +3918,15 @@ impl CastMember {
     ) -> (
         FontInfo,
         Option<BitmapRef>,
-        Option<u16>, // char width
-        Option<u16>, // char height
-        Option<u8>, // grid columns
-        Option<u8>, // grid rows
+        Option<u16>,      // char width
+        Option<u16>,      // char height
+        Option<u8>,       // grid columns
+        Option<u8>,       // grid rows
         Option<Vec<u16>>, // char widths
-        Option<u8>, // first_char_num
+        Option<u8>,       // first_char_num
         Option<crate::director::chunks::pfr1::types::Pfr1ParsedFont>,
         Option<Vec<u8>>,
-        ) {
+    ) {
         let specific_bytes = chunk.specific_data_raw.clone();
 
         if let Some(pfr) = pfr {
@@ -3492,8 +3943,13 @@ impl CastMember {
 
             debug!(
                 "[font.load] font='{}' FontInfo.size={} target_height={}",
-                if pfr.font_name.is_empty() { default_name } else { &pfr.font_name },
-                requested_size, target_height
+                if pfr.font_name.is_empty() {
+                    default_name
+                } else {
+                    &pfr.font_name
+                },
+                requested_size,
+                target_height
             );
 
             let bmp = Self::render_pfr_to_bitmap(&pfr, bitmap_manager, target_height);
@@ -3506,7 +3962,7 @@ impl CastMember {
                     default_name.to_string()
                 } else {
                     pfr.font_name.clone()
-                }
+                },
             };
 
             debug!("Rendered PFR: {:?}", info);
@@ -3536,7 +3992,18 @@ impl CastMember {
         }
 
         // fallback
-        (FontInfo::minimal(default_name), None, None, None, None, None, None, None, None, None)
+        (
+            FontInfo::minimal(default_name),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     pub fn get_script_id(&self) -> Option<u32> {
@@ -3604,14 +4071,19 @@ impl CastMember {
 
         let member_type = match chunk.member_type {
             MemberType::Text => {
-                let text_chunk = member_def.children.iter()
+                let text_chunk = member_def
+                    .children
+                    .iter()
                     .find_map(|c| c.as_ref().and_then(|ch| ch.as_text()))
                     .expect("No text chunk found for text member");
                 let raw = chunk.specific_data_raw.as_slice();
                 let field_info = FieldInfo::from(raw);
                 debug!(
                     "[FIELD_INFO] rect=({},{},{},{}) text_height={} max_height={} border={} margin={} box_shadow={} box_type={} scroll={} flags=0x{:02X} raw_len={}",
-                    field_info.rect_left, field_info.rect_top, field_info.rect_right, field_info.rect_bottom,
+                    field_info.rect_left,
+                    field_info.rect_top,
+                    field_info.rect_right,
+                    field_info.rect_bottom,
                     field_info.text_height,
                     field_info.max_height,
                     field_info.border,
@@ -3642,7 +4114,11 @@ impl CastMember {
                     debug!(
                         "[field.font] STXT font_id={} -> Fmap='{}' (table has {} entries)",
                         first_run.font_id,
-                        if field_member.font.is_empty() { "<NOT FOUND>" } else { &field_member.font },
+                        if field_member.font.is_empty() {
+                            "<NOT FOUND>"
+                        } else {
+                            &field_member.font
+                        },
                         font_table.len(),
                     );
                     if first_run.font_size > 0 {
@@ -3677,12 +4153,23 @@ impl CastMember {
                      font_style='{}' font_size={} font_id={:?} fixed_line_space={} \
                      top_spacing={} box_type='{}' anti_alias={} width={} \
                      auto_tab={} editable={} border={} fore_color={:?} back_color={:?} formatting_runs={}",
-                    field_member.text, field_member.alignment, field_member.word_wrap,
-                    field_member.font, field_member.font_style, field_member.font_size,
-                    field_member.font_id, field_member.fixed_line_space,
-                    field_member.top_spacing, field_member.box_type, field_member.anti_alias,
-                    field_member.width, field_member.auto_tab, field_member.editable,
-                    field_member.border, field_member.fore_color, field_member.back_color,
+                    field_member.text,
+                    field_member.alignment,
+                    field_member.word_wrap,
+                    field_member.font,
+                    field_member.font_style,
+                    field_member.font_size,
+                    field_member.font_id,
+                    field_member.fixed_line_space,
+                    field_member.top_spacing,
+                    field_member.box_type,
+                    field_member.anti_alias,
+                    field_member.width,
+                    field_member.auto_tab,
+                    field_member.editable,
+                    field_member.border,
+                    field_member.fore_color,
+                    field_member.back_color,
                     formatting_runs.len(),
                 );
 
@@ -3692,7 +4179,8 @@ impl CastMember {
                 let member_info = chunk.member_info.as_ref().unwrap();
                 let mut script_id = member_info.header.script_id;
                 let script_type = chunk.specific_data.script_type().unwrap();
-                let has_script = lctx.as_ref()
+                let has_script = lctx
+                    .as_ref()
                     .map(|ctx| ctx.scripts.contains_key(&script_id))
                     .unwrap_or(false);
 
@@ -3700,7 +4188,8 @@ impl CastMember {
                 // Do NOT fall back to using the member number — the Lscr chunk at that
                 // index may contain stale bytecode from before the script was recycled.
 
-                let has_script = lctx.as_ref()
+                let has_script = lctx
+                    .as_ref()
                     .map(|ctx| ctx.scripts.contains_key(&script_id))
                     .unwrap_or(false);
 
@@ -3711,23 +4200,42 @@ impl CastMember {
                         name: member_info.name.clone(),
                     })
                 } else {
-                    web_sys::console::warn_1(&format!("Script member {}: script_id {} not found in Lctx, skipping", number, script_id).into());
+                    web_sys::console::warn_1(
+                        &format!(
+                            "Script member {}: script_id {} not found in Lctx, skipping",
+                            number, script_id
+                        )
+                        .into(),
+                    );
                     CastMemberType::Unknown
                 }
             }
             MemberType::Flash => {
                 use crate::director::enums::ShapeType;
                 debug!("Flash member {}: checking for shape_info", number);
-                debug!("  specific_data has shape_info: {}", chunk.specific_data.shape_info().is_some());
+                debug!(
+                    "  specific_data has shape_info: {}",
+                    chunk.specific_data.shape_info().is_some()
+                );
 
                 if let Some(shape_info) = chunk.specific_data.shape_info() {
-                    let script_id = chunk.member_info.as_ref()
+                    let script_id = chunk
+                        .member_info
+                        .as_ref()
                         .map(|info| info.header.script_id)
                         .unwrap_or(0);
                     let member_script_ref = if script_id > 0 {
-                        Some(CastMemberRef { cast_lib: cast_lib as i32, cast_member: script_id as i32 })
-                    } else { None };
-                    debug!("Flash member {} is a Shape (via shape_info), script_id={}", number, script_id);
+                        Some(CastMemberRef {
+                            cast_lib: cast_lib as i32,
+                            cast_member: script_id as i32,
+                        })
+                    } else {
+                        None
+                    };
+                    debug!(
+                        "Flash member {} is a Shape (via shape_info), script_id={}",
+                        number, script_id
+                    );
                     return CastMember {
                         number,
                         name: chunk
@@ -3735,7 +4243,11 @@ impl CastMember {
                             .as_ref()
                             .map(|x| x.name.to_owned())
                             .unwrap_or_default(),
-                        comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+                        comments: chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.comments.to_owned())
+                            .unwrap_or_default(),
                         member_type: CastMemberType::Shape(ShapeMember {
                             shape_info: shape_info.clone(),
                             script_id,
@@ -3744,27 +4256,43 @@ impl CastMember {
                         color: ColorRef::PaletteIndex(255),
                         bg_color: ColorRef::PaletteIndex(0),
                         reg_point: (0, 0),
-                    }
+                    };
                 }
 
                 // Director MX 2004 can store shapes as Flash members
                 // Try to parse the specific_data_raw as ShapeInfo
                 if !chunk.specific_data_raw.is_empty() {
-                    debug!("  specific_data_raw length: {}", chunk.specific_data_raw.len());
+                    debug!(
+                        "  specific_data_raw length: {}",
+                        chunk.specific_data_raw.len()
+                    );
 
                     // Try parsing as ShapeInfo
                     let shape_info = ShapeInfo::from(chunk.specific_data_raw.as_slice());
                     debug!("  Parsed shape_type: {:?}", shape_info.shape_type);
 
                     // If it looks like valid shape data, treat it as a shape
-                    if matches!(shape_info.shape_type, ShapeType::Rect | ShapeType::Oval | ShapeType::OvalRect | ShapeType::Line) {
-                        let script_id = chunk.member_info.as_ref()
+                    if matches!(
+                        shape_info.shape_type,
+                        ShapeType::Rect | ShapeType::Oval | ShapeType::OvalRect | ShapeType::Line
+                    ) {
+                        let script_id = chunk
+                            .member_info
+                            .as_ref()
                             .map(|info| info.header.script_id)
                             .unwrap_or(0);
                         let member_script_ref = if script_id > 0 {
-                            Some(CastMemberRef { cast_lib: cast_lib as i32, cast_member: script_id as i32 })
-                        } else { None };
-                        debug!("Flash member {} is actually a Shape! script_id={}", number, script_id);
+                            Some(CastMemberRef {
+                                cast_lib: cast_lib as i32,
+                                cast_member: script_id as i32,
+                            })
+                        } else {
+                            None
+                        };
+                        debug!(
+                            "Flash member {} is actually a Shape! script_id={}",
+                            number, script_id
+                        );
                         return CastMember {
                             number,
                             name: chunk
@@ -3772,7 +4300,11 @@ impl CastMember {
                                 .as_ref()
                                 .map(|x| x.name.to_owned())
                                 .unwrap_or_default(),
-                            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+                            comments: chunk
+                                .member_info
+                                .as_ref()
+                                .map(|x| x.comments.to_owned())
+                                .unwrap_or_default(),
                             member_type: CastMemberType::Shape(ShapeMember {
                                 shape_info,
                                 script_id,
@@ -3781,7 +4313,7 @@ impl CastMember {
                             color: ColorRef::PaletteIndex(255),
                             bg_color: ColorRef::PaletteIndex(0),
                             reg_point: (0, 0),
-                        }
+                        };
                     }
                 }
 
@@ -3796,7 +4328,9 @@ impl CastMember {
                     }
                 }
                 // Also scan XMedia children
-                if let Some(cm) = Self::scan_children_for_ole(member_def, number, chunk, bitmap_manager) {
+                if let Some(cm) =
+                    Self::scan_children_for_ole(member_def, number, chunk, bitmap_manager)
+                {
                     return cm;
                 }
                 // Fallback: use first child bytes if available
@@ -3811,10 +4345,18 @@ impl CastMember {
                     (0, 0)
                 };
                 if let Some(bytes) = Self::get_first_child_bytes(member_def) {
-                    CastMemberType::Flash(FlashMember { data: bytes, reg_point, flash_info })
+                    CastMemberType::Flash(FlashMember {
+                        data: bytes,
+                        reg_point,
+                        flash_info,
+                    })
                 } else {
                     warn!("Flash cast member has no data chunk or it is invalid.");
-                    CastMemberType::Flash(FlashMember { data: vec![], reg_point, flash_info })
+                    CastMemberType::Flash(FlashMember {
+                        data: vec![],
+                        reg_point,
+                        flash_info,
+                    })
                 }
             }
             MemberType::Ole => {
@@ -3823,9 +4365,24 @@ impl CastMember {
                 // Check if this OLE member is a Shockwave3D member.
                 // Format: 4-byte string length + "shockwave3d" + 3DPR data
                 if Self::is_shockwave3d_ole(&chunk.specific_data_raw) {
-                    let info = Shockwave3dInfo::from(&chunk.specific_data_raw)
-                        .unwrap_or(Shockwave3dInfo { loops: false, duration: 0, direct_to_stage: false, animation_enabled: false, preload: false, reg_point: (0, 0), default_rect: (0, 0, 0, 0), camera_position: None, camera_rotation: None, bg_color: None, ambient_color: None });
-                    let w3d_data = member_def.children.iter()
+                    let info = Shockwave3dInfo::from(&chunk.specific_data_raw).unwrap_or(
+                        Shockwave3dInfo {
+                            loops: false,
+                            duration: 0,
+                            direct_to_stage: false,
+                            animation_enabled: false,
+                            preload: false,
+                            reg_point: (0, 0),
+                            default_rect: (0, 0, 0, 0),
+                            camera_position: None,
+                            camera_rotation: None,
+                            bg_color: None,
+                            ambient_color: None,
+                        },
+                    );
+                    let w3d_data = member_def
+                        .children
+                        .iter()
                         .filter_map(|c| c.as_ref())
                         .find_map(|c| match c {
                             Chunk::XMedia(xm) => Some(xm.raw_data.clone()),
@@ -3841,8 +4398,11 @@ impl CastMember {
                         })
                         .unwrap_or_default();
                     // Dump specific_data_raw and first bytes of w3d for debugging
-                    let specific_hex: Vec<String> = chunk.specific_data_raw
-                        .iter().map(|b| format!("{:02X}", b)).collect();
+                    let specific_hex: Vec<String> = chunk
+                        .specific_data_raw
+                        .iter()
+                        .map(|b| format!("{:02X}", b))
+                        .collect();
                     // Try to decode extra 3DPR fields (camera, colors)
                     let raw = &chunk.specific_data_raw;
                     let str_len = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
@@ -3853,42 +4413,88 @@ impl CastMember {
                         // Try reading floats starting from o+0x57+4 onwards
                         let scan_start = o + 0x57;
                         for scan_off in (scan_start..raw.len().saturating_sub(12)).step_by(4) {
-                            let f1 = f32::from_bits(u32::from_be_bytes([raw[scan_off], raw[scan_off+1], raw[scan_off+2], raw[scan_off+3]]));
-                            let f2 = f32::from_bits(u32::from_be_bytes([raw[scan_off+4], raw[scan_off+5], raw[scan_off+6], raw[scan_off+7]]));
-                            let f3 = f32::from_bits(u32::from_be_bytes([raw[scan_off+8], raw[scan_off+9], raw[scan_off+10], raw[scan_off+11]]));
+                            let f1 = f32::from_bits(u32::from_be_bytes([
+                                raw[scan_off],
+                                raw[scan_off + 1],
+                                raw[scan_off + 2],
+                                raw[scan_off + 3],
+                            ]));
+                            let f2 = f32::from_bits(u32::from_be_bytes([
+                                raw[scan_off + 4],
+                                raw[scan_off + 5],
+                                raw[scan_off + 6],
+                                raw[scan_off + 7],
+                            ]));
+                            let f3 = f32::from_bits(u32::from_be_bytes([
+                                raw[scan_off + 8],
+                                raw[scan_off + 9],
+                                raw[scan_off + 10],
+                                raw[scan_off + 11],
+                            ]));
                             // Look for plausible camera-like values
-                            if f1.abs() > 0.01 && f1.abs() < 10000.0 && f2.abs() > 0.01 && f2.abs() < 10000.0 && f3.abs() > 0.01 && f3.abs() < 10000.0 {
-                                extra_info.push_str(&format!("\n  @o+0x{:X}: floats ({:.4}, {:.4}, {:.4})", scan_off - o, f1, f2, f3));
+                            if f1.abs() > 0.01
+                                && f1.abs() < 10000.0
+                                && f2.abs() > 0.01
+                                && f2.abs() < 10000.0
+                                && f3.abs() > 0.01
+                                && f3.abs() < 10000.0
+                            {
+                                extra_info.push_str(&format!(
+                                    "\n  @o+0x{:X}: floats ({:.4}, {:.4}, {:.4})",
+                                    scan_off - o,
+                                    f1,
+                                    f2,
+                                    f3
+                                ));
                             }
                         }
                     }
 
                     debug!(
                         "Ole member #{} Shockwave3D: w3d={} bytes, rect=({},{},{},{})\n  specific_data_raw[{}]: {}\n  3DPR content offset=0x{:X}{}",
-                        number, w3d_data.len(),
-                        info.default_rect.0, info.default_rect.1, info.default_rect.2, info.default_rect.3,
-                        chunk.specific_data_raw.len(), specific_hex.join(" "),
-                        o, extra_info
+                        number,
+                        w3d_data.len(),
+                        info.default_rect.0,
+                        info.default_rect.1,
+                        info.default_rect.2,
+                        info.default_rect.3,
+                        chunk.specific_data_raw.len(),
+                        specific_hex.join(" "),
+                        o,
+                        extra_info
                     );
 
                     // Dump the IFX view node block data if found
-                    if let Some(ifx_start) = crate::director::chunks::w3d::find_ifx_start_offset(&w3d_data) {
+                    if let Some(ifx_start) =
+                        crate::director::chunks::w3d::find_ifx_start_offset(&w3d_data)
+                    {
                         let ifx = &w3d_data[ifx_start..];
-                        let first256: Vec<String> = ifx[..ifx.len().min(256)].iter().map(|b| format!("{:02X}", b)).collect();
+                        let first256: Vec<String> = ifx[..ifx.len().min(256)]
+                            .iter()
+                            .map(|b| format!("{:02X}", b))
+                            .collect();
                         debug!(
                             "  IFX data at offset {}, first 256 bytes:\n  {}",
-                            ifx_start, first256.join(" ")
+                            ifx_start,
+                            first256.join(" ")
                         );
                     }
                     let parsed_scene = if !w3d_data.is_empty() {
                         match crate::director::chunks::w3d::parse_w3d(&w3d_data) {
                             Ok(scene) => {
-                                debug!("W3D parsed: {} materials, {} nodes, {} meshes, {} motions",
-                                    scene.materials.len(), scene.nodes.len(), scene.clod_meshes.len(), scene.motions.len());
+                                debug!(
+                                    "W3D parsed: {} materials, {} nodes, {} meshes, {} motions",
+                                    scene.materials.len(),
+                                    scene.nodes.len(),
+                                    scene.clod_meshes.len(),
+                                    scene.motions.len()
+                                );
                                 Some(std::rc::Rc::new(scene))
                             }
                             Err(e) => {
-                                web_sys::console::error_1(&format!("W3D parse error: {}", e).into());
+                                web_sys::console::error_1(
+                                    &format!("W3D parse error: {}", e).into(),
+                                );
                                 Some(std::rc::Rc::new(Self::create_empty_w3d_scene()))
                             }
                         }
@@ -3896,21 +4502,30 @@ impl CastMember {
                         // Empty W3D data — create empty scene for Lingo-created content
                         Some(std::rc::Rc::new(Self::create_empty_w3d_scene()))
                     };
-                    let runtime_state = Shockwave3dRuntimeState::from_info(&info, parsed_scene.as_deref());
+                    let runtime_state =
+                        Shockwave3dRuntimeState::from_info(&info, parsed_scene.as_deref());
                     return CastMember {
                         number,
-                        name: chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-                        comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+                        name: chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.name.to_owned())
+                            .unwrap_or_default(),
+                        comments: chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.comments.to_owned())
+                            .unwrap_or_default(),
                         member_type: CastMemberType::Shockwave3d(Shockwave3dMember {
-                        source_scene: None,
-                        parsed_scene,
-                        runtime_state,
-                        info: info.clone(),
-                        w3d_data,
-                        converted_from_text: false,
-                        text3d_state: None,
-                        text3d_source: None,
-                    }),
+                            source_scene: None,
+                            parsed_scene,
+                            runtime_state,
+                            info: info.clone(),
+                            w3d_data,
+                            converted_from_text: false,
+                            text3d_state: None,
+                            text3d_source: None,
+                        }),
                         color: ColorRef::PaletteIndex(255),
                         bg_color: ColorRef::PaletteIndex(0),
                         reg_point: info.reg_point,
@@ -3919,7 +4534,9 @@ impl CastMember {
 
                 // Check if this OLE member is a Havok Physics member
                 if Self::is_havok_member_any(&chunk.specific_data_raw, &chunk.member_info) {
-                    let hke_data = member_def.children.iter()
+                    let hke_data = member_def
+                        .children
+                        .iter()
                         .filter_map(|c| c.as_ref())
                         .find_map(|c| match c {
                             Chunk::XMedia(xm) => Some(xm.raw_data.clone()),
@@ -3929,13 +4546,24 @@ impl CastMember {
                         .unwrap_or_default();
                     debug!(
                         "Havok Physics member #{} detected, HKE data={} bytes",
-                        number, hke_data.len()
+                        number,
+                        hke_data.len()
                     );
                     return CastMember {
                         number,
-                        name: chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-                        comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
-                        member_type: CastMemberType::HavokPhysics(HavokPhysicsMember::new(hke_data)),
+                        name: chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.name.to_owned())
+                            .unwrap_or_default(),
+                        comments: chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.comments.to_owned())
+                            .unwrap_or_default(),
+                        member_type: CastMemberType::HavokPhysics(HavokPhysicsMember::new(
+                            hke_data,
+                        )),
                         color: ColorRef::PaletteIndex(255),
                         bg_color: ColorRef::PaletteIndex(0),
                         reg_point: (0, 0),
@@ -3944,7 +4572,9 @@ impl CastMember {
 
                 // Check if this OLE member is a vectorShape by examining specific_data_raw.
                 // Format: 4-byte string length + "vectorShape" + FLSH data block
-                if let Some(cm) = Self::try_parse_vector_shape(&chunk.specific_data_raw, number, chunk) {
+                if let Some(cm) =
+                    Self::try_parse_vector_shape(&chunk.specific_data_raw, number, chunk)
+                {
                     return cm;
                 }
 
@@ -3956,7 +4586,9 @@ impl CastMember {
                 }
 
                 // Try all XMedia children for SWF or fonts
-                if let Some(cm) = Self::scan_children_for_ole(member_def, number, chunk, bitmap_manager) {
+                if let Some(cm) =
+                    Self::scan_children_for_ole(member_def, number, chunk, bitmap_manager)
+                {
                     return cm;
                 }
 
@@ -3977,7 +4609,7 @@ impl CastMember {
                     .as_ref()
                     .map(|info| info.header.script_id)
                     .unwrap_or(0);
-                
+
                 let behavior_script_ref = if script_id > 0 {
                     let script_chunk = &lctx.as_ref().unwrap().scripts[&script_id];
 
@@ -4015,12 +4647,13 @@ impl CastMember {
 
                     if is_jpeg && !media.audio_data.is_empty() {
                         // Look for ALFA chunk in children (Raw data from parsed ALFA chunk)
-                        let alfa_data: Option<&Vec<u8>> = member_def.children.iter().find_map(|c| {
-                            c.as_ref().and_then(|chunk| match chunk {
-                                Chunk::Raw(data) => Some(data),
-                                _ => None,
-                            })
-                        });
+                        let alfa_data: Option<&Vec<u8>> =
+                            member_def.children.iter().find_map(|c| {
+                                c.as_ref().and_then(|chunk| match chunk {
+                                    Chunk::Raw(data) => Some(data),
+                                    _ => None,
+                                })
+                            });
 
                         match decode_jpeg_bitmap(&media.audio_data, &bitmap_info, alfa_data) {
                             Ok(new_bitmap) => {
@@ -4067,12 +4700,16 @@ impl CastMember {
                 };
 
                 debug!(
-                        "BitmapMember created â†’ name: {} palette_id {} useAlpha {} trimWhiteSpace {}",
-                        chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
-                        bitmap_info.palette_id,
-                        bitmap_info.use_alpha,
-                        bitmap_info.trim_white_space
-                    );
+                    "BitmapMember created â†’ name: {} palette_id {} useAlpha {} trimWhiteSpace {}",
+                    chunk
+                        .member_info
+                        .as_ref()
+                        .map(|x| x.name.to_owned())
+                        .unwrap_or_default(),
+                    bitmap_info.palette_id,
+                    bitmap_info.use_alpha,
+                    bitmap_info.trim_white_space
+                );
 
                 CastMemberType::Bitmap(BitmapMember {
                     image_ref: new_bitmap_ref,
@@ -4083,7 +4720,9 @@ impl CastMember {
                 })
             }
             MemberType::Palette => {
-                let palette_chunk = member_def.children.iter()
+                let palette_chunk = member_def
+                    .children
+                    .iter()
                     .find_map(|c| c.as_ref().and_then(|ch| ch.as_palette()))
                     .expect("No palette chunk found for palette member");
 
@@ -4116,7 +4755,9 @@ impl CastMember {
                 })
             }
             MemberType::FilmLoop => {
-                let score_chunk_opt = member_def.children.get(0)
+                let score_chunk_opt = member_def
+                    .children
+                    .get(0)
                     .and_then(|c| c.as_ref())
                     .and_then(|c| c.as_score());
                 let film_loop_info = chunk.specific_data.film_loop_info().unwrap();
@@ -4134,9 +4775,14 @@ impl CastMember {
                     debug!(
                         "FilmLoop {} initial_rect: ({}, {}, {}, {}), info size: {}x{}, reg_point: ({}, {})",
                         number,
-                        initial_rect.left, initial_rect.top, initial_rect.right, initial_rect.bottom,
-                        film_loop_info.width, film_loop_info.height,
-                        film_loop_info.reg_point.0, film_loop_info.reg_point.1
+                        initial_rect.left,
+                        initial_rect.top,
+                        initial_rect.right,
+                        initial_rect.bottom,
+                        film_loop_info.width,
+                        film_loop_info.height,
+                        film_loop_info.reg_point.0,
+                        film_loop_info.reg_point.1
                     );
 
                     // Log sprite_spans info
@@ -4149,14 +4795,26 @@ impl CastMember {
                     );
 
                     let total_frames = {
-                        let init_max = score.channel_initialization_data.iter()
-                            .map(|(f, _, _)| *f + 1).max().unwrap_or(1);
-                        let span_max = score.sprite_spans.iter()
-                            .map(|s| s.end_frame).max().unwrap_or(1);
-                        let kf_max = score.keyframes_cache.values()
+                        let init_max = score
+                            .channel_initialization_data
+                            .iter()
+                            .map(|(f, _, _)| *f + 1)
+                            .max()
+                            .unwrap_or(1);
+                        let span_max = score
+                            .sprite_spans
+                            .iter()
+                            .map(|s| s.end_frame)
+                            .max()
+                            .unwrap_or(1);
+                        let kf_max = score
+                            .keyframes_cache
+                            .values()
                             .filter_map(|kf| kf.path.as_ref())
                             .flat_map(|p| p.keyframes.iter())
-                            .map(|kf| kf.frame).max().unwrap_or(1);
+                            .map(|kf| kf.frame)
+                            .max()
+                            .unwrap_or(1);
                         init_max.max(span_max).max(kf_max)
                     };
                     CastMemberType::FilmLoop(FilmLoopMember {
@@ -4168,11 +4826,18 @@ impl CastMember {
                         cached_total_frames: Some(total_frames),
                     })
                 } else {
-                    warn!("FilmLoop {} has no valid score chunk, creating empty film loop", number);
+                    warn!(
+                        "FilmLoop {} has no valid score chunk, creating empty film loop",
+                        number
+                    );
                     let empty_score_chunk = ScoreChunk {
                         header: ScoreChunkHeader {
-                            total_length: 0, unk1: 0, unk2: 0,
-                            entry_count: 0, unk3: 0, entry_size_sum: 0,
+                            total_length: 0,
+                            unk1: 0,
+                            unk2: 0,
+                            entry_count: 0,
+                            unk3: 0,
+                            entry_size_sum: 0,
                         },
                         entries: vec![],
                         frame_intervals: vec![],
@@ -4184,7 +4849,12 @@ impl CastMember {
                         score_chunk: empty_score_chunk,
                         score: Score::empty(),
                         current_frame: 1,
-                        initial_rect: super::geometry::IntRect { left: 0, top: 0, right: 0, bottom: 0 },
+                        initial_rect: super::geometry::IntRect {
+                            left: 0,
+                            top: 0,
+                            right: 0,
+                            bottom: 0,
+                        },
                         cached_total_frames: None,
                     })
                 }
@@ -4245,13 +4915,17 @@ impl CastMember {
                     sound_chunk_opt
                 } else {
                     // Look for sndH (header) and sndS (samples) children
-                    let snd_header = member_def.children.iter()
+                    let snd_header = member_def
+                        .children
+                        .iter()
                         .filter_map(|c| c.as_ref())
                         .find_map(|c| match c {
                             Chunk::SndHeader(h) => Some(h),
                             _ => None,
                         });
-                    let snd_samples = member_def.children.iter()
+                    let snd_samples = member_def
+                        .children
+                        .iter()
                         .filter_map(|c| c.as_ref())
                         .find_map(|c| match c {
                             Chunk::SndSamples(data) => Some(data),
@@ -4261,7 +4935,11 @@ impl CastMember {
                     if let (Some(header), Some(samples)) = (snd_header, snd_samples) {
                         debug!(
                             "Found sndH + sndS: rate={}, bits={}, channels={}, numFrames={}, samples_len={}",
-                            header.frame_rate, header.bits_per_sample, header.num_channels, header.num_frames, samples.len()
+                            header.frame_rate,
+                            header.bits_per_sample,
+                            header.num_channels,
+                            header.num_frames,
+                            samples.len()
                         );
                         Some(SoundChunk::from_snd_header_and_samples(header, samples))
                     } else if let Some(_header) = snd_header {
@@ -4302,7 +4980,11 @@ impl CastMember {
 
                     debug!(
                         "SoundMember created â†’ name: {}, version: {}, sample_rate: {}, sample_size: {}, channels: {}, sample_count: {}, duration: {:.3}ms",
-                        chunk.member_info.as_ref().map(|x| x.name.to_owned()).unwrap_or_default(),
+                        chunk
+                            .member_info
+                            .as_ref()
+                            .map(|x| x.name.to_owned())
+                            .unwrap_or_default(),
                         sound_chunk.version,
                         info.sample_rate,
                         info.sample_size,
@@ -4326,7 +5008,9 @@ impl CastMember {
             MemberType::Button => {
                 // Button members are parsed identically to Text (FieldInfo + STXT child),
                 // with an extra u16 at bytes 28-29 for button type.
-                let text_chunk = member_def.children.iter()
+                let text_chunk = member_def
+                    .children
+                    .iter()
                     .find_map(|c| c.as_ref().and_then(|ch| ch.as_text()));
                 let raw = chunk.specific_data_raw.as_slice();
                 let field_info = FieldInfo::from(raw);
@@ -4366,9 +5050,15 @@ impl CastMember {
                         }
                         if first_run.style != 0 {
                             let mut styles = Vec::new();
-                            if (first_run.style & 0x01) != 0 { styles.push("bold"); }
-                            if (first_run.style & 0x02) != 0 { styles.push("italic"); }
-                            if (first_run.style & 0x04) != 0 { styles.push("underline"); }
+                            if (first_run.style & 0x01) != 0 {
+                                styles.push("bold");
+                            }
+                            if (first_run.style & 0x02) != 0 {
+                                styles.push("italic");
+                            }
+                            if (first_run.style & 0x04) != 0 {
+                                styles.push("underline");
+                            }
                             if styles.is_empty() {
                                 field_member.font_style = "plain".to_string();
                             } else {
@@ -4396,8 +5086,13 @@ impl CastMember {
 
                 debug!(
                     "ButtonMember text='{}' button_type={:?} font='{}' font_size={} width={} height={} script_id={}",
-                    field_member.text, button_type, field_member.font, field_member.font_size,
-                    field_member.width, field_member.height, script_id,
+                    field_member.text,
+                    button_type,
+                    field_member.font,
+                    field_member.font_size,
+                    field_member.width,
+                    field_member.height,
+                    script_id,
                 );
 
                 CastMemberType::Button(ButtonMember {
@@ -4418,7 +5113,7 @@ impl CastMember {
                     number,
                     cast_lib,
                     chunk.member_type, // this prints name, e.g. Button
-                    member_type_id      // this prints numeric id, e.g. 15
+                    member_type_id     // this prints numeric id, e.g. 15
                 );
 
                 if let Some(info) = &chunk.member_info {
@@ -4446,7 +5141,9 @@ impl CastMember {
 
                 // Check if this unknown member is Havok by name or file_name
                 if Self::is_havok_member_any(&chunk.specific_data_raw, &chunk.member_info) {
-                    let hke_data = member_def.children.iter()
+                    let hke_data = member_def
+                        .children
+                        .iter()
                         .filter_map(|c| c.as_ref())
                         .find_map(|c| match c {
                             Chunk::XMedia(xm) => Some(xm.raw_data.clone()),
@@ -4456,7 +5153,9 @@ impl CastMember {
                         .unwrap_or_else(|| chunk.specific_data_raw.clone());
                     debug!(
                         "Havok Physics member #{} detected in default branch (type={:?}), HKE data={} bytes",
-                        number, chunk.member_type, hke_data.len()
+                        number,
+                        chunk.member_type,
+                        hke_data.len()
                     );
                     CastMemberType::HavokPhysics(HavokPhysicsMember::new(hke_data))
                 } else {
@@ -4468,12 +5167,22 @@ impl CastMember {
         // Post-processing: if the member wasn't detected as Havok by type-specific paths,
         // but its name IS exactly "havok" (or file_name contains "havok"), override it.
         // Only override non-Script members to avoid catching scripts like "havokManager".
-        let member_type = if !matches!(member_type, CastMemberType::HavokPhysics(_) | CastMemberType::Script(_)) {
-            let name_is_havok = chunk.member_info.as_ref()
-                .map(|i| i.name.eq_ignore_ascii_case("havok") || i.file_name.to_lowercase().contains("havok"))
+        let member_type = if !matches!(
+            member_type,
+            CastMemberType::HavokPhysics(_) | CastMemberType::Script(_)
+        ) {
+            let name_is_havok = chunk
+                .member_info
+                .as_ref()
+                .map(|i| {
+                    i.name.eq_ignore_ascii_case("havok")
+                        || i.file_name.to_lowercase().contains("havok")
+                })
                 .unwrap_or(false);
             if name_is_havok {
-                let hke_data = member_def.children.iter()
+                let hke_data = member_def
+                    .children
+                    .iter()
                     .filter_map(|c| c.as_ref())
                     .find_map(|c| match c {
                         Chunk::XMedia(xm) => Some(xm.raw_data.clone()),
@@ -4483,7 +5192,9 @@ impl CastMember {
                     .unwrap_or_else(|| chunk.specific_data_raw.clone());
                 debug!(
                     "Havok Physics member #{} detected by name override (was {:?}), HKE={} bytes",
-                    number, member_type, hke_data.len()
+                    number,
+                    member_type,
+                    hke_data.len()
                 );
                 CastMemberType::HavokPhysics(HavokPhysicsMember::new(hke_data))
             } else {
@@ -4506,10 +5217,7 @@ impl CastMember {
         // fallback chain still ended up at the sprite's PaletteIndex(0) on
         // some paths). Mirror Director by surfacing the parsed back_color here.
         let initial_bg_color = match &member_type {
-            CastMemberType::Field(fm) => fm
-                .back_color
-                .clone()
-                .unwrap_or(ColorRef::PaletteIndex(0)),
+            CastMemberType::Field(fm) => fm.back_color.clone().unwrap_or(ColorRef::PaletteIndex(0)),
             _ => ColorRef::PaletteIndex(0),
         };
         CastMember {
@@ -4519,7 +5227,11 @@ impl CastMember {
                 .as_ref()
                 .map(|x| x.name.to_owned())
                 .unwrap_or_default(),
-            comments: chunk.member_info.as_ref().map(|x| x.comments.to_owned()).unwrap_or_default(),
+            comments: chunk
+                .member_info
+                .as_ref()
+                .map(|x| x.comments.to_owned())
+                .unwrap_or_default(),
             member_type: member_type,
             color: ColorRef::PaletteIndex(255),
             bg_color: initial_bg_color,

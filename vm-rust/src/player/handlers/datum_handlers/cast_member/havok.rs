@@ -1,15 +1,16 @@
-use std::collections::VecDeque;
 use log::debug;
+use std::collections::VecDeque;
 
 use crate::{
     director::lingo::datum::{Datum, DatumType, HavokObjectRef},
     player::{
+        DatumRef, ScriptError,
         cast_lib::CastMemberRef,
         cast_member::{
-            CastMemberType, HavokAngularDashpot, HavokCollisionInterest,
-            HavokLinearDashpot, HavokRigidBody, HavokSpring,
+            CastMemberType, HavokAngularDashpot, HavokCollisionInterest, HavokLinearDashpot,
+            HavokRigidBody, HavokSpring,
         },
-        reserve_player_mut, DatumRef, ScriptError,
+        reserve_player_mut,
     },
 };
 
@@ -45,10 +46,12 @@ impl HavokPhysicsMemberHandlers {
             "collisionList" | "collisionlist" => {
                 // Return collision data from last step
                 // Format: [[bodyA, bodyB, cx, cy, cz, nx, ny, nz], ...]
-                let collisions: Vec<_> = state.collision_list_cache.iter().map(|c| {
-                    (c.body_a.clone(), c.body_b.clone(), c.point, c.normal)
-                }).collect();
-                drop(member);  // Release borrow
+                let collisions: Vec<_> = state
+                    .collision_list_cache
+                    .iter()
+                    .map(|c| (c.body_a.clone(), c.body_b.clone(), c.point, c.normal))
+                    .collect();
+                drop(member); // Release borrow
                 let mut items = VecDeque::new();
                 for (na, nb, pt, nm) in collisions {
                     let sub_items: VecDeque<DatumRef> = VecDeque::from([
@@ -61,7 +64,11 @@ impl HavokPhysicsMemberHandlers {
                         player.alloc_datum(Datum::Float(nm[1])),
                         player.alloc_datum(Datum::Float(nm[2])),
                     ]);
-                    items.push_back(player.alloc_datum(Datum::List(DatumType::List, sub_items, false)));
+                    items.push_back(player.alloc_datum(Datum::List(
+                        DatumType::List,
+                        sub_items,
+                        false,
+                    )));
                 }
                 return Ok(Datum::List(DatumType::List, items, false));
             }
@@ -73,7 +80,11 @@ impl HavokPhysicsMemberHandlers {
         let list_type: &str;
         match prop {
             "rigidBody" | "rigidbody" => {
-                names = state.rigid_bodies.iter().map(|rb| rb.name.clone()).collect();
+                names = state
+                    .rigid_bodies
+                    .iter()
+                    .map(|rb| rb.name.clone())
+                    .collect();
                 list_type = "rigidBody";
             }
             "spring" => {
@@ -81,11 +92,19 @@ impl HavokPhysicsMemberHandlers {
                 list_type = "spring";
             }
             "linearDashpot" | "lineardashpot" => {
-                names = state.linear_dashpots.iter().map(|d| d.name.clone()).collect();
+                names = state
+                    .linear_dashpots
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect();
                 list_type = "linearDashpot";
             }
             "angularDashpot" | "angulardashpot" => {
-                names = state.angular_dashpots.iter().map(|d| d.name.clone()).collect();
+                names = state
+                    .angular_dashpots
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect();
                 list_type = "angularDashpot";
             }
             "deactivationParameters" | "deactivationparameters" => {
@@ -101,21 +120,26 @@ impl HavokPhysicsMemberHandlers {
                 let b = player.alloc_datum(Datum::Float(params[1]));
                 return Ok(Datum::List(DatumType::List, VecDeque::from([a, b]), false));
             }
-            _ => return Err(ScriptError::new(format!(
-                "Cannot get Havok member property: {}",
-                prop
-            ))),
+            _ => {
+                return Err(ScriptError::new(format!(
+                    "Cannot get Havok member property: {}",
+                    prop
+                )));
+            }
         }
 
         // Now borrow is dropped, we can use player.alloc_datum
-        let items: VecDeque<DatumRef> = names.iter().map(|name| {
-            player.alloc_datum(Datum::HavokObjectRef(HavokObjectRef {
-                cast_lib: member_ref.cast_lib,
-                cast_member: member_ref.cast_member,
-                object_type: list_type.to_string(),
-                name: name.clone(),
-            }))
-        }).collect();
+        let items: VecDeque<DatumRef> = names
+            .iter()
+            .map(|name| {
+                player.alloc_datum(Datum::HavokObjectRef(HavokObjectRef {
+                    cast_lib: member_ref.cast_lib,
+                    cast_member: member_ref.cast_member,
+                    object_type: list_type.to_string(),
+                    name: name.clone(),
+                }))
+            })
+            .collect();
         Ok(Datum::List(DatumType::List, items, false))
     }
 
@@ -136,10 +160,14 @@ impl HavokPhysicsMemberHandlers {
                                 .movie
                                 .cast_manager
                                 .find_mut_member_by_ref(member_ref)
-                                .ok_or_else(|| ScriptError::new("Havok member not found".to_string()))?;
+                                .ok_or_else(|| {
+                                    ScriptError::new("Havok member not found".to_string())
+                                })?;
                             let havok = match &mut member.member_type {
                                 CastMemberType::HavokPhysics(h) => h,
-                                _ => return Err(ScriptError::new("Not a Havok member".to_string())),
+                                _ => {
+                                    return Err(ScriptError::new("Not a Havok member".to_string()));
+                                }
                             };
                             havok.state.deactivation_params = [v0, v1];
                         }
@@ -155,10 +183,14 @@ impl HavokPhysicsMemberHandlers {
                                 .movie
                                 .cast_manager
                                 .find_mut_member_by_ref(member_ref)
-                                .ok_or_else(|| ScriptError::new("Havok member not found".to_string()))?;
+                                .ok_or_else(|| {
+                                    ScriptError::new("Havok member not found".to_string())
+                                })?;
                             let havok = match &mut member.member_type {
                                 CastMemberType::HavokPhysics(h) => h,
-                                _ => return Err(ScriptError::new("Not a Havok member".to_string())),
+                                _ => {
+                                    return Err(ScriptError::new("Not a Havok member".to_string()));
+                                }
                             };
                             havok.state.drag_params = [v0, v1];
                         }
@@ -211,11 +243,22 @@ impl HavokPhysicsMemberHandlers {
     pub fn step_with_callbacks(
         datum: &DatumRef,
         args: &Vec<DatumRef>,
-    ) -> Result<(DatumRef, Vec<(String, DatumRef, f64)>, Vec<(String, DatumRef, DatumRef)>), ScriptError> {
+    ) -> Result<
+        (
+            DatumRef,
+            Vec<(String, DatumRef, f64)>,
+            Vec<(String, DatumRef, DatumRef)>,
+        ),
+        ScriptError,
+    > {
         reserve_player_mut(|player| {
             let member_ref = match player.get_datum(datum) {
                 Datum::CastMember(r) => r.to_owned(),
-                _ => return Err(ScriptError::new("Cannot call Havok handler on non-cast-member".to_string())),
+                _ => {
+                    return Err(ScriptError::new(
+                        "Cannot call Havok handler on non-cast-member".to_string(),
+                    ));
+                }
             };
 
             // Run the physics step
@@ -231,7 +274,8 @@ impl HavokPhysicsMemberHandlers {
 
             let mut step_cbs: Vec<(String, DatumRef, f64)> = Vec::new();
             // Raw collision data: (handler, instance, body_a, body_b, point, normal)
-            let mut raw_collisions: Vec<(String, DatumRef, String, String, [f64;3], [f64;3])> = Vec::new();
+            let mut raw_collisions: Vec<(String, DatumRef, String, String, [f64; 3], [f64; 3])> =
+                Vec::new();
 
             if let Some(havok) = havok {
                 // Step callbacks
@@ -248,7 +292,11 @@ impl HavokPhysicsMemberHandlers {
                     } else {
                         sub_steps
                     };
-                    if num_sub > 0 { time_inc / num_sub as f64 } else { time_inc }
+                    if num_sub > 0 {
+                        time_inc / num_sub as f64
+                    } else {
+                        time_inc
+                    }
                 };
                 for (handler, instance) in &havok.state.step_callbacks {
                     step_cbs.push((handler.clone(), instance.clone(), sub_dt));
@@ -257,20 +305,26 @@ impl HavokPhysicsMemberHandlers {
                 // Collision interests matched against cached contacts
                 for contact in &havok.state.collision_list_cache {
                     for interest in &havok.state.collision_interests {
-                        if interest.handler_name.is_none() || interest.script_instance.is_none() { continue; }
+                        if interest.handler_name.is_none() || interest.script_instance.is_none() {
+                            continue;
+                        }
                         let matches = if interest.rb_name2 == "#all" || interest.rb_name2 == "all" {
                             contact.body_a.eq_ignore_ascii_case(&interest.rb_name1)
                                 || contact.body_b.eq_ignore_ascii_case(&interest.rb_name1)
                         } else {
-                            (contact.body_a.eq_ignore_ascii_case(&interest.rb_name1) && contact.body_b.eq_ignore_ascii_case(&interest.rb_name2))
-                            || (contact.body_a.eq_ignore_ascii_case(&interest.rb_name2) && contact.body_b.eq_ignore_ascii_case(&interest.rb_name1))
+                            (contact.body_a.eq_ignore_ascii_case(&interest.rb_name1)
+                                && contact.body_b.eq_ignore_ascii_case(&interest.rb_name2))
+                                || (contact.body_a.eq_ignore_ascii_case(&interest.rb_name2)
+                                    && contact.body_b.eq_ignore_ascii_case(&interest.rb_name1))
                         };
                         if matches {
                             raw_collisions.push((
                                 interest.handler_name.clone().unwrap(),
                                 interest.script_instance.clone().unwrap(),
-                                contact.body_a.clone(), contact.body_b.clone(),
-                                contact.point, contact.normal,
+                                contact.body_a.clone(),
+                                contact.body_b.clone(),
+                                contact.point,
+                                contact.normal,
                             ));
                         }
                     }
@@ -312,7 +366,7 @@ impl HavokPhysicsMemberHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot call Havok handler on non-cast-member".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -346,9 +400,7 @@ impl HavokPhysicsMemberHandlers {
                 "deleteRigidBody" | "deleterigidbody" => {
                     Self::delete_rigid_body(player, &member_ref, args)
                 }
-                "deleteSpring" | "deletespring" => {
-                    Self::delete_spring(player, &member_ref, args)
-                }
+                "deleteSpring" | "deletespring" => Self::delete_spring(player, &member_ref, args),
                 "deleteLinearDashpot" | "deletelineardashpot" => {
                     Self::delete_linear_dashpot(player, &member_ref, args)
                 }
@@ -435,7 +487,7 @@ impl HavokPhysicsMemberHandlers {
             _ => {
                 return Err(ScriptError::new(
                     "Havok initialize: first argument must be a W3D member".to_string(),
-                ))
+                ));
             }
         };
 
@@ -451,7 +503,11 @@ impl HavokPhysicsMemberHandlers {
             member.and_then(|m| match &m.member_type {
                 CastMemberType::HavokPhysics(h) if !h.state.hke_data.is_empty() => {
                     let hke = super::hke_parser::parse_hke(&h.state.hke_data);
-                    if hke.world_scale > 0.001 { Some(hke.world_scale as f64) } else { None }
+                    if hke.world_scale > 0.001 {
+                        Some(hke.world_scale as f64)
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             })
@@ -465,16 +521,18 @@ impl HavokPhysicsMemberHandlers {
         };
 
         // Read existing rigid body names and model transforms from the W3D scene
-        let (model_names, model_transforms): (Vec<String>, std::collections::HashMap<String, [f32; 16]>) = {
-            let w3d_member = player
-                .movie
-                .cast_manager
-                .find_member_by_ref(&w3d_ref);
+        let (model_names, model_transforms): (
+            Vec<String>,
+            std::collections::HashMap<String, [f32; 16]>,
+        ) = {
+            let w3d_member = player.movie.cast_manager.find_member_by_ref(&w3d_ref);
             if let Some(m) = w3d_member {
                 if let Some(w3d) = m.member_type.as_shockwave3d() {
                     if let Some(scene) = &w3d.parsed_scene {
                         let names = scene.nodes.iter().map(|n| n.name.clone()).collect();
-                        let transforms: std::collections::HashMap<String, [f32; 16]> = scene.nodes.iter()
+                        let transforms: std::collections::HashMap<String, [f32; 16]> = scene
+                            .nodes
+                            .iter()
                             .map(|n| (n.name.to_lowercase(), n.transform))
                             .collect();
                         (names, transforms)
@@ -507,7 +565,11 @@ impl HavokPhysicsMemberHandlers {
         // Default gravity: 9.81 m/s² converted to display units via worldScale.
         // With scale=0.0254 (inches): -9.81/0.0254 = -386.22 in/s²
         // With scale=0.03: -9.81/0.03 = -327.0 units/s²
-        let g = if scale.abs() > 1e-10 { 9.81 / scale } else { 386.22 };
+        let g = if scale.abs() > 1e-10 {
+            9.81 / scale
+        } else {
+            386.22
+        };
         havok.state.gravity = [0.0, 0.0, -g];
         havok.state.sim_time = 0.0;
 
@@ -521,7 +583,11 @@ impl HavokPhysicsMemberHandlers {
 
             // Apply HKE gravity (in Havok meters/s², convert to display units)
             if let Some(g) = hke.gravity {
-                let inv_s = if scale.abs() > 1e-10 { 1.0 / scale } else { 1.0 };
+                let inv_s = if scale.abs() > 1e-10 {
+                    1.0 / scale
+                } else {
+                    1.0
+                };
                 havok.state.gravity = [
                     g[0] as f64 * inv_s,
                     g[1] as f64 * inv_s,
@@ -542,27 +608,46 @@ impl HavokPhysicsMemberHandlers {
                 havok.state.use_ground_constraint = false;
             }
 
-            let inv_scale = if scale.abs() > 1e-10 { 1.0 / scale } else { 1.0 };
+            let inv_scale = if scale.abs() > 1e-10 {
+                1.0 / scale
+            } else {
+                1.0
+            };
             havok.state.collision_meshes.clear();
             havok.state.rigid_bodies.clear();
 
             // Build lookup from body name → parsed properties (mass, restitution, etc.)
-            let body_props: std::collections::HashMap<String, &super::hke_parser::HkeBodyProps> = hke.bodies.iter()
-                .map(|b| (b.name.to_lowercase(), b))
-                .collect();
+            let body_props: std::collections::HashMap<String, &super::hke_parser::HkeBodyProps> =
+                hke.bodies
+                    .iter()
+                    .map(|b| (b.name.to_lowercase(), b))
+                    .collect();
 
             for mesh in &hke.meshes {
-                if mesh.vertices.is_empty() || mesh.triangles.is_empty() { continue; }
+                if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
+                    continue;
+                }
                 let model_xform = model_transforms.get(&mesh.name.to_lowercase());
-                let vertices: Vec<[f64; 3]> = mesh.vertices.iter()
+                let vertices: Vec<[f64; 3]> = mesh
+                    .vertices
+                    .iter()
                     .map(|v| {
                         let lx = v[0] as f64 * inv_scale;
                         let ly = v[1] as f64 * inv_scale;
                         let lz = v[2] as f64 * inv_scale;
                         if let Some(t) = model_xform {
-                            let wx = t[0] as f64*lx + t[4] as f64*ly + t[8] as f64*lz + t[12] as f64;
-                            let wy = t[1] as f64*lx + t[5] as f64*ly + t[9] as f64*lz + t[13] as f64;
-                            let wz = t[2] as f64*lx + t[6] as f64*ly + t[10] as f64*lz + t[14] as f64;
+                            let wx = t[0] as f64 * lx
+                                + t[4] as f64 * ly
+                                + t[8] as f64 * lz
+                                + t[12] as f64;
+                            let wy = t[1] as f64 * lx
+                                + t[5] as f64 * ly
+                                + t[9] as f64 * lz
+                                + t[13] as f64;
+                            let wz = t[2] as f64 * lx
+                                + t[6] as f64 * ly
+                                + t[10] as f64 * lz
+                                + t[14] as f64;
                             [wx, wy, wz]
                         } else {
                             [lx, ly, lz]
@@ -582,8 +667,12 @@ impl HavokPhysicsMemberHandlers {
 
                 // Apply parsed properties
                 if let Some(p) = props {
-                    if let Some(r) = p.restitution { rb.restitution = r as f64; }
-                    if let Some(f) = p.static_friction { rb.friction = f as f64; }
+                    if let Some(r) = p.restitution {
+                        rb.restitution = r as f64;
+                    }
+                    if let Some(f) = p.static_friction {
+                        rb.friction = f as f64;
+                    }
                 }
 
                 // Set position from W3D model transform
@@ -611,9 +700,14 @@ impl HavokPhysicsMemberHandlers {
 
             // Create rigid bodies for HKE tail entries that have no collision mesh
             for body_def in &hke.bodies {
-                let already_exists = havok.state.rigid_bodies.iter()
+                let already_exists = havok
+                    .state
+                    .rigid_bodies
+                    .iter()
                     .any(|rb| rb.name.eq_ignore_ascii_case(&body_def.name));
-                if already_exists { continue; }
+                if already_exists {
+                    continue;
+                }
 
                 let mass = body_def.total_mass as f64;
                 let mut rb = if mass > 0.0 {
@@ -621,8 +715,12 @@ impl HavokPhysicsMemberHandlers {
                 } else {
                     HavokRigidBody::new_fixed(&body_def.name, true)
                 };
-                if let Some(r) = body_def.restitution { rb.restitution = r as f64; }
-                if let Some(f) = body_def.static_friction { rb.friction = f as f64; }
+                if let Some(r) = body_def.restitution {
+                    rb.restitution = r as f64;
+                }
+                if let Some(f) = body_def.static_friction {
+                    rb.friction = f as f64;
+                }
                 if let Some(t) = body_def.translation {
                     rb.position = [t[0] as f64, t[1] as f64, t[2] as f64];
                 }
@@ -630,15 +728,24 @@ impl HavokPhysicsMemberHandlers {
             }
         }
 
-        let movable_names: Vec<String> = havok.state.rigid_bodies.iter()
+        let movable_names: Vec<String> = havok
+            .state
+            .rigid_bodies
+            .iter()
             .filter(|rb| !rb.pinned && rb.mass > 0.0)
-            .map(|rb| format!("{}({:.1})", rb.name, rb.mass)).collect();
+            .map(|rb| format!("{}({:.1})", rb.name, rb.mass))
+            .collect();
         debug!(
             "Havok initialized: scale={}, gravity=({:.2},{:.2},{:.2}), drag=({:.2},{:.2}), bodies={} ({} movable: {:?})",
             scale,
-            havok.state.gravity[0], havok.state.gravity[1], havok.state.gravity[2],
-            havok.state.drag_params[0], havok.state.drag_params[1],
-            havok.state.rigid_bodies.len(), movable_names.len(), movable_names
+            havok.state.gravity[0],
+            havok.state.gravity[1],
+            havok.state.gravity[2],
+            havok.state.drag_params[0],
+            havok.state.drag_params[1],
+            havok.state.rigid_bodies.len(),
+            movable_names.len(),
+            movable_names
         );
 
         Ok(DatumRef::Void)
@@ -738,11 +845,16 @@ impl HavokPhysicsMemberHandlers {
         // Collect W3D sync data using quaternion-based transform builder
         let w3d_cast_lib = havok.state.w3d_cast_lib;
         let w3d_cast_member = havok.state.w3d_cast_member;
-        let sync_data: Vec<(String, [f32; 16])> = havok.state.rigid_bodies.iter()
+        let sync_data: Vec<(String, [f32; 16])> = havok
+            .state
+            .rigid_bodies
+            .iter()
             .filter(|rb| !rb.is_fixed && rb.active)
             .map(|rb| {
                 let t = super::havok_physics::build_sync_transform(
-                    rb.position, rb.orientation, rb.center_of_mass,
+                    rb.position,
+                    rb.orientation,
+                    rb.center_of_mass,
                 );
                 (rb.name.clone(), t)
             })
@@ -757,9 +869,14 @@ impl HavokPhysicsMemberHandlers {
         // `pCar.getModel().transform.inverse() * pRealWorldPos` produces garbage
         // local points → wrong torque lever arms → car flips.
         drop(member);
-        let w3d_ref = CastMemberRef { cast_lib: w3d_cast_lib, cast_member: w3d_cast_member };
+        let w3d_ref = CastMemberRef {
+            cast_lib: w3d_cast_lib,
+            cast_member: w3d_cast_member,
+        };
         for (name, t) in &sync_data {
-            if t.iter().any(|v| !v.is_finite()) { continue; }
+            if t.iter().any(|v| !v.is_finite()) {
+                continue;
+            }
             crate::player::handlers::datum_handlers::shockwave3d_object::set_node_transform(
                 player, &w3d_ref, name, *t,
             );
@@ -872,7 +989,10 @@ impl HavokPhysicsMemberHandlers {
         };
         // Optional 4th arg: shape type (#sphere, #box). Default = convex hull from mesh.
         let shape_type = if args.len() > 3 {
-            player.get_datum(&args[3]).string_value().unwrap_or_default()
+            player
+                .get_datum(&args[3])
+                .string_value()
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -898,43 +1018,73 @@ impl HavokPhysicsMemberHandlers {
                     // Read position from: 1) runtime node_transforms, 2) persistent
                     // Transform3d datum (set by Lingo but not yet synced to renderer),
                     // 3) parsed scene node transform, 4) default [0,0,0].
-                    let pos = w3d.runtime_state.node_transforms
+                    let pos = w3d
+                        .runtime_state
+                        .node_transforms
                         .get(&model_name)
-                        .or_else(|| w3d.runtime_state.node_transforms.iter()
-                            .find(|(k, _)| k.eq_ignore_ascii_case(&model_name)).map(|(_, v)| v))
+                        .or_else(|| {
+                            w3d.runtime_state
+                                .node_transforms
+                                .iter()
+                                .find(|(k, _)| k.eq_ignore_ascii_case(&model_name))
+                                .map(|(_, v)| v)
+                        })
                         .map(|t| [t[12] as f64, t[13] as f64, t[14] as f64])
                         .or_else(|| {
                             // Check persistent datum (Lingo may have set transform.position
                             // but sync_persistent_transforms hasn't run yet)
-                            w3d.runtime_state.node_transform_datums.get(&model_name)
-                                .or_else(|| w3d.runtime_state.node_transform_datums.iter()
-                                    .find(|(k, _)| k.eq_ignore_ascii_case(&model_name)).map(|(_, v)| v))
-                                .and_then(|datum_ref| {
-                                    match player.get_datum(datum_ref) {
-                                        Datum::Transform3d(m) => Some([m[12], m[13], m[14]]),
-                                        _ => None,
-                                    }
+                            w3d.runtime_state
+                                .node_transform_datums
+                                .get(&model_name)
+                                .or_else(|| {
+                                    w3d.runtime_state
+                                        .node_transform_datums
+                                        .iter()
+                                        .find(|(k, _)| k.eq_ignore_ascii_case(&model_name))
+                                        .map(|(_, v)| v)
+                                })
+                                .and_then(|datum_ref| match player.get_datum(datum_ref) {
+                                    Datum::Transform3d(m) => Some([m[12], m[13], m[14]]),
+                                    _ => None,
                                 })
                         })
                         .or_else(|| {
                             // Fallback to parsed scene node transform
-                            w3d.parsed_scene.as_ref().and_then(|s|
-                                s.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(&model_name))
-                                    .map(|n| [n.transform[12] as f64, n.transform[13] as f64, n.transform[14] as f64])
-                            )
+                            w3d.parsed_scene.as_ref().and_then(|s| {
+                                s.nodes
+                                    .iter()
+                                    .find(|n| n.name.eq_ignore_ascii_case(&model_name))
+                                    .map(|n| {
+                                        [
+                                            n.transform[12] as f64,
+                                            n.transform[13] as f64,
+                                            n.transform[14] as f64,
+                                        ]
+                                    })
+                            })
                         })
                         .unwrap_or([0.0; 3]);
 
                     // Collect vertices + triangle indices from every CLOD submesh,
                     // offsetting face indices so they remain valid in the merged buffer.
-                    let node = w3d.parsed_scene.as_ref()
-                        .and_then(|s| s.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(&model_name)));
+                    let node = w3d.parsed_scene.as_ref().and_then(|s| {
+                        s.nodes
+                            .iter()
+                            .find(|n| n.name.eq_ignore_ascii_case(&model_name))
+                    });
                     let res_name = node.map(|n| {
-                        if !n.model_resource_name.is_empty() { &n.model_resource_name }
-                        else { &n.resource_name }
+                        if !n.model_resource_name.is_empty() {
+                            &n.model_resource_name
+                        } else {
+                            &n.resource_name
+                        }
                     });
                     let (half_ext, verts, faces) = res_name
-                        .and_then(|rn| w3d.parsed_scene.as_ref().and_then(|s| s.clod_meshes.get(rn.as_str())))
+                        .and_then(|rn| {
+                            w3d.parsed_scene
+                                .as_ref()
+                                .and_then(|s| s.clod_meshes.get(rn.as_str()))
+                        })
                         .map(|meshes| {
                             let (mut mn, mut mx) = ([f32::MAX; 3], [f32::MIN; 3]);
                             let mut all_verts: Vec<[f64; 3]> = Vec::new();
@@ -942,14 +1092,21 @@ impl HavokPhysicsMemberHandlers {
                             for mesh in meshes {
                                 let offset = all_verts.len() as u32;
                                 for p in &mesh.positions {
-                                    for i in 0..3 { mn[i] = mn[i].min(p[i]); mx[i] = mx[i].max(p[i]); }
+                                    for i in 0..3 {
+                                        mn[i] = mn[i].min(p[i]);
+                                        mx[i] = mx[i].max(p[i]);
+                                    }
                                     all_verts.push([p[0] as f64, p[1] as f64, p[2] as f64]);
                                 }
                                 for f in &mesh.faces {
                                     all_faces.push([f[0] + offset, f[1] + offset, f[2] + offset]);
                                 }
                             }
-                            let he = [(mx[0]-mn[0]) as f64 / 2.0, (mx[1]-mn[1]) as f64 / 2.0, (mx[2]-mn[2]) as f64 / 2.0];
+                            let he = [
+                                (mx[0] - mn[0]) as f64 / 2.0,
+                                (mx[1] - mn[1]) as f64 / 2.0,
+                                (mx[2] - mn[2]) as f64 / 2.0,
+                            ];
                             (he, all_verts, all_faces)
                         })
                         .unwrap_or(([10.0, 10.0, 10.0], Vec::new(), Vec::new()));
@@ -978,7 +1135,9 @@ impl HavokPhysicsMemberHandlers {
         // correct polyhedron values here.
         let unit_inertia = if shape_type.eq_ignore_ascii_case("sphere") {
             // Sphere inertia: I = (2/5) * r² on all axes (isotropic)
-            let r = mesh_half_extents[0].max(mesh_half_extents[1]).max(mesh_half_extents[2]);
+            let r = mesh_half_extents[0]
+                .max(mesh_half_extents[1])
+                .max(mesh_half_extents[2]);
             let i_diag = 0.4 * r * r;
             [i_diag, 0.0, 0.0, 0.0, i_diag, 0.0, 0.0, 0.0, i_diag]
         } else {
@@ -994,9 +1153,14 @@ impl HavokPhysicsMemberHandlers {
         debug!(
             "[HAVOK-RB '{}'] verts={} faces={} he=({:.1},{:.1},{:.1}) unit_I_diag=({:.2},{:.2},{:.2}) (polyhedron, unscaled)",
             model_name,
-            mesh_vertices.len(), mesh_faces.len(),
-            mesh_half_extents[0], mesh_half_extents[1], mesh_half_extents[2],
-            unit_inertia[0], unit_inertia[4], unit_inertia[8],
+            mesh_vertices.len(),
+            mesh_faces.len(),
+            mesh_half_extents[0],
+            mesh_half_extents[1],
+            mesh_half_extents[2],
+            unit_inertia[0],
+            unit_inertia[4],
+            unit_inertia[8],
         );
 
         let member = player
@@ -1011,7 +1175,12 @@ impl HavokPhysicsMemberHandlers {
 
         // Remove any auto-created body with the same name (from Initialize HKE loading)
         // and update collision mesh body_index references
-        if let Some(old_idx) = havok.state.rigid_bodies.iter().position(|r| r.name.eq_ignore_ascii_case(&model_name)) {
+        if let Some(old_idx) = havok
+            .state
+            .rigid_bodies
+            .iter()
+            .position(|r| r.name.eq_ignore_ascii_case(&model_name))
+        {
             havok.state.rigid_bodies.remove(old_idx);
             // Shift collision mesh body_index references
             for cmesh in &mut havok.state.collision_meshes {
@@ -1173,7 +1342,12 @@ impl HavokPhysicsMemberHandlers {
         };
 
         // Remove any auto-created body with the same name (from Initialize HKE loading)
-        if let Some(old_idx) = havok.state.rigid_bodies.iter().position(|r| r.name.eq_ignore_ascii_case(&model_name)) {
+        if let Some(old_idx) = havok
+            .state
+            .rigid_bodies
+            .iter()
+            .position(|r| r.name.eq_ignore_ascii_case(&model_name))
+        {
             havok.state.rigid_bodies.remove(old_idx);
             for cmesh in &mut havok.state.collision_meshes {
                 if let Some(bi) = cmesh.body_index {
@@ -1493,14 +1667,17 @@ impl HavokPhysicsMemberHandlers {
             _ => return Err(ScriptError::new("Not a Havok member".to_string())),
         };
 
-        havok.state.collision_interests.push(HavokCollisionInterest {
-            rb_name1,
-            rb_name2,
-            frequency,
-            threshold,
-            handler_name,
-            script_instance,
-        });
+        havok
+            .state
+            .collision_interests
+            .push(HavokCollisionInterest {
+                rb_name1,
+                rb_name2,
+                frequency,
+                threshold,
+                handler_name,
+                script_instance,
+            });
 
         Ok(DatumRef::Void)
     }
@@ -1612,10 +1789,7 @@ impl HavokPhysicsMemberHandlers {
             CastMemberType::HavokPhysics(h) => h,
             _ => return Err(ScriptError::new("Not a Havok member".to_string())),
         };
-        havok
-            .state
-            .disabled_collision_pairs
-            .push((rb_a, rb_b));
+        havok.state.disabled_collision_pairs.push((rb_a, rb_b));
         Ok(DatumRef::Void)
     }
 
@@ -1671,21 +1845,30 @@ impl HavokPhysicsMemberHandlers {
 /// Build a column-major 4x4 f32 transform from f64 axis-angle rotation + translation.
 pub fn axis_angle_to_transform_f64(rot_axis: [f64; 3], rot_angle: f64, pos: [f64; 3]) -> [f32; 16] {
     axis_angle_to_transform(
-        rot_axis[0] as f32, rot_axis[1] as f32, rot_axis[2] as f32,
+        rot_axis[0] as f32,
+        rot_axis[1] as f32,
+        rot_axis[2] as f32,
         rot_angle as f32,
-        pos[0] as f32, pos[1] as f32, pos[2] as f32,
+        pos[0] as f32,
+        pos[1] as f32,
+        pos[2] as f32,
     )
 }
 
 /// Build a column-major 4x4 transform from axis-angle rotation + translation.
-fn axis_angle_to_transform(ax: f32, ay: f32, az: f32, angle: f32, px: f32, py: f32, pz: f32) -> [f32; 16] {
-    let axis_len = (ax*ax + ay*ay + az*az).sqrt();
+fn axis_angle_to_transform(
+    ax: f32,
+    ay: f32,
+    az: f32,
+    angle: f32,
+    px: f32,
+    py: f32,
+    pz: f32,
+) -> [f32; 16] {
+    let axis_len = (ax * ax + ay * ay + az * az).sqrt();
     if axis_len < 1e-6 || angle.abs() < 1e-10 {
         return [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            px,  py,  pz,  1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, px, py, pz, 1.0,
         ];
     }
     let (x, y, z) = (ax / axis_len, ay / axis_len, az / axis_len);
@@ -1693,9 +1876,21 @@ fn axis_angle_to_transform(ax: f32, ay: f32, az: f32, angle: f32, px: f32, py: f
     let s = angle.sin();
     let t = 1.0 - c;
     [
-        t*x*x + c,   t*x*y + s*z, t*x*z - s*y, 0.0,
-        t*x*y - s*z, t*y*y + c,   t*y*z + s*x, 0.0,
-        t*x*z + s*y, t*y*z - s*x, t*z*z + c,   0.0,
-        px,          py,          pz,          1.0,
+        t * x * x + c,
+        t * x * y + s * z,
+        t * x * z - s * y,
+        0.0,
+        t * x * y - s * z,
+        t * y * y + c,
+        t * y * z + s * x,
+        0.0,
+        t * x * z + s * y,
+        t * y * z - s * x,
+        t * z * z + c,
+        0.0,
+        px,
+        py,
+        pz,
+        1.0,
     ]
 }

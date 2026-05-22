@@ -25,7 +25,7 @@ impl IntDatumHandlers {
                     Ok(player.alloc_datum(Datum::String(ch.to_string())))
                 } else {
                     Err(ScriptError::new(format!(
-                        "Integer {} out of range for char (must be 0-255)", 
+                        "Integer {} out of range for char (must be 0-255)",
                         int_value
                     )))
                 }

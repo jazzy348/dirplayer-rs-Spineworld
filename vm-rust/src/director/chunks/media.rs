@@ -1,7 +1,7 @@
 use binary_reader::{BinaryReader, Endian};
 use std::convert::TryInto;
 
-use log::{debug};
+use log::debug;
 
 #[derive(Debug, Clone)]
 pub struct MediaChunk {
@@ -39,8 +39,15 @@ impl MediaChunk {
         // MediaChunk is used for both sound data (with a sound header) and JPEG bitmap
         // data (no header). If we parse the sound header on JPEG data, the JPEG magic
         // bytes get consumed and the data is lost.
-        if data_test.len() >= 3 && data_test[0] == 0xFF && data_test[1] == 0xD8 && data_test[2] == 0xFF {
-            debug!("MediaChunk: detected JPEG data ({} bytes), skipping sound header parse", data_test.len());
+        if data_test.len() >= 3
+            && data_test[0] == 0xFF
+            && data_test[1] == 0xD8
+            && data_test[2] == 0xFF
+        {
+            debug!(
+                "MediaChunk: detected JPEG data ({} bytes), skipping sound header parse",
+                data_test.len()
+            );
             return Ok(MediaChunk {
                 sample_rate: 0,
                 data_size_field: data_test.len() as u32,

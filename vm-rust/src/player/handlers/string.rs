@@ -2,7 +2,7 @@ use log::debug;
 
 use crate::{
     director::lingo::datum::Datum,
-    player::{datum_formatting::format_concrete_datum, reserve_player_mut, DatumRef, ScriptError},
+    player::{DatumRef, ScriptError, datum_formatting::format_concrete_datum, reserve_player_mut},
 };
 
 pub struct StringHandlers {}
@@ -82,11 +82,7 @@ impl StringHandlers {
                 .get_datum(&args[0])
                 .string_value()
                 .unwrap_or_default();
-            let start = (player
-                .get_datum(&args[1])
-                .int_value()
-                .unwrap_or(1)
-                .max(1) - 1) as usize;
+            let start = (player.get_datum(&args[1]).int_value().unwrap_or(1).max(1) - 1) as usize;
             let mut end = player.get_datum(&args[2]).int_value().unwrap_or(0) as usize;
 
             let len = string.chars().count();
@@ -165,11 +161,36 @@ impl StringHandlers {
                         let mut encoded_value = String::new();
                         for ch in value_str.chars() {
                             let encoded_char = match ch {
-                                ':' => "%3A", ';' => "%3B", '<' => "%3C", '=' => "%3D", '>' => "%3E", '?' => "%3F",
-                                '@' => "%40", '[' => "%5B", ']' => "%5D", '{' => "%7B", '}' => "%7D", '~' => "%7E",
-                                ' ' => "%20", '!' => "%21", '"' => "%22", '#' => "%23", '$' => "%24", '%' => "%25",
-                                '&' => "%26", '\'' => "%27", '(' => "%28", ')' => "%29", '*' => "%2A", '+' => "%2B",
-                                ',' => "%2C", '-' => "%2D", '.' => "%2E", '/' => "%2F", '©' => "%26%23169", '®' => "%26%23174",
+                                ':' => "%3A",
+                                ';' => "%3B",
+                                '<' => "%3C",
+                                '=' => "%3D",
+                                '>' => "%3E",
+                                '?' => "%3F",
+                                '@' => "%40",
+                                '[' => "%5B",
+                                ']' => "%5D",
+                                '{' => "%7B",
+                                '}' => "%7D",
+                                '~' => "%7E",
+                                ' ' => "%20",
+                                '!' => "%21",
+                                '"' => "%22",
+                                '#' => "%23",
+                                '$' => "%24",
+                                '%' => "%25",
+                                '&' => "%26",
+                                '\'' => "%27",
+                                '(' => "%28",
+                                ')' => "%29",
+                                '*' => "%2A",
+                                '+' => "%2B",
+                                ',' => "%2C",
+                                '-' => "%2D",
+                                '.' => "%2E",
+                                '/' => "%2F",
+                                '©' => "%26%23169",
+                                '®' => "%26%23174",
                                 _ => {
                                     encoded_value.push(ch);
                                     continue;
@@ -181,17 +202,38 @@ impl StringHandlers {
                         url_params.push_str(&format!("{}={}", key_str, encoded_value));
                     }
                     url_params
-                },
+                }
                 Datum::String(s) => {
                     // Direct string encoding (fallback)
                     let mut encoded = String::new();
                     for ch in s.chars() {
                         let encoded_char = match ch {
-                            ':' => "%3A", ';' => "%3B", '<' => "%3C", '=' => "%3D", '>' => "%3E", '?' => "%3F",
-                            '@' => "%40", '[' => "%5B", ']' => "%5D", '{' => "%7B", '}' => "%7D", '~' => "%7E",
-                            ' ' => "%20", '!' => "%21", '"' => "%22", '#' => "%23", '%' => "%25",
-                            '&' => "%26", '\'' => "%27", '(' => "%28", ')' => "%29", '*' => "%2A", '+' => "%2B",
-                            ',' => "%2C", '©' => "%26%23169", '®' => "%26%23174",
+                            ':' => "%3A",
+                            ';' => "%3B",
+                            '<' => "%3C",
+                            '=' => "%3D",
+                            '>' => "%3E",
+                            '?' => "%3F",
+                            '@' => "%40",
+                            '[' => "%5B",
+                            ']' => "%5D",
+                            '{' => "%7B",
+                            '}' => "%7D",
+                            '~' => "%7E",
+                            ' ' => "%20",
+                            '!' => "%21",
+                            '"' => "%22",
+                            '#' => "%23",
+                            '%' => "%25",
+                            '&' => "%26",
+                            '\'' => "%27",
+                            '(' => "%28",
+                            ')' => "%29",
+                            '*' => "%2A",
+                            '+' => "%2B",
+                            ',' => "%2C",
+                            '©' => "%26%23169",
+                            '®' => "%26%23174",
                             _ => {
                                 encoded.push(ch);
                                 continue;
@@ -200,8 +242,12 @@ impl StringHandlers {
                         encoded.push_str(encoded_char);
                     }
                     encoded
-                },
-                _ => return Err(ScriptError::new("urlEncode: argument must be a prop list or string".to_string()))
+                }
+                _ => {
+                    return Err(ScriptError::new(
+                        "urlEncode: argument must be a prop list or string".to_string(),
+                    ));
+                }
             };
 
             debug!("urlEncode() = '{}'", result);

@@ -1,11 +1,11 @@
 // Lingo decompiler AST nodes
 // Ported from ProjectorRays
 
-use std::rc::Rc;
-use std::cell::{Cell, RefCell};
-use crate::director::lingo::opcode::OpCode;
-use super::enums::{ChunkExprType, PutType, DatumType, CaseExpect};
 use super::code_writer::CodeWriter;
+use super::enums::{CaseExpect, ChunkExprType, DatumType, PutType};
+use crate::director::lingo::opcode::OpCode;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 /// Maximum recursion depth for write_script to prevent stack overflow
 const MAX_WRITE_DEPTH: usize = 100;
@@ -145,7 +145,11 @@ impl Datum {
                 let s = format!("{:.4}", self.float_value);
                 // Remove trailing zeros but keep at least one decimal place
                 let s = s.trim_end_matches('0');
-                let s = if s.ends_with('.') { format!("{}0", s) } else { s.to_string() };
+                let s = if s.ends_with('.') {
+                    format!("{}0", s)
+                } else {
+                    s.to_string()
+                };
                 code.write(&s);
             }
             DatumType::String => {
@@ -239,7 +243,10 @@ impl BlockNode {
     }
 
     pub fn add_child(&mut self, child: Rc<AstNode>, bytecode_indices: Vec<usize>) {
-        self.children.push(BlockChild { node: child, bytecode_indices });
+        self.children.push(BlockChild {
+            node: child,
+            bytecode_indices,
+        });
     }
 
     pub fn write_script(&self, code: &mut CodeWriter, dot: bool, sum: bool) {
@@ -253,7 +260,9 @@ impl BlockNode {
             return;
         }
         for child in &self.children {
-            child.node.write_script_with_depth(code, dot, sum, depth + 1);
+            child
+                .node
+                .write_script_with_depth(code, dot, sum, depth + 1);
             code.end_line();
         }
     }
@@ -273,75 +282,185 @@ pub enum AstNode {
     Literal(Datum),
     Block(BlockNode),
     Var(String),
-    Assignment { variable: Rc<AstNode>, value: Rc<AstNode>, force_verbose: bool },
-    BinaryOp { opcode: OpCode, left: Rc<AstNode>, right: Rc<AstNode> },
+    Assignment {
+        variable: Rc<AstNode>,
+        value: Rc<AstNode>,
+        force_verbose: bool,
+    },
+    BinaryOp {
+        opcode: OpCode,
+        left: Rc<AstNode>,
+        right: Rc<AstNode>,
+    },
     InverseOp(Rc<AstNode>),
     NotOp(Rc<AstNode>),
-    ChunkExpr { chunk_type: ChunkExprType, first: Rc<AstNode>, last: Rc<AstNode>, string: Rc<AstNode> },
+    ChunkExpr {
+        chunk_type: ChunkExprType,
+        first: Rc<AstNode>,
+        last: Rc<AstNode>,
+        string: Rc<AstNode>,
+    },
     ChunkHilite(Rc<AstNode>),
     ChunkDelete(Rc<AstNode>),
-    SpriteIntersects { first: Rc<AstNode>, second: Rc<AstNode> },
-    SpriteWithin { first: Rc<AstNode>, second: Rc<AstNode> },
-    Member { member_type: String, member_id: Rc<AstNode>, cast_id: Option<Rc<AstNode>> },
+    SpriteIntersects {
+        first: Rc<AstNode>,
+        second: Rc<AstNode>,
+    },
+    SpriteWithin {
+        first: Rc<AstNode>,
+        second: Rc<AstNode>,
+    },
+    Member {
+        member_type: String,
+        member_id: Rc<AstNode>,
+        cast_id: Option<Rc<AstNode>>,
+    },
     The(String),
-    TheProp { obj: Rc<AstNode>, prop: String },
-    ObjProp { obj: Rc<AstNode>, prop: String },
-    ObjBracket { obj: Rc<AstNode>, prop: Rc<AstNode> },
-    ObjPropIndex { obj: Rc<AstNode>, prop: String, index: Rc<AstNode>, index2: Option<Rc<AstNode>> },
-    LastStringChunk { chunk_type: ChunkExprType, obj: Rc<AstNode> },
-    StringChunkCount { chunk_type: ChunkExprType, obj: Rc<AstNode> },
-    MenuProp { menu_id: Rc<AstNode>, prop: u32 },
-    MenuItemProp { menu_id: Rc<AstNode>, item_id: Rc<AstNode>, prop: u32 },
-    SoundProp { sound_id: Rc<AstNode>, prop: u32 },
-    SpriteProp { sprite_id: Rc<AstNode>, prop: u32 },
-    Call { name: String, args: Rc<AstNode> },
-    ObjCall { name: String, args: Rc<AstNode> },
-    ObjCallV4 { obj: Rc<AstNode>, args: Rc<AstNode> },
+    TheProp {
+        obj: Rc<AstNode>,
+        prop: String,
+    },
+    ObjProp {
+        obj: Rc<AstNode>,
+        prop: String,
+    },
+    ObjBracket {
+        obj: Rc<AstNode>,
+        prop: Rc<AstNode>,
+    },
+    ObjPropIndex {
+        obj: Rc<AstNode>,
+        prop: String,
+        index: Rc<AstNode>,
+        index2: Option<Rc<AstNode>>,
+    },
+    LastStringChunk {
+        chunk_type: ChunkExprType,
+        obj: Rc<AstNode>,
+    },
+    StringChunkCount {
+        chunk_type: ChunkExprType,
+        obj: Rc<AstNode>,
+    },
+    MenuProp {
+        menu_id: Rc<AstNode>,
+        prop: u32,
+    },
+    MenuItemProp {
+        menu_id: Rc<AstNode>,
+        item_id: Rc<AstNode>,
+        prop: u32,
+    },
+    SoundProp {
+        sound_id: Rc<AstNode>,
+        prop: u32,
+    },
+    SpriteProp {
+        sprite_id: Rc<AstNode>,
+        prop: u32,
+    },
+    Call {
+        name: String,
+        args: Rc<AstNode>,
+    },
+    ObjCall {
+        name: String,
+        args: Rc<AstNode>,
+    },
+    ObjCallV4 {
+        obj: Rc<AstNode>,
+        args: Rc<AstNode>,
+    },
     Exit,
     ExitRepeat,
     NextRepeat,
-    Put { put_type: PutType, variable: Rc<AstNode>, value: Rc<AstNode> },
-    If { condition: Rc<AstNode>, block1: Rc<RefCell<BlockNode>>, block2: Rc<RefCell<BlockNode>>, has_else: Cell<bool> },
-    RepeatWhile { condition: Rc<AstNode>, block: Rc<RefCell<BlockNode>>, start_index: u32 },
-    RepeatWithIn { var_name: String, list: Rc<AstNode>, block: Rc<RefCell<BlockNode>>, start_index: u32 },
-    RepeatWithTo { var_name: String, start: Rc<AstNode>, end: Rc<AstNode>, up: bool, block: Rc<RefCell<BlockNode>>, start_index: u32 },
-    Tell { window: Rc<AstNode>, block: Rc<RefCell<BlockNode>> },
-    Case { value: Rc<AstNode>, first_label: RefCell<Option<Rc<RefCell<CaseLabelNode>>>>, otherwise: RefCell<Option<Rc<RefCell<OtherwiseNode>>>>, end_pos: Cell<i32>, potential_otherwise_pos: Cell<i32> },
-    NewObj { obj_type: String, args: Rc<AstNode> },
-    When { event: i32, script: String },
-    SoundCmd { cmd: String, args: Rc<AstNode> },
-    PlayCmd { args: Rc<AstNode> },
+    Put {
+        put_type: PutType,
+        variable: Rc<AstNode>,
+        value: Rc<AstNode>,
+    },
+    If {
+        condition: Rc<AstNode>,
+        block1: Rc<RefCell<BlockNode>>,
+        block2: Rc<RefCell<BlockNode>>,
+        has_else: Cell<bool>,
+    },
+    RepeatWhile {
+        condition: Rc<AstNode>,
+        block: Rc<RefCell<BlockNode>>,
+        start_index: u32,
+    },
+    RepeatWithIn {
+        var_name: String,
+        list: Rc<AstNode>,
+        block: Rc<RefCell<BlockNode>>,
+        start_index: u32,
+    },
+    RepeatWithTo {
+        var_name: String,
+        start: Rc<AstNode>,
+        end: Rc<AstNode>,
+        up: bool,
+        block: Rc<RefCell<BlockNode>>,
+        start_index: u32,
+    },
+    Tell {
+        window: Rc<AstNode>,
+        block: Rc<RefCell<BlockNode>>,
+    },
+    Case {
+        value: Rc<AstNode>,
+        first_label: RefCell<Option<Rc<RefCell<CaseLabelNode>>>>,
+        otherwise: RefCell<Option<Rc<RefCell<OtherwiseNode>>>>,
+        end_pos: Cell<i32>,
+        potential_otherwise_pos: Cell<i32>,
+    },
+    NewObj {
+        obj_type: String,
+        args: Rc<AstNode>,
+    },
+    When {
+        event: i32,
+        script: String,
+    },
+    SoundCmd {
+        cmd: String,
+        args: Rc<AstNode>,
+    },
+    PlayCmd {
+        args: Rc<AstNode>,
+    },
 }
 
 impl AstNode {
     pub fn is_expression(&self) -> bool {
         match self {
-            AstNode::Literal(_) |
-            AstNode::Var(_) |
-            AstNode::BinaryOp { .. } |
-            AstNode::InverseOp(_) |
-            AstNode::NotOp(_) |
-            AstNode::ChunkExpr { .. } |
-            AstNode::Member { .. } |
-            AstNode::The(_) |
-            AstNode::TheProp { .. } |
-            AstNode::ObjProp { .. } |
-            AstNode::ObjBracket { .. } |
-            AstNode::ObjPropIndex { .. } |
-            AstNode::LastStringChunk { .. } |
-            AstNode::StringChunkCount { .. } |
-            AstNode::MenuProp { .. } |
-            AstNode::MenuItemProp { .. } |
-            AstNode::SoundProp { .. } |
-            AstNode::SpriteProp { .. } |
-            AstNode::SpriteIntersects { .. } |
-            AstNode::SpriteWithin { .. } |
-            AstNode::NewObj { .. } => true,
+            AstNode::Literal(_)
+            | AstNode::Var(_)
+            | AstNode::BinaryOp { .. }
+            | AstNode::InverseOp(_)
+            | AstNode::NotOp(_)
+            | AstNode::ChunkExpr { .. }
+            | AstNode::Member { .. }
+            | AstNode::The(_)
+            | AstNode::TheProp { .. }
+            | AstNode::ObjProp { .. }
+            | AstNode::ObjBracket { .. }
+            | AstNode::ObjPropIndex { .. }
+            | AstNode::LastStringChunk { .. }
+            | AstNode::StringChunkCount { .. }
+            | AstNode::MenuProp { .. }
+            | AstNode::MenuItemProp { .. }
+            | AstNode::SoundProp { .. }
+            | AstNode::SpriteProp { .. }
+            | AstNode::SpriteIntersects { .. }
+            | AstNode::SpriteWithin { .. }
+            | AstNode::NewObj { .. } => true,
 
             // Call/ObjCall/ObjCallV4 are expressions if arg list is NOT ArgListNoRet
-            AstNode::Call { args, .. } |
-            AstNode::ObjCall { args, .. } |
-            AstNode::ObjCallV4 { args, .. } => {
+            AstNode::Call { args, .. }
+            | AstNode::ObjCall { args, .. }
+            | AstNode::ObjCallV4 { args, .. } => {
                 if let AstNode::Literal(datum) = args.as_ref() {
                     datum.datum_type != DatumType::ArgListNoRet
                 } else {
@@ -355,27 +474,27 @@ impl AstNode {
 
     pub fn is_statement(&self) -> bool {
         match self {
-            AstNode::Assignment { .. } |
-            AstNode::Exit |
-            AstNode::ExitRepeat |
-            AstNode::NextRepeat |
-            AstNode::Put { .. } |
-            AstNode::If { .. } |
-            AstNode::RepeatWhile { .. } |
-            AstNode::RepeatWithIn { .. } |
-            AstNode::RepeatWithTo { .. } |
-            AstNode::Tell { .. } |
-            AstNode::Case { .. } |
-            AstNode::ChunkHilite(_) |
-            AstNode::ChunkDelete(_) |
-            AstNode::When { .. } |
-            AstNode::SoundCmd { .. } |
-            AstNode::PlayCmd { .. } => true,
+            AstNode::Assignment { .. }
+            | AstNode::Exit
+            | AstNode::ExitRepeat
+            | AstNode::NextRepeat
+            | AstNode::Put { .. }
+            | AstNode::If { .. }
+            | AstNode::RepeatWhile { .. }
+            | AstNode::RepeatWithIn { .. }
+            | AstNode::RepeatWithTo { .. }
+            | AstNode::Tell { .. }
+            | AstNode::Case { .. }
+            | AstNode::ChunkHilite(_)
+            | AstNode::ChunkDelete(_)
+            | AstNode::When { .. }
+            | AstNode::SoundCmd { .. }
+            | AstNode::PlayCmd { .. } => true,
 
             // Call/ObjCall/ObjCallV4 are statements if arg list IS ArgListNoRet
-            AstNode::Call { args, .. } |
-            AstNode::ObjCall { args, .. } |
-            AstNode::ObjCallV4 { args, .. } => {
+            AstNode::Call { args, .. }
+            | AstNode::ObjCall { args, .. }
+            | AstNode::ObjCallV4 { args, .. } => {
                 if let AstNode::Literal(datum) = args.as_ref() {
                     datum.datum_type == DatumType::ArgListNoRet
                 } else {
@@ -396,7 +515,11 @@ impl AstNode {
 
     pub fn has_spaces(&self, dot: bool) -> bool {
         match self {
-            AstNode::Literal(d) => d.datum_type != DatumType::String && d.datum_type != DatumType::Int && d.datum_type != DatumType::Float,
+            AstNode::Literal(d) => {
+                d.datum_type != DatumType::String
+                    && d.datum_type != DatumType::Int
+                    && d.datum_type != DatumType::Float
+            }
             AstNode::Var(_) => true,
             AstNode::Member { cast_id, .. } => cast_id.is_some() || !dot,
             AstNode::ObjProp { .. } => !dot,
@@ -434,7 +557,11 @@ impl AstNode {
             AstNode::Literal(datum) => datum.write_script_with_depth(code, dot, sum, depth),
             AstNode::Block(block) => block.write_script_with_depth(code, dot, sum, depth),
             AstNode::Var(name) => code.write(name),
-            AstNode::Assignment { variable, value, force_verbose } => {
+            AstNode::Assignment {
+                variable,
+                value,
+                force_verbose,
+            } => {
                 if dot && !*force_verbose {
                     variable.write_script_with_depth(code, dot, sum, depth + 1);
                     code.write(" = ");
@@ -446,29 +573,48 @@ impl AstNode {
                     value.write_script_with_depth(code, dot, sum, depth + 1);
                 }
             }
-            AstNode::BinaryOp { opcode, left, right } => {
+            AstNode::BinaryOp {
+                opcode,
+                left,
+                right,
+            } => {
                 write_binary_op_with_depth(code, *opcode, left, right, dot, sum, depth);
             }
             AstNode::InverseOp(operand) => {
                 code.write("-");
                 let needs_parens = matches!(operand.as_ref(), AstNode::BinaryOp { .. });
-                if needs_parens { code.write("("); }
+                if needs_parens {
+                    code.write("(");
+                }
                 operand.write_script_with_depth(code, dot, sum, depth + 1);
-                if needs_parens { code.write(")"); }
+                if needs_parens {
+                    code.write(")");
+                }
             }
             AstNode::NotOp(operand) => {
                 code.write("not ");
                 let needs_parens = matches!(operand.as_ref(), AstNode::BinaryOp { .. });
-                if needs_parens { code.write("("); }
+                if needs_parens {
+                    code.write("(");
+                }
                 operand.write_script_with_depth(code, dot, sum, depth + 1);
-                if needs_parens { code.write(")"); }
+                if needs_parens {
+                    code.write(")");
+                }
             }
-            AstNode::ChunkExpr { chunk_type, first, last, string } => {
+            AstNode::ChunkExpr {
+                chunk_type,
+                first,
+                last,
+                string,
+            } => {
                 let chunk_name = chunk_type.name();
                 // Check if first == last for single chunk reference
                 let is_single = match (first.as_ref(), last.as_ref()) {
                     (AstNode::Literal(d1), AstNode::Literal(d2)) => {
-                        d1.datum_type == DatumType::Int && d2.datum_type == DatumType::Int && d1.int_value == d2.int_value
+                        d1.datum_type == DatumType::Int
+                            && d2.datum_type == DatumType::Int
+                            && d1.int_value == d2.int_value
                     }
                     _ => false,
                 };
@@ -508,7 +654,11 @@ impl AstNode {
                 code.write(" within ");
                 second.write_script_with_depth(code, dot, sum, depth + 1);
             }
-            AstNode::Member { member_type, member_id, cast_id } => {
+            AstNode::Member {
+                member_type,
+                member_id,
+                cast_id,
+            } => {
                 if dot {
                     code.write(member_type);
                     code.write("(");
@@ -556,7 +706,12 @@ impl AstNode {
                 prop.write_script_with_depth(code, dot, sum, depth + 1);
                 code.write("]");
             }
-            AstNode::ObjPropIndex { obj, prop, index, index2 } => {
+            AstNode::ObjPropIndex {
+                obj,
+                prop,
+                index,
+                index2,
+            } => {
                 obj.write_script_with_depth(code, dot, sum, depth + 1);
                 code.write(".");
                 code.write(prop);
@@ -586,7 +741,11 @@ impl AstNode {
                 code.write(" of menu ");
                 menu_id.write_script_with_depth(code, dot, sum, depth + 1);
             }
-            AstNode::MenuItemProp { menu_id, item_id, prop } => {
+            AstNode::MenuItemProp {
+                menu_id,
+                item_id,
+                prop,
+            } => {
                 code.write("the ");
                 code.write(&get_menu_item_prop_name(*prop));
                 code.write(" of menuItem ");
@@ -619,7 +778,9 @@ impl AstNode {
                             code.write(name);
                             code.write("(");
                             for (i, arg) in arg_list.list_value.iter().skip(1).enumerate() {
-                                if i > 0 { code.write(", "); }
+                                if i > 0 {
+                                    code.write(", ");
+                                }
                                 arg.write_script_with_depth(code, true, sum, depth + 1);
                             }
                             code.write(")");
@@ -627,7 +788,9 @@ impl AstNode {
                             code.write(name);
                             code.write("(");
                             for (i, arg) in arg_list.list_value.iter().enumerate() {
-                                if i > 0 { code.write(", "); }
+                                if i > 0 {
+                                    code.write(", ");
+                                }
                                 arg.write_script_with_depth(code, dot, sum, depth + 1);
                             }
                             code.write(")");
@@ -651,7 +814,11 @@ impl AstNode {
             AstNode::Exit => code.write("exit"),
             AstNode::ExitRepeat => code.write("exit repeat"),
             AstNode::NextRepeat => code.write("next repeat"),
-            AstNode::Put { put_type, variable, value } => {
+            AstNode::Put {
+                put_type,
+                variable,
+                value,
+            } => {
                 code.write("put ");
                 value.write_script_with_depth(code, dot, sum, depth + 1);
                 code.write(" ");
@@ -659,44 +826,71 @@ impl AstNode {
                 code.write(" ");
                 variable.write_script_with_depth(code, dot, sum, depth + 1);
             }
-            AstNode::If { condition, block1, block2, has_else } => {
+            AstNode::If {
+                condition,
+                block1,
+                block2,
+                has_else,
+            } => {
                 code.write("if ");
                 condition.write_script_with_depth(code, dot, sum, depth + 1);
                 code.write(" then");
                 code.end_line();
                 code.indent();
-                block1.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                block1
+                    .borrow()
+                    .write_script_with_depth(code, dot, sum, depth + 1);
                 code.unindent();
                 if has_else.get() && !block2.borrow().children.is_empty() {
                     code.write("else");
                     code.end_line();
                     code.indent();
-                    block2.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                    block2
+                        .borrow()
+                        .write_script_with_depth(code, dot, sum, depth + 1);
                     code.unindent();
                 }
                 code.write("end if");
             }
-            AstNode::RepeatWhile { condition, block, .. } => {
+            AstNode::RepeatWhile {
+                condition, block, ..
+            } => {
                 code.write("repeat while ");
                 condition.write_script_with_depth(code, dot, sum, depth + 1);
                 code.end_line();
                 code.indent();
-                block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                block
+                    .borrow()
+                    .write_script_with_depth(code, dot, sum, depth + 1);
                 code.unindent();
                 code.write("end repeat");
             }
-            AstNode::RepeatWithIn { var_name, list, block, .. } => {
+            AstNode::RepeatWithIn {
+                var_name,
+                list,
+                block,
+                ..
+            } => {
                 code.write("repeat with ");
                 code.write(var_name);
                 code.write(" in ");
                 list.write_script_with_depth(code, dot, sum, depth + 1);
                 code.end_line();
                 code.indent();
-                block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                block
+                    .borrow()
+                    .write_script_with_depth(code, dot, sum, depth + 1);
                 code.unindent();
                 code.write("end repeat");
             }
-            AstNode::RepeatWithTo { var_name, start, end, up, block, .. } => {
+            AstNode::RepeatWithTo {
+                var_name,
+                start,
+                end,
+                up,
+                block,
+                ..
+            } => {
                 code.write("repeat with ");
                 code.write(var_name);
                 code.write(" = ");
@@ -709,7 +903,9 @@ impl AstNode {
                 end.write_script_with_depth(code, dot, sum, depth + 1);
                 code.end_line();
                 code.indent();
-                block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                block
+                    .borrow()
+                    .write_script_with_depth(code, dot, sum, depth + 1);
                 code.unindent();
                 code.write("end repeat");
             }
@@ -718,11 +914,18 @@ impl AstNode {
                 window.write_script_with_depth(code, dot, sum, depth + 1);
                 code.end_line();
                 code.indent();
-                block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                block
+                    .borrow()
+                    .write_script_with_depth(code, dot, sum, depth + 1);
                 code.unindent();
                 code.write("end tell");
             }
-            AstNode::Case { value, first_label, otherwise, .. } => {
+            AstNode::Case {
+                value,
+                first_label,
+                otherwise,
+                ..
+            } => {
                 code.write("case ");
                 value.write_script_with_depth(code, dot, sum, depth + 1);
                 code.write(" of");
@@ -739,7 +942,8 @@ impl AstNode {
 
                 // Write otherwise
                 if let Some(ow) = &*otherwise.borrow() {
-                    ow.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+                    ow.borrow()
+                        .write_script_with_depth(code, dot, sum, depth + 1);
                 }
 
                 code.unindent();
@@ -752,7 +956,9 @@ impl AstNode {
                     if !arg_list.list_value.is_empty() {
                         code.write(", ");
                         for (i, arg) in arg_list.list_value.iter().enumerate() {
-                            if i > 0 { code.write(", "); }
+                            if i > 0 {
+                                code.write(", ");
+                            }
                             arg.write_script_with_depth(code, dot, sum, depth + 1);
                         }
                     }
@@ -772,7 +978,9 @@ impl AstNode {
                     if !arg_list.list_value.is_empty() {
                         code.write(" ");
                         for (i, arg) in arg_list.list_value.iter().enumerate() {
-                            if i > 0 { code.write(", "); }
+                            if i > 0 {
+                                code.write(", ");
+                            }
                             arg.write_script_with_depth(code, dot, sum, depth + 1);
                         }
                     }
@@ -784,7 +992,9 @@ impl AstNode {
                     if !arg_list.list_value.is_empty() {
                         code.write(" ");
                         for (i, arg) in arg_list.list_value.iter().enumerate() {
-                            if i > 0 { code.write(", "); }
+                            if i > 0 {
+                                code.write(", ");
+                            }
                             arg.write_script_with_depth(code, dot, sum, depth + 1);
                         }
                     }
@@ -825,20 +1035,26 @@ impl CaseLabelNode {
             return;
         }
         // Write value(s)
-        self.value.write_script_with_depth(code, dot, sum, depth + 1);
+        self.value
+            .write_script_with_depth(code, dot, sum, depth + 1);
 
         // Write chained "or" values
         let mut current_or = self.next_or.clone();
         while let Some(or_label) = current_or {
             code.write(", ");
-            or_label.borrow().value.write_script_with_depth(code, dot, sum, depth + 1);
+            or_label
+                .borrow()
+                .value
+                .write_script_with_depth(code, dot, sum, depth + 1);
             current_or = or_label.borrow().next_or.clone();
         }
 
         code.write(":");
         code.end_line();
         code.indent();
-        self.block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+        self.block
+            .borrow()
+            .write_script_with_depth(code, dot, sum, depth + 1);
         code.unindent();
     }
 }
@@ -868,7 +1084,9 @@ impl OtherwiseNode {
         code.write("otherwise:");
         code.end_line();
         code.indent();
-        self.block.borrow().write_script_with_depth(code, dot, sum, depth + 1);
+        self.block
+            .borrow()
+            .write_script_with_depth(code, dot, sum, depth + 1);
         code.unindent();
     }
 }
@@ -879,7 +1097,15 @@ impl Default for OtherwiseNode {
     }
 }
 
-fn write_binary_op_with_depth(code: &mut CodeWriter, opcode: OpCode, left: &Rc<AstNode>, right: &Rc<AstNode>, dot: bool, sum: bool, depth: usize) {
+fn write_binary_op_with_depth(
+    code: &mut CodeWriter,
+    opcode: OpCode,
+    left: &Rc<AstNode>,
+    right: &Rc<AstNode>,
+    dot: bool,
+    sum: bool,
+    depth: usize,
+) {
     if depth > MAX_WRITE_DEPTH {
         code.write("/* MAX DEPTH */");
         return;
@@ -887,26 +1113,38 @@ fn write_binary_op_with_depth(code: &mut CodeWriter, opcode: OpCode, left: &Rc<A
     let precedence = get_precedence(opcode);
 
     let left_needs_parens = match left.as_ref() {
-        AstNode::BinaryOp { opcode: left_op, .. } => get_precedence(*left_op) < precedence,
+        AstNode::BinaryOp {
+            opcode: left_op, ..
+        } => get_precedence(*left_op) < precedence,
         _ => false,
     };
 
     let right_needs_parens = match right.as_ref() {
-        AstNode::BinaryOp { opcode: right_op, .. } => get_precedence(*right_op) <= precedence,
+        AstNode::BinaryOp {
+            opcode: right_op, ..
+        } => get_precedence(*right_op) <= precedence,
         _ => false,
     };
 
-    if left_needs_parens { code.write("("); }
+    if left_needs_parens {
+        code.write("(");
+    }
     left.write_script_with_depth(code, dot, sum, depth + 1);
-    if left_needs_parens { code.write(")"); }
+    if left_needs_parens {
+        code.write(")");
+    }
 
     code.write(" ");
     code.write(get_op_string(opcode));
     code.write(" ");
 
-    if right_needs_parens { code.write("("); }
+    if right_needs_parens {
+        code.write("(");
+    }
     right.write_script_with_depth(code, dot, sum, depth + 1);
-    if right_needs_parens { code.write(")"); }
+    if right_needs_parens {
+        code.write(")");
+    }
 }
 
 fn get_op_string(opcode: OpCode) -> &'static str {
@@ -944,17 +1182,42 @@ fn get_precedence(opcode: OpCode) -> u32 {
     }
 }
 
-fn write_call_with_depth(code: &mut CodeWriter, name: &str, args: &Rc<AstNode>, dot: bool, sum: bool, depth: usize) {
+fn write_call_with_depth(
+    code: &mut CodeWriter,
+    name: &str,
+    args: &Rc<AstNode>,
+    dot: bool,
+    sum: bool,
+    depth: usize,
+) {
     if depth > MAX_WRITE_DEPTH {
         code.write("/* MAX DEPTH */");
         return;
     }
     // Check if this is a special no-parens command (statement-style)
-    let no_parens = matches!(name.to_lowercase().as_str(),
-        "go" | "play" | "playaccelerator" | "pause" | "stop" | "halt" | "pass" | "continue" |
-        "alert" | "beep" | "updatestage" | "puppetsprite" | "puppetsound" | "puppetpalette" |
-        "puppettempo" | "puppettransition" | "sound" | "printwithout" | "tell" | "return" |
-        "nothing" | "put"
+    let no_parens = matches!(
+        name.to_lowercase().as_str(),
+        "go" | "play"
+            | "playaccelerator"
+            | "pause"
+            | "stop"
+            | "halt"
+            | "pass"
+            | "continue"
+            | "alert"
+            | "beep"
+            | "updatestage"
+            | "puppetsprite"
+            | "puppetsound"
+            | "puppetpalette"
+            | "puppettempo"
+            | "puppettransition"
+            | "sound"
+            | "printwithout"
+            | "tell"
+            | "return"
+            | "nothing"
+            | "put"
     );
 
     if let AstNode::Literal(arg_list) = args.as_ref() {
@@ -973,7 +1236,9 @@ fn write_call_with_depth(code: &mut CodeWriter, name: &str, args: &Rc<AstNode>, 
             code.write(name);
             code.write(" ");
             for (i, arg) in arg_list.list_value.iter().enumerate() {
-                if i > 0 { code.write(", "); }
+                if i > 0 {
+                    code.write(", ");
+                }
                 arg.write_script_with_depth(code, dot, sum, depth + 1);
             }
         } else {
@@ -981,7 +1246,9 @@ fn write_call_with_depth(code: &mut CodeWriter, name: &str, args: &Rc<AstNode>, 
             code.write(name);
             code.write("(");
             for (i, arg) in arg_list.list_value.iter().enumerate() {
-                if i > 0 { code.write(", "); }
+                if i > 0 {
+                    code.write(", ");
+                }
                 arg.write_script_with_depth(code, dot, sum, depth + 1);
             }
             code.write(")");

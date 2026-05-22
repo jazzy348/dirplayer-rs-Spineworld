@@ -3,8 +3,8 @@
 //! Exports meshes, materials, textures, skeleton, and animations as a GLB (binary glTF) file.
 //! This format supports bones, weights, and keyframe animations unlike OBJ.
 
-use super::types::*;
 use super::skeleton::export_basis_transform;
+use super::types::*;
 
 /// Export a W3dScene as a GLB (binary glTF) byte buffer.
 pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
@@ -39,8 +39,12 @@ pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
 
         for (i, bone) in skeleton.bones.iter().enumerate() {
             let bind_pose = super::skeleton::get_bind_pose(skeleton, i);
-            let (rx, ry, rz, rw) =
-                normalize_quaternion(bind_pose.rot_x, bind_pose.rot_y, bind_pose.rot_z, bind_pose.rot_w);
+            let (rx, ry, rz, rw) = normalize_quaternion(
+                bind_pose.rot_x,
+                bind_pose.rot_y,
+                bind_pose.rot_z,
+                bind_pose.rot_w,
+            );
             gltf.nodes.push(GltfNode {
                 name: bone.name.clone(),
                 translation: Some([bind_pose.pos_x, bind_pose.pos_y, bind_pose.pos_z]),
@@ -98,20 +102,31 @@ pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
     // Export meshes
     let mut mesh_node_indices = vec![];
     for (resource_name, meshes) in &scene.clod_meshes {
-        if meshes.is_empty() { continue; }
+        if meshes.is_empty() {
+            continue;
+        }
 
         // Combine ALL submeshes into one (matching C# BuildMesh behavior)
         let mut combined = ClodDecodedMesh {
             name: resource_name.clone(),
-            positions: vec![], normals: vec![], tex_coords: vec![],
-            faces: vec![], diffuse_colors: vec![], specular_colors: vec![],
-            bone_indices: vec![], bone_weights: vec![],
+            positions: vec![],
+            normals: vec![],
+            tex_coords: vec![],
+            faces: vec![],
+            diffuse_colors: vec![],
+            specular_colors: vec![],
+            bone_indices: vec![],
+            bone_weights: vec![],
         };
         let mut vert_offset = 0u32;
         for submesh in meshes {
             let vert_limit = submesh.positions.len();
-            combined.positions.extend_from_slice(&submesh.positions[..vert_limit]);
-            combined.normals.extend_from_slice(&submesh.normals[..vert_limit.min(submesh.normals.len())]);
+            combined
+                .positions
+                .extend_from_slice(&submesh.positions[..vert_limit]);
+            combined
+                .normals
+                .extend_from_slice(&submesh.normals[..vert_limit.min(submesh.normals.len())]);
             // Texcoords: merge per-layer
             for (li, layer) in submesh.tex_coords.iter().enumerate() {
                 while combined.tex_coords.len() <= li {
@@ -119,23 +134,30 @@ pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
                 }
                 combined.tex_coords[li].extend_from_slice(&layer[..vert_limit.min(layer.len())]);
             }
-            combined.bone_indices.extend_from_slice(&submesh.bone_indices[..vert_limit.min(submesh.bone_indices.len())]);
-            combined.bone_weights.extend_from_slice(&submesh.bone_weights[..vert_limit.min(submesh.bone_weights.len())]);
+            combined.bone_indices.extend_from_slice(
+                &submesh.bone_indices[..vert_limit.min(submesh.bone_indices.len())],
+            );
+            combined.bone_weights.extend_from_slice(
+                &submesh.bone_weights[..vert_limit.min(submesh.bone_weights.len())],
+            );
             // Offset face indices by accumulated vertex count
             for face in &submesh.faces {
                 let v0 = face[0] + vert_offset;
                 let v1 = face[1] + vert_offset;
                 let v2 = face[2] + vert_offset;
-                if (v0 as usize) < combined.positions.len() &&
-                   (v1 as usize) < combined.positions.len() &&
-                   (v2 as usize) < combined.positions.len() {
+                if (v0 as usize) < combined.positions.len()
+                    && (v1 as usize) < combined.positions.len()
+                    && (v2 as usize) < combined.positions.len()
+                {
                     combined.faces.push([v0, v1, v2]);
                 }
             }
             vert_offset += vert_limit as u32;
         }
 
-        if combined.positions.is_empty() || combined.faces.is_empty() { continue; }
+        if combined.positions.is_empty() || combined.faces.is_empty() {
+            continue;
+        }
 
         let mesh_idx = export_mesh(&mut gltf, &mut bin, &combined, resource_name, scene);
         let node_idx = gltf.nodes.len();
@@ -165,7 +187,9 @@ pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
 
     // Export raw meshes
     for mesh in &scene.raw_meshes {
-        if mesh.positions.is_empty() || mesh.faces.is_empty() { continue; }
+        if mesh.positions.is_empty() || mesh.faces.is_empty() {
+            continue;
+        }
         let decoded = ClodDecodedMesh {
             name: mesh.name.clone(),
             positions: mesh.positions.clone(),
@@ -207,7 +231,9 @@ pub fn export_glb(scene: &W3dScene) -> Vec<u8> {
         children: root_children,
         ..Default::default()
     });
-    gltf.scenes.push(GltfScene { nodes: vec![root_idx] });
+    gltf.scenes.push(GltfScene {
+        nodes: vec![root_idx],
+    });
 
     // Serialize to GLB
     let json_str = serialize_gltf(&gltf, bin.data.len());
@@ -244,7 +270,8 @@ fn export_mesh(
         component_type: 5126,
         count: recalculated_normals.len(),
         acc_type: "VEC3".into(),
-        min: None, max: None,
+        min: None,
+        max: None,
     });
 
     // Texcoords
@@ -257,10 +284,13 @@ fn export_mesh(
             component_type: 5126,
             count: tc_data.len(),
             acc_type: "VEC2".into(),
-            min: None, max: None,
+            min: None,
+            max: None,
         });
         Some(idx)
-    } else { None };
+    } else {
+        None
+    };
 
     // Indices
     let idx_data: Vec<u32> = mesh.faces.iter().flat_map(|f| [f[0], f[1], f[2]]).collect();
@@ -271,66 +301,82 @@ fn export_mesh(
         component_type: 5125, // UNSIGNED_INT
         count: idx_data.len(),
         acc_type: "SCALAR".into(),
-        min: None, max: None,
+        min: None,
+        max: None,
     });
 
     // Bone indices + weights (for skinning)
-    let joints_acc = if !mesh.bone_indices.is_empty() && mesh.bone_indices.len() == mesh.positions.len() {
-        let joints: Vec<[u16; 4]> = mesh.bone_indices.iter().map(|v| {
-            let mut out = [0u16; 4];
-            for (i, &idx) in v.iter().take(4).enumerate() { out[i] = idx as u16; }
-            out
-        }).collect();
-        let jv = add_buffer_view(gltf, bin, &to_bytes_u16_4(&joints));
-        let idx = gltf.accessors.len();
-        gltf.accessors.push(GltfAccessor {
-            buffer_view: jv,
-            component_type: 5123, // UNSIGNED_SHORT
-            count: joints.len(),
-            acc_type: "VEC4".into(),
-            min: None, max: None,
-        });
-        Some(idx)
-    } else { None };
+    let joints_acc =
+        if !mesh.bone_indices.is_empty() && mesh.bone_indices.len() == mesh.positions.len() {
+            let joints: Vec<[u16; 4]> = mesh
+                .bone_indices
+                .iter()
+                .map(|v| {
+                    let mut out = [0u16; 4];
+                    for (i, &idx) in v.iter().take(4).enumerate() {
+                        out[i] = idx as u16;
+                    }
+                    out
+                })
+                .collect();
+            let jv = add_buffer_view(gltf, bin, &to_bytes_u16_4(&joints));
+            let idx = gltf.accessors.len();
+            gltf.accessors.push(GltfAccessor {
+                buffer_view: jv,
+                component_type: 5123, // UNSIGNED_SHORT
+                count: joints.len(),
+                acc_type: "VEC4".into(),
+                min: None,
+                max: None,
+            });
+            Some(idx)
+        } else {
+            None
+        };
 
-    let weights_acc = if !mesh.bone_weights.is_empty() && mesh.bone_weights.len() == mesh.positions.len() {
-        let weights: Vec<[f32; 4]> = mesh.bone_weights.iter().map(|v| {
-            let mut out = [0.0f32; 4];
-            let mut sum = 0.0f32;
-            for (i, &w) in v.iter().take(4).enumerate() {
-                out[i] = w.max(0.0);
-                sum += out[i];
-            }
-            if sum > 1e-6 {
-                for w in out.iter_mut() {
-                    *w /= sum;
-                }
-            } else {
-                out[0] = 1.0;
-            }
-            out
-        }).collect();
-        let wv = add_buffer_view(gltf, bin, &flatten_vec4(&weights));
-        let idx = gltf.accessors.len();
-        gltf.accessors.push(GltfAccessor {
-            buffer_view: wv,
-            component_type: 5126,
-            count: weights.len(),
-            acc_type: "VEC4".into(),
-            min: None, max: None,
-        });
-        Some(idx)
-    } else { None };
+    let weights_acc =
+        if !mesh.bone_weights.is_empty() && mesh.bone_weights.len() == mesh.positions.len() {
+            let weights: Vec<[f32; 4]> = mesh
+                .bone_weights
+                .iter()
+                .map(|v| {
+                    let mut out = [0.0f32; 4];
+                    let mut sum = 0.0f32;
+                    for (i, &w) in v.iter().take(4).enumerate() {
+                        out[i] = w.max(0.0);
+                        sum += out[i];
+                    }
+                    if sum > 1e-6 {
+                        for w in out.iter_mut() {
+                            *w /= sum;
+                        }
+                    } else {
+                        out[0] = 1.0;
+                    }
+                    out
+                })
+                .collect();
+            let wv = add_buffer_view(gltf, bin, &flatten_vec4(&weights));
+            let idx = gltf.accessors.len();
+            gltf.accessors.push(GltfAccessor {
+                buffer_view: wv,
+                component_type: 5126,
+                count: weights.len(),
+                acc_type: "VEC4".into(),
+                min: None,
+                max: None,
+            });
+            Some(idx)
+        } else {
+            None
+        };
 
     // Material
     let mat_idx = resolve_material_index(gltf, scene, name);
 
     let mesh_idx = gltf.meshes.len();
     let mut prim = GltfPrimitive {
-        attributes: vec![
-            ("POSITION".into(), pos_acc),
-            ("NORMAL".into(), norm_acc),
-        ],
+        attributes: vec![("POSITION".into(), pos_acc), ("NORMAL".into(), norm_acc)],
         indices: idx_acc,
         material: mat_idx,
     };
@@ -367,7 +413,9 @@ fn export_animation(
             None => continue,
         };
         let target_node = bone_node_start + bone_idx;
-        if track.keyframes.is_empty() { continue; }
+        if track.keyframes.is_empty() {
+            continue;
+        }
 
         // Time accessor (shared for translation + rotation)
         let times: Vec<f32> = track.keyframes.iter().map(|k| k.time).collect();
@@ -468,12 +516,16 @@ fn export_animation(
                 || (sanitize_scale(k.scale_z) - 1.0).abs() > 1e-5
         });
         if has_scale {
-            let scales: Vec<f32> = track.keyframes.iter()
-                .flat_map(|k| [
-                    sanitize_scale(k.scale_x),
-                    sanitize_scale(k.scale_y),
-                    sanitize_scale(k.scale_z),
-                ])
+            let scales: Vec<f32> = track
+                .keyframes
+                .iter()
+                .flat_map(|k| {
+                    [
+                        sanitize_scale(k.scale_x),
+                        sanitize_scale(k.scale_y),
+                        sanitize_scale(k.scale_z),
+                    ]
+                })
                 .collect();
             let scale_view = add_buffer_view(gltf, bin, &to_bytes_f32(&scales));
             let scale_acc = gltf.accessors.len();
@@ -482,11 +534,20 @@ fn export_animation(
                 component_type: 5126,
                 count: track.keyframes.len(),
                 acc_type: "VEC3".into(),
-                min: None, max: None,
+                min: None,
+                max: None,
             });
             let scale_sampler = samplers.len();
-            samplers.push(GltfAnimSampler { input: time_acc, output: scale_acc, interpolation: "LINEAR".into() });
-            channels.push(GltfAnimChannel { sampler: scale_sampler, target_node, target_path: "scale".into() });
+            samplers.push(GltfAnimSampler {
+                input: time_acc,
+                output: scale_acc,
+                interpolation: "LINEAR".into(),
+            });
+            channels.push(GltfAnimChannel {
+                sampler: scale_sampler,
+                target_node,
+                target_path: "scale".into(),
+            });
         }
     }
 
@@ -546,12 +607,19 @@ fn build_materials(gltf: &mut GltfRoot, scene: &W3dScene) {
             roughness: 1.0 - mat.reflectivity,
             emissive: [mat.emissive[0], mat.emissive[1], mat.emissive[2]],
             base_color_texture,
-            alpha_mode: if mat.opacity < 1.0 { Some("BLEND".into()) } else { None },
+            alpha_mode: if mat.opacity < 1.0 {
+                Some("BLEND".into())
+            } else {
+                None
+            },
         });
     }
 }
 
-fn find_material_name_for_resource<'a>(scene: &'a W3dScene, resource_name: &str) -> Option<&'a str> {
+fn find_material_name_for_resource<'a>(
+    scene: &'a W3dScene,
+    resource_name: &str,
+) -> Option<&'a str> {
     for node in &scene.nodes {
         if node.node_type != W3dNodeType::Model {
             continue;
@@ -573,17 +641,18 @@ fn find_material_name_for_resource<'a>(scene: &'a W3dScene, resource_name: &str)
     None
 }
 
-fn resolve_material_index(gltf: &mut GltfRoot, scene: &W3dScene, resource_name: &str) -> Option<usize> {
+fn resolve_material_index(
+    gltf: &mut GltfRoot,
+    scene: &W3dScene,
+    resource_name: &str,
+) -> Option<usize> {
     let mat_name = find_material_name_for_resource(scene, resource_name)?;
     gltf.materials.iter().position(|m| m.name == mat_name)
 }
 
 fn identity_matrix() -> [f32; 16] {
     [
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
     ]
 }
 
@@ -604,28 +673,37 @@ fn normalize_quaternion(qx: f32, qy: f32, qz: f32, qw: f32) -> (f32, f32, f32, f
 }
 
 fn sanitize_scale(scale: f32) -> f32 {
-    if scale.abs() < 0.01 {
-        1.0
-    } else {
-        scale
-    }
+    if scale.abs() < 0.01 { 1.0 } else { scale }
 }
 
-fn should_write_translation_track(skeleton: &W3dSkeleton, bone_idx: usize, track: &W3dMotionTrack) -> bool {
+fn should_write_translation_track(
+    skeleton: &W3dSkeleton,
+    bone_idx: usize,
+    track: &W3dMotionTrack,
+) -> bool {
     let bind_pose = super::skeleton::get_bind_pose(skeleton, bone_idx);
     track.keyframes.iter().any(|kf| {
-        let (px, py, pz) =
-            super::skeleton::resolve_local_translation(skeleton, bone_idx, kf.pos_x, kf.pos_y, kf.pos_z);
+        let (px, py, pz) = super::skeleton::resolve_local_translation(
+            skeleton, bone_idx, kf.pos_x, kf.pos_y, kf.pos_z,
+        );
         (px - bind_pose.pos_x).abs() > 1e-4
             || (py - bind_pose.pos_y).abs() > 1e-4
             || (pz - bind_pose.pos_z).abs() > 1e-4
     })
 }
 
-fn should_write_rotation_track(skeleton: &W3dSkeleton, bone_idx: usize, track: &W3dMotionTrack) -> bool {
+fn should_write_rotation_track(
+    skeleton: &W3dSkeleton,
+    bone_idx: usize,
+    track: &W3dMotionTrack,
+) -> bool {
     let bind_pose = super::skeleton::get_bind_pose(skeleton, bone_idx);
-    let (bx, by, bz, bw) =
-        normalize_quaternion(bind_pose.rot_x, bind_pose.rot_y, bind_pose.rot_z, bind_pose.rot_w);
+    let (bx, by, bz, bw) = normalize_quaternion(
+        bind_pose.rot_x,
+        bind_pose.rot_y,
+        bind_pose.rot_z,
+        bind_pose.rot_w,
+    );
     track.keyframes.iter().any(|kf| {
         let (tx, ty, tz, tw) = normalize_quaternion(kf.rot_x, kf.rot_y, kf.rot_z, kf.rot_w);
         let dot = (tx * bx + ty * by + tz * bz + tw * bw).abs();
@@ -685,13 +763,17 @@ struct BinaryBuffer {
 }
 
 impl BinaryBuffer {
-    fn new() -> Self { Self { data: Vec::new() } }
+    fn new() -> Self {
+        Self { data: Vec::new() }
+    }
 
     fn write(&mut self, bytes: &[u8]) -> (usize, usize) {
         let offset = self.data.len();
         self.data.extend_from_slice(bytes);
         // Align to 4 bytes
-        while self.data.len() % 4 != 0 { self.data.push(0); }
+        while self.data.len() % 4 != 0 {
+            self.data.push(0);
+        }
         (offset, bytes.len())
     }
 }
@@ -699,18 +781,27 @@ impl BinaryBuffer {
 fn add_buffer_view(gltf: &mut GltfRoot, bin: &mut BinaryBuffer, data: &[u8]) -> usize {
     let (offset, length) = bin.write(data);
     let idx = gltf.buffer_views.len();
-    gltf.buffer_views.push(GltfBufferView { byte_offset: offset, byte_length: length });
+    gltf.buffer_views.push(GltfBufferView {
+        byte_offset: offset,
+        byte_length: length,
+    });
     idx
 }
 
 fn flatten_vec3(data: &[[f32; 3]]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes())).collect()
+    data.iter()
+        .flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes()))
+        .collect()
 }
 fn flatten_vec2(data: &[[f32; 2]]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes())).collect()
+    data.iter()
+        .flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes()))
+        .collect()
 }
 fn flatten_vec4(data: &[[f32; 4]]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes())).collect()
+    data.iter()
+        .flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes()))
+        .collect()
 }
 fn to_bytes_u32(data: &[u32]) -> Vec<u8> {
     data.iter().flat_map(|v| v.to_le_bytes()).collect()
@@ -719,7 +810,9 @@ fn to_bytes_f32(data: &[f32]) -> Vec<u8> {
     data.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 fn to_bytes_u16_4(data: &[[u16; 4]]) -> Vec<u8> {
-    data.iter().flat_map(|v| v.iter().flat_map(|u| u.to_le_bytes())).collect()
+    data.iter()
+        .flat_map(|v| v.iter().flat_map(|u| u.to_le_bytes()))
+        .collect()
 }
 
 fn compute_bounds(positions: &[[f32; 3]]) -> (Vec<f32>, Vec<f32>) {
@@ -727,8 +820,12 @@ fn compute_bounds(positions: &[[f32; 3]]) -> (Vec<f32>, Vec<f32>) {
     let mut max = [f32::MIN; 3];
     for p in positions {
         for i in 0..3 {
-            if p[i] < min[i] { min[i] = p[i]; }
-            if p[i] > max[i] { max[i] = p[i]; }
+            if p[i] < min[i] {
+                min[i] = p[i];
+            }
+            if p[i] > max[i] {
+                max[i] = p[i];
+            }
         }
     }
     (min.to_vec(), max.to_vec())
@@ -751,11 +848,15 @@ struct GltfRoot {
 }
 
 impl GltfRoot {
-    fn new() -> Self { Self::default() }
+    fn new() -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Default)]
-struct GltfScene { nodes: Vec<usize> }
+struct GltfScene {
+    nodes: Vec<usize>,
+}
 
 #[derive(Default)]
 struct GltfNode {
@@ -803,8 +904,15 @@ struct GltfMaterial {
     alpha_mode: Option<String>,
 }
 
-struct GltfTexture { source: usize, name: String }
-struct GltfImage { buffer_view: usize, mime_type: String, name: String }
+struct GltfTexture {
+    source: usize,
+    name: String,
+}
+struct GltfImage {
+    buffer_view: usize,
+    mime_type: String,
+    name: String,
+}
 
 struct GltfSkin {
     inverse_bind_matrices: usize,
@@ -834,13 +942,17 @@ struct GltfAnimSampler {
 
 fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     let mut j = String::from("{\n");
-    j.push_str("  \"asset\": { \"version\": \"2.0\", \"generator\": \"dirplayer-rs W3D exporter\" },\n");
+    j.push_str(
+        "  \"asset\": { \"version\": \"2.0\", \"generator\": \"dirplayer-rs W3D exporter\" },\n",
+    );
 
     // Scenes
     j.push_str("  \"scene\": 0,\n");
     j.push_str("  \"scenes\": [");
     for (i, s) in root.scenes.iter().enumerate() {
-        if i > 0 { j.push(','); }
+        if i > 0 {
+            j.push(',');
+        }
         j.push_str(&format!("{{ \"nodes\": {:?} }}", s.nodes));
     }
     j.push_str("],\n");
@@ -848,11 +960,19 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     // Nodes
     j.push_str("  \"nodes\": [");
     for (i, n) in root.nodes.iter().enumerate() {
-        if i > 0 { j.push(','); }
+        if i > 0 {
+            j.push(',');
+        }
         j.push_str(&format!("{{ \"name\": {:?}", n.name));
-        if let Some(m) = n.mesh { j.push_str(&format!(", \"mesh\": {}", m)); }
-        if let Some(s) = n.skin { j.push_str(&format!(", \"skin\": {}", s)); }
-        if !n.children.is_empty() { j.push_str(&format!(", \"children\": {:?}", n.children)); }
+        if let Some(m) = n.mesh {
+            j.push_str(&format!(", \"mesh\": {}", m));
+        }
+        if let Some(s) = n.skin {
+            j.push_str(&format!(", \"skin\": {}", s));
+        }
+        if !n.children.is_empty() {
+            j.push_str(&format!(", \"children\": {:?}", n.children));
+        }
         if let Some(ref m) = n.matrix {
             j.push_str(&format!(", \"matrix\": {:?}", m.to_vec()));
         }
@@ -869,17 +989,25 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     // Meshes
     j.push_str("  \"meshes\": [");
     for (i, m) in root.meshes.iter().enumerate() {
-        if i > 0 { j.push(','); }
+        if i > 0 {
+            j.push(',');
+        }
         j.push_str(&format!("{{ \"name\": {:?}, \"primitives\": [", m.name));
         for (pi, p) in m.primitives.iter().enumerate() {
-            if pi > 0 { j.push(','); }
+            if pi > 0 {
+                j.push(',');
+            }
             j.push_str("{ \"attributes\": {");
             for (ai, (name, idx)) in p.attributes.iter().enumerate() {
-                if ai > 0 { j.push(','); }
+                if ai > 0 {
+                    j.push(',');
+                }
                 j.push_str(&format!(" {:?}: {}", name, idx));
             }
             j.push_str(&format!(" }}, \"indices\": {}", p.indices));
-            if let Some(mat) = p.material { j.push_str(&format!(", \"material\": {}", mat)); }
+            if let Some(mat) = p.material {
+                j.push_str(&format!(", \"material\": {}", mat));
+            }
             j.push('}');
         }
         j.push_str("] }");
@@ -889,13 +1017,19 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     // Accessors
     j.push_str("  \"accessors\": [");
     for (i, a) in root.accessors.iter().enumerate() {
-        if i > 0 { j.push(','); }
+        if i > 0 {
+            j.push(',');
+        }
         j.push_str(&format!(
             "{{ \"bufferView\": {}, \"componentType\": {}, \"count\": {}, \"type\": {:?}",
             a.buffer_view, a.component_type, a.count, a.acc_type
         ));
-        if let Some(ref min) = a.min { j.push_str(&format!(", \"min\": {:?}", min)); }
-        if let Some(ref max) = a.max { j.push_str(&format!(", \"max\": {:?}", max)); }
+        if let Some(ref min) = a.min {
+            j.push_str(&format!(", \"min\": {:?}", min));
+        }
+        if let Some(ref max) = a.max {
+            j.push_str(&format!(", \"max\": {:?}", max));
+        }
         j.push('}');
     }
     j.push_str("],\n");
@@ -903,7 +1037,9 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     // Buffer views
     j.push_str("  \"bufferViews\": [");
     for (i, bv) in root.buffer_views.iter().enumerate() {
-        if i > 0 { j.push(','); }
+        if i > 0 {
+            j.push(',');
+        }
         j.push_str(&format!(
             "{{ \"buffer\": 0, \"byteOffset\": {}, \"byteLength\": {} }}",
             bv.byte_offset, bv.byte_length
@@ -912,13 +1048,18 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     j.push_str("],\n");
 
     // Buffers
-    j.push_str(&format!("  \"buffers\": [{{ \"byteLength\": {} }}],\n", bin_size));
+    j.push_str(&format!(
+        "  \"buffers\": [{{ \"byteLength\": {} }}],\n",
+        bin_size
+    ));
 
     // Materials
     if !root.materials.is_empty() {
         j.push_str("  \"materials\": [");
         for (i, m) in root.materials.iter().enumerate() {
-            if i > 0 { j.push(','); }
+            if i > 0 {
+                j.push(',');
+            }
             j.push_str(&format!("{{ \"name\": {:?}, \"pbrMetallicRoughness\": {{ \"baseColorFactor\": {:?}, \"metallicFactor\": {}, \"roughnessFactor\": {}",
                 m.name, m.base_color.to_vec(), m.metallic, m.roughness));
             if let Some(tex) = m.base_color_texture {
@@ -940,7 +1081,9 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     if !root.textures.is_empty() {
         j.push_str("  \"textures\": [");
         for (i, t) in root.textures.iter().enumerate() {
-            if i > 0 { j.push(','); }
+            if i > 0 {
+                j.push(',');
+            }
             j.push_str(&format!("{{ \"source\": {} }}", t.source));
         }
         j.push_str("],\n");
@@ -950,9 +1093,13 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     if !root.images.is_empty() {
         j.push_str("  \"images\": [");
         for (i, img) in root.images.iter().enumerate() {
-            if i > 0 { j.push(','); }
-            j.push_str(&format!("{{ \"bufferView\": {}, \"mimeType\": {:?}, \"name\": {:?} }}",
-                img.buffer_view, img.mime_type, img.name));
+            if i > 0 {
+                j.push(',');
+            }
+            j.push_str(&format!(
+                "{{ \"bufferView\": {}, \"mimeType\": {:?}, \"name\": {:?} }}",
+                img.buffer_view, img.mime_type, img.name
+            ));
         }
         j.push_str("],\n");
     }
@@ -961,9 +1108,13 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     if !root.skins.is_empty() {
         j.push_str("  \"skins\": [");
         for (i, s) in root.skins.iter().enumerate() {
-            if i > 0 { j.push(','); }
-            j.push_str(&format!("{{ \"inverseBindMatrices\": {}, \"joints\": {:?}",
-                s.inverse_bind_matrices, s.joints));
+            if i > 0 {
+                j.push(',');
+            }
+            j.push_str(&format!(
+                "{{ \"inverseBindMatrices\": {}, \"joints\": {:?}",
+                s.inverse_bind_matrices, s.joints
+            ));
             if let Some(root) = s.skeleton_root {
                 j.push_str(&format!(", \"skeleton\": {}", root));
             }
@@ -976,10 +1127,14 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
     if !root.animations.is_empty() {
         j.push_str("  \"animations\": [");
         for (i, anim) in root.animations.iter().enumerate() {
-            if i > 0 { j.push(','); }
+            if i > 0 {
+                j.push(',');
+            }
             j.push_str(&format!("{{ \"name\": {:?}, \"channels\": [", anim.name));
             for (ci, ch) in anim.channels.iter().enumerate() {
-                if ci > 0 { j.push(','); }
+                if ci > 0 {
+                    j.push(',');
+                }
                 j.push_str(&format!(
                     "{{ \"sampler\": {}, \"target\": {{ \"node\": {}, \"path\": {:?} }} }}",
                     ch.sampler, ch.target_node, ch.target_path
@@ -987,7 +1142,9 @@ fn serialize_gltf(root: &GltfRoot, bin_size: usize) -> String {
             }
             j.push_str("], \"samplers\": [");
             for (si, s) in anim.samplers.iter().enumerate() {
-                if si > 0 { j.push(','); }
+                if si > 0 {
+                    j.push(',');
+                }
                 j.push_str(&format!(
                     "{{ \"input\": {}, \"output\": {}, \"interpolation\": {:?} }}",
                     s.input, s.output, s.interpolation
@@ -1018,21 +1175,25 @@ fn encode_glb(json: &str, bin: &[u8]) -> Vec<u8> {
     let mut glb = Vec::with_capacity(total_len);
 
     // Header
-    glb.extend_from_slice(b"glTF");                  // magic
-    glb.extend_from_slice(&2u32.to_le_bytes());       // version
+    glb.extend_from_slice(b"glTF"); // magic
+    glb.extend_from_slice(&2u32.to_le_bytes()); // version
     glb.extend_from_slice(&(total_len as u32).to_le_bytes()); // total length
 
     // JSON chunk
     glb.extend_from_slice(&(json_padded_len as u32).to_le_bytes()); // chunk length
-    glb.extend_from_slice(&0x4E4F534Au32.to_le_bytes());            // chunk type: JSON
+    glb.extend_from_slice(&0x4E4F534Au32.to_le_bytes()); // chunk type: JSON
     glb.extend_from_slice(json_bytes);
-    for _ in 0..(json_padded_len - json_bytes.len()) { glb.push(b' '); }
+    for _ in 0..(json_padded_len - json_bytes.len()) {
+        glb.push(b' ');
+    }
 
     // BIN chunk
     glb.extend_from_slice(&(bin_padded_len as u32).to_le_bytes()); // chunk length
-    glb.extend_from_slice(&0x004E4942u32.to_le_bytes());            // chunk type: BIN
+    glb.extend_from_slice(&0x004E4942u32.to_le_bytes()); // chunk type: BIN
     glb.extend_from_slice(bin);
-    for _ in 0..(bin_padded_len - bin.len()) { glb.push(0); }
+    for _ in 0..(bin_padded_len - bin.len()) {
+        glb.push(0);
+    }
 
     glb
 }

@@ -87,16 +87,23 @@ impl XMediaChunk {
 
                 debug!(
                     "XMED parsed: text='{}' ({} chars), spans={}, alignment={:?}",
-                    styled_text.text, styled_text.text.len(), styled_text.styled_spans.len(), styled_text.alignment
+                    styled_text.text,
+                    styled_text.text.len(),
+                    styled_text.styled_spans.len(),
+                    styled_text.alignment
                 );
 
                 // Log each styled span
                 for (idx, span) in styled_text.styled_spans.iter().enumerate() {
                     debug!(
                         "  Span {}: text='{}', font={:?}, size={:?}, bold={}, italic={}, underline={}",
-                        idx, span.text,
-                        span.style.font_face, span.style.font_size,
-                        span.style.bold, span.style.italic, span.style.underline
+                        idx,
+                        span.text,
+                        span.style.font_face,
+                        span.style.font_size,
+                        span.style.bold,
+                        span.style.italic,
+                        span.style.underline
                     );
                 }
 
@@ -115,13 +122,20 @@ impl XMediaChunk {
             return None;
         }
 
-        debug!("Parsing PFR font with PFR1 parser ({} bytes)...", self.raw_data.len());
+        debug!(
+            "Parsing PFR font with PFR1 parser ({} bytes)...",
+            self.raw_data.len()
+        );
 
         match pfr1::parse_pfr1_font(&self.raw_data) {
             Ok(parsed) => {
                 let font_name = parsed.font_name.clone();
-                debug!("PFR1 font parsed: name='{}', {} outline glyphs, {} bitmap glyphs",
-                    font_name, parsed.glyphs.len(), parsed.bitmap_glyphs.len());
+                debug!(
+                    "PFR1 font parsed: name='{}', {} outline glyphs, {} bitmap glyphs",
+                    font_name,
+                    parsed.glyphs.len(),
+                    parsed.bitmap_glyphs.len()
+                );
 
                 Some(PfrFont {
                     font_name,

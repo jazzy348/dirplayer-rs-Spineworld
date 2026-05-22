@@ -1,18 +1,21 @@
 use crate::{
     director::lingo::datum::{
-        datum_bool, Datum, StringChunkExpr, StringChunkSource, StringChunkType,
+        Datum, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool,
     },
     player::{
+        cast_member::CastMemberType,
+        DirPlayer, HandlerExecutionResult, ScriptError,
         context_vars::{player_get_context_var, player_set_context_var, read_context_var_args},
-        datum_formatting::{format_concrete_datum, datum_to_string_for_concat},
+        datum_formatting::{datum_to_string_for_concat, format_concrete_datum},
         datum_ref::DatumRef,
         handlers::datum_handlers::string_chunk::StringChunkUtils,
-        reserve_player_mut, DirPlayer, HandlerExecutionResult, ScriptError,
+        reserve_player_mut,
     },
 };
 
 use super::handler_manager::BytecodeHandlerContext;
 
+#[derive(Clone, Copy)]
 pub enum PutType {
     Into,
     After,
@@ -33,6 +36,56 @@ impl From<u8> for PutType {
 pub struct StringBytecodeHandler {}
 
 impl StringBytecodeHandler {
+    fn put_around_cast_member(
+        player: &mut DirPlayer,
+        target_ref: &DatumRef,
+        value_ref: &DatumRef,
+        put_type: PutType,
+    ) -> Result<bool, ScriptError> {
+        let Datum::CastMember(member_ref) = player.get_datum(target_ref).clone() else {
+            return Ok(false);
+        };
+        let value = player.get_datum(value_ref).string_value()?;
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_member_by_ref_mut(&member_ref)
+        else {
+            return Ok(true);
+        };
+
+        let combine = |current: &str| match put_type {
+            PutType::Into => value.clone(),
+            PutType::Before => {
+                let mut combined = value.clone();
+                combined.push_str(current);
+                combined
+            }
+            PutType::After => {
+                let mut combined = current.to_string();
+                combined.push_str(&value);
+                combined
+            }
+        };
+
+        match &mut member.member_type {
+            CastMemberType::Field(field) => {
+                field.set_text_preserving_caret(combine(&field.text));
+            }
+            CastMemberType::Text(text) => {
+                text.set_text_preserving_caret(combine(&text.text));
+            }
+            CastMemberType::Button(button) => {
+                button
+                    .field
+                    .set_text_preserving_caret(combine(&button.field.text));
+            }
+            _ => return Ok(false),
+        }
+        player.stage_dirty = true;
+        Ok(true)
+    }
+
     fn get_datum_concat_value(datum: &Datum, player: &DirPlayer) -> Result<String, ScriptError> {
         match datum {
             Datum::String(s) => Ok(s.clone()),
@@ -86,7 +139,10 @@ impl StringBytecodeHandler {
                     let item = player.get_datum(item);
                     if item.is_string() {
                         let item = item.string_value()?;
-                        if item.to_ascii_lowercase().contains(search_str_lower.as_str()) {
+                        if item
+                            .to_ascii_lowercase()
+                            .contains(search_str_lower.as_str())
+                        {
                             contains = true;
                             break;
                         }
@@ -95,7 +151,9 @@ impl StringBytecodeHandler {
                 Ok(contains)
             } else if search_in.is_string() {
                 let search_in = search_in.string_value()?;
-                Ok(search_in.to_ascii_lowercase().contains(search_str_lower.as_str()))
+                Ok(search_in
+                    .to_ascii_lowercase()
+                    .contains(search_str_lower.as_str()))
             } else if search_in.is_symbol() {
                 Ok(false)
             } else if search_in.is_number() {
@@ -141,22 +199,22 @@ impl StringBytecodeHandler {
                 let left_ref = scope.stack.pop().unwrap();
                 (left_ref, right_ref)
             };
-            
+
             // Get the actual datums
             let left = player.get_datum(&left_ref);
             let right = player.get_datum(&right_ref);
-            
+
             let left_str = datum_to_string_for_concat(left, player);
             let right_str = datum_to_string_for_concat(right, player);
-            
+
             // Concatenate
             let result = Datum::String(format!("{}{}", left_str, right_str));
             let result_ref = player.alloc_datum(result);
-            
+
             // Push result back to stack
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
             scope.stack.push(result_ref);
-            
+
             Ok(HandlerExecutionResult::Advance)
         })
     }
@@ -190,6 +248,14 @@ impl StringBytecodeHandler {
                         var_type,
                         &ctx,
                     )?;
+                    if Self::put_around_cast_member(
+                        player,
+                        &curr_string_id,
+                        &value_ref,
+                        put_type,
+                    )? {
+                        return Ok(HandlerExecutionResult::Advance);
+                    }
                     let curr_string = player.get_datum(&curr_string_id);
                     let curr_string = curr_string.string_value()?;
                     let value = player.get_datum(&value_ref);
@@ -217,6 +283,14 @@ impl StringBytecodeHandler {
                         var_type,
                         &ctx,
                     )?;
+                    if Self::put_around_cast_member(
+                        player,
+                        &curr_string_id,
+                        &value_ref,
+                        put_type,
+                    )? {
+                        return Ok(HandlerExecutionResult::Advance);
+                    }
                     let curr_string = player.get_datum(&curr_string_id);
                     let curr_string = curr_string.string_value()?;
                     let value = player.get_datum(&value_ref);
@@ -242,8 +316,20 @@ impl StringBytecodeHandler {
         })
     }
 
-    fn read_single_chunk_ref(player: &mut DirPlayer, ctx: &BytecodeHandlerContext) -> Result<StringChunkExpr, ScriptError> {
-        let (last_line, first_line, last_item, first_item, last_word, first_word, last_char, first_char) = {
+    fn read_single_chunk_ref(
+        player: &mut DirPlayer,
+        ctx: &BytecodeHandlerContext,
+    ) -> Result<StringChunkExpr, ScriptError> {
+        let (
+            last_line,
+            first_line,
+            last_item,
+            first_item,
+            last_word,
+            first_word,
+            last_char,
+            first_char,
+        ) = {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
             let last_line = scope.stack.pop().unwrap();
             let first_line = scope.stack.pop().unwrap();
@@ -253,9 +339,12 @@ impl StringBytecodeHandler {
             let first_word = scope.stack.pop().unwrap();
             let last_char = scope.stack.pop().unwrap();
             let first_char = scope.stack.pop().unwrap();
-            (last_line, first_line, last_item, first_item, last_word, first_word, last_char, first_char)
+            (
+                last_line, first_line, last_item, first_item, last_word, first_word, last_char,
+                first_char,
+            )
         };
-        
+
         let last_line = player.get_datum(&last_line).int_value()?;
         let first_line = player.get_datum(&first_line).int_value()?;
         let last_item = player.get_datum(&last_item).int_value()?;
@@ -264,7 +353,7 @@ impl StringBytecodeHandler {
         let first_word = player.get_datum(&first_word).int_value()?;
         let last_char = player.get_datum(&last_char).int_value()?;
         let first_char = player.get_datum(&first_char).int_value()?;
-        
+
         if first_line != 0 || last_line != 0 {
             Ok(StringChunkExpr {
                 chunk_type: StringChunkType::Line,
@@ -294,12 +383,26 @@ impl StringBytecodeHandler {
                 item_delimiter: player.movie.item_delimiter.to_owned(),
             })
         } else {
-            Err(ScriptError::new("getChunk: invalid chunk range".to_string()))
+            Err(ScriptError::new(
+                "getChunk: invalid chunk range".to_string(),
+            ))
         }
     }
 
-    fn read_all_chunks(player: &mut DirPlayer,ctx: &BytecodeHandlerContext) -> Result<Vec<StringChunkExpr>, ScriptError> {
-        let (last_line, first_line, last_item, first_item, last_word, first_word, last_char, first_char) = {
+    fn read_all_chunks(
+        player: &mut DirPlayer,
+        ctx: &BytecodeHandlerContext,
+    ) -> Result<Vec<StringChunkExpr>, ScriptError> {
+        let (
+            last_line,
+            first_line,
+            last_item,
+            first_item,
+            last_word,
+            first_word,
+            last_char,
+            first_char,
+        ) = {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
             let last_line = scope.stack.pop().unwrap();
             let first_line = scope.stack.pop().unwrap();
@@ -309,9 +412,12 @@ impl StringBytecodeHandler {
             let first_word = scope.stack.pop().unwrap();
             let last_char = scope.stack.pop().unwrap();
             let first_char = scope.stack.pop().unwrap();
-            (last_line, first_line, last_item, first_item, last_word, first_word, last_char, first_char)
+            (
+                last_line, first_line, last_item, first_item, last_word, first_word, last_char,
+                first_char,
+            )
         };
-        
+
         let last_line = player.get_datum(&last_line).int_value()?;
         let first_line = player.get_datum(&first_line).int_value()?;
         let last_item = player.get_datum(&last_item).int_value()?;
@@ -320,9 +426,9 @@ impl StringBytecodeHandler {
         let first_word = player.get_datum(&first_word).int_value()?;
         let last_char = player.get_datum(&last_char).int_value()?;
         let first_char = player.get_datum(&first_char).int_value()?;
-        
+
         let mut chunks = Vec::new();
-        
+
         // Add chunks in the order they should be applied
         if first_line != 0 || last_line != 0 {
             chunks.push(StringChunkExpr {
@@ -356,11 +462,13 @@ impl StringBytecodeHandler {
                 item_delimiter: player.movie.item_delimiter.to_owned(),
             });
         }
-        
+
         if chunks.is_empty() {
-            return Err(ScriptError::new("getChunk: no valid chunks specified".to_string()));
+            return Err(ScriptError::new(
+                "getChunk: no valid chunks specified".to_string(),
+            ));
         }
-        
+
         Ok(chunks)
     }
 
@@ -370,16 +478,16 @@ impl StringBytecodeHandler {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                 scope.stack.pop().unwrap()
             };
-            
+
             // Read all chunk parameters
             let chunks = Self::read_all_chunks(player, ctx)?;
-            
+
             // Apply chunks sequentially
             let mut result = player.get_datum(&string_ref).string_value()?;
             for chunk_expr in chunks {
                 result = StringChunkUtils::resolve_chunk_expr_string(&result, &chunk_expr)?;
             }
-            
+
             let result_datum = Datum::String(result);
             let result_ref = player.alloc_datum(result_datum);
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -428,7 +536,9 @@ impl StringBytecodeHandler {
                 // Director's `starts` operator is case-insensitive
                 let search_str = player.get_datum(&search_str_ref).string_value()?;
                 let search_in = search_in.string_value()?;
-                search_in.to_ascii_lowercase().starts_with(search_str.to_ascii_lowercase().as_str())
+                search_in
+                    .to_ascii_lowercase()
+                    .starts_with(search_str.to_ascii_lowercase().as_str())
             };
             let result = player.alloc_datum(datum_bool(result));
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -442,7 +552,7 @@ impl StringBytecodeHandler {
             let bytecode = player.get_ctx_current_bytecode(ctx);
             let put_type = PutType::from(((bytecode.obj >> 4) & 0xF) as u8);
             let var_type = (bytecode.obj & 0xF) as u32;
-            
+
             // Read the target variable (top of stack: cast_id if field type, then id)
             let (id_ref, cast_id_ref) = read_context_var_args(player, var_type, ctx.scope_ref);
 
@@ -456,13 +566,8 @@ impl StringBytecodeHandler {
             };
 
             // Get the current value of the variable
-            let string_ref = player_get_context_var(
-                player,
-                &id_ref,
-                cast_id_ref.as_ref(),
-                var_type,
-                ctx,
-            );
+            let string_ref =
+                player_get_context_var(player, &id_ref, cast_id_ref.as_ref(), var_type, ctx);
 
             // For field variables (var_type 0x6), Director silently ignores errors
             // (e.g. when a frame script accesses sprite(0).member which is invalid).
@@ -470,9 +575,10 @@ impl StringBytecodeHandler {
                 Ok(r) => r,
                 Err(err) => {
                     if var_type == 0x6 {
-                        web_sys::console::warn_1(&format!(
-                            "putchunk: field lookup failed (ignored): {}", err.message
-                        ).into());
+                        web_sys::console::warn_1(
+                            &format!("putchunk: field lookup failed (ignored): {}", err.message)
+                                .into(),
+                        );
                         return Ok(HandlerExecutionResult::Advance);
                     }
                     return Err(err);
@@ -484,15 +590,21 @@ impl StringBytecodeHandler {
 
             // Apply the chunk operation based on put type
             let new_string = match put_type {
-                PutType::Into => {
-                    StringChunkUtils::string_by_putting_into_chunk(&current_string, &chunk_expr, &value_string)?
-                }
-                PutType::Before => {
-                    StringChunkUtils::string_by_putting_before_chunk(&current_string, &chunk_expr, &value_string)?
-                }
-                PutType::After => {
-                    StringChunkUtils::string_by_putting_after_chunk(&current_string, &chunk_expr, &value_string)?
-                }
+                PutType::Into => StringChunkUtils::string_by_putting_into_chunk(
+                    &current_string,
+                    &chunk_expr,
+                    &value_string,
+                )?,
+                PutType::Before => StringChunkUtils::string_by_putting_before_chunk(
+                    &current_string,
+                    &chunk_expr,
+                    &value_string,
+                )?,
+                PutType::After => StringChunkUtils::string_by_putting_after_chunk(
+                    &current_string,
+                    &chunk_expr,
+                    &value_string,
+                )?,
             };
 
             let new_string_ref = player.alloc_datum(Datum::String(new_string));
@@ -510,14 +622,14 @@ impl StringBytecodeHandler {
             // For field variables, silently ignore set failures too
             if let Err(err) = set_result {
                 if var_type == 0x6 {
-                    web_sys::console::warn_1(&format!(
-                        "putchunk: field set failed (ignored): {}", err.message
-                    ).into());
+                    web_sys::console::warn_1(
+                        &format!("putchunk: field set failed (ignored): {}", err.message).into(),
+                    );
                     return Ok(HandlerExecutionResult::Advance);
                 }
                 return Err(err);
             }
-            
+
             Ok(HandlerExecutionResult::Advance)
         })
     }

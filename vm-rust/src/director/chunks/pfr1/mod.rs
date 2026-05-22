@@ -3,14 +3,13 @@
 /// Parses PFR1 (Portable Font Resource) fonts from XMED chunks,
 /// producing outline glyphs with proportional widths that are
 /// rasterized to bitmaps for the BitmapFont system.
-
 pub mod bit_reader;
-pub mod types;
+pub mod glyph;
 pub mod header;
 pub mod physical;
-pub mod glyph;
 pub mod rasterizer;
 pub mod stroke_builder;
+pub mod types;
 
 use log::debug;
 use types::*;
@@ -32,7 +31,10 @@ pub fn parse_pfr1_font(data: &[u8]) -> Result<Pfr1ParsedFont, String> {
 }
 
 /// Parse a PFR1 font with a target em size (in pixels) for header parser scaling.
-pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr1ParsedFont, String> {
+pub fn parse_pfr1_font_with_target(
+    data: &[u8],
+    target_em_px: i32,
+) -> Result<Pfr1ParsedFont, String> {
     log(&format!("PFR1 parser: parsing {} bytes", data.len()));
 
     let mut font = Pfr1ParsedFont::new();
@@ -45,19 +47,22 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
     font.gps_section_offset = pfr_header.gps_section_offset;
     font.pfr_black_pixel = pfr_header.pfr_black_pixel;
 
-    log(&format!("  Header: version={}, physOffset=0x{:X}, gpsOffset=0x{:X}, gpsSize={}",
+    log(&format!(
+        "  Header: version={}, physOffset=0x{:X}, gpsOffset=0x{:X}, gpsSize={}",
         pfr_header.version,
         pfr_header.phys_font_section_offset,
         pfr_header.gps_section_offset,
-        pfr_header.gps_section_size));
+        pfr_header.gps_section_size
+    ));
 
     // 2. Parse logical font directory
     font.logical_fonts = header::parse_logical_font_directory(data, &pfr_header)?;
     if !font.logical_fonts.is_empty() {
         let m = &font.logical_fonts[0].font_matrix;
-        log(&format!("  LogFont: matrix=[{}, {}, {}, {}], physSize={}, physOffset=0x{:X}",
-            m[0], m[1], m[2], m[3],
-            font.logical_fonts[0].size, font.logical_fonts[0].offset));
+        log(&format!(
+            "  LogFont: matrix=[{}, {}, {}, {}], physSize={}, physOffset=0x{:X}",
+            m[0], m[1], m[2], m[3], font.logical_fonts[0].size, font.logical_fonts[0].offset
+        ));
     } else {
         log("  LogFont: none (using identity matrix)");
     }
@@ -74,7 +79,8 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
         phys_end = phys_end.min(gps_offset);
     }
 
-    font.physical_font = physical::parse_physical_font(data, phys_offset, phys_end, pfr_header.max_chars)?;
+    font.physical_font =
+        physical::parse_physical_font(data, phys_offset, phys_end, pfr_header.max_chars)?;
     // Header carries max orus values used by PFR1 glyph parsing
     font.physical_font.max_x_orus = pfr_header.max_x_orus;
     font.physical_font.max_y_orus = pfr_header.max_y_orus;
@@ -103,20 +109,30 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
         ));
     }
 
-    log(&format!("  PhysFont: name='{}', outlineRes={}, bbox=({},{})..({},{}), {} chars, StdVW={}, StdHW={}",
+    log(&format!(
+        "  PhysFont: name='{}', outlineRes={}, bbox=({},{})..({},{}), {} chars, StdVW={}, StdHW={}",
         font.font_name,
         font.physical_font.outline_resolution,
-        font.physical_font.x_min, font.physical_font.y_min,
-        font.physical_font.x_max, font.physical_font.y_max,
+        font.physical_font.x_min,
+        font.physical_font.y_min,
+        font.physical_font.x_max,
+        font.physical_font.y_max,
         font.physical_font.char_records.len(),
         font.physical_font.metrics.std_vw,
-        font.physical_font.metrics.std_hw));
+        font.physical_font.metrics.std_hw
+    ));
 
     // Log first few char records for debugging
     for (i, cr) in font.physical_font.char_records.iter().enumerate().take(5) {
-        let ch = if cr.char_code >= 32 && cr.char_code < 127 { cr.char_code as u8 as char } else { '?' };
-        log(&format!("    Char[{}]: code={} ('{}'), width={}, gpsSize={}, gpsOff=0x{:X}",
-            i, cr.char_code, ch, cr.set_width, cr.gps_size, cr.gps_offset));
+        let ch = if cr.char_code >= 32 && cr.char_code < 127 {
+            cr.char_code as u8 as char
+        } else {
+            '?'
+        };
+        log(&format!(
+            "    Char[{}]: code={} ('{}'), width={}, gpsSize={}, gpsOff=0x{:X}",
+            i, cr.char_code, ch, cr.set_width, cr.gps_size, cr.gps_offset
+        ));
     }
 
     // 4. Parse GPS section - parse each glyph
@@ -142,7 +158,9 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
         let total_chars = font.physical_font.char_records.len();
 
         // Known GPS offsets for compound glyph subglyph size limiting
-        let mut known_gps_offsets: Vec<usize> = font.physical_font.char_records
+        let mut known_gps_offsets: Vec<usize> = font
+            .physical_font
+            .char_records
             .iter()
             .map(|cr| cr.gps_offset as usize)
             .collect();
@@ -156,13 +174,15 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
 
             let start = char_record.gps_offset as usize;
             let size = char_record.gps_size as usize;
-            let debug_this = debug_v_font && (
-                i < 5
+            let debug_this = debug_v_font
+                && (
+                    i < 5
                 || (char_code >= 48 && char_code <= 57)
                 || char_code == 70  // 'F'
                 || char_code == 80  // 'P'
-                || char_code == 119 // 'w'
-            );
+                || char_code == 119
+                    // 'w'
+                );
 
             // Empty glyphs (space / control) still need width for layout
             if size <= 1 {
@@ -174,7 +194,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                     parsed_count += 1;
                 }
                 if debug_this {
-                    let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+                    let ch = if char_code >= 32 && char_code < 127 {
+                        char_code as u8 as char
+                    } else {
+                        '?'
+                    };
                     log(&format!(
                         "    Char {} ('{}'): empty glyph (gpsSize={}) setWidth={}",
                         char_code, ch, size, char_record.set_width
@@ -185,10 +209,18 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
 
             if start + size > gps_data.len() {
                 if debug_this {
-                    let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+                    let ch = if char_code >= 32 && char_code < 127 {
+                        char_code as u8 as char
+                    } else {
+                        '?'
+                    };
                     log(&format!(
                         "    Char {} ('{}'): gps out of range start={} size={} gps_len={}",
-                        char_code, ch, start, size, gps_data.len()
+                        char_code,
+                        ch,
+                        start,
+                        size,
+                        gps_data.len()
                     ));
                 }
                 continue;
@@ -200,8 +232,17 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
             if zeros_field != 0 && font.physical_font.has_bitmap_section {
                 // Bitmap glyph
                 if debug_this {
-                    let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
-                    let hex: String = glyph_data.iter().take(16).map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+                    let ch = if char_code >= 32 && char_code < 127 {
+                        char_code as u8 as char
+                    } else {
+                        '?'
+                    };
+                    let hex: String = glyph_data
+                        .iter()
+                        .take(16)
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     let fmt = glyph_data[0];
                     let image_format = (fmt >> 6) & 0x03;
                     let escapement_format = (fmt >> 4) & 0x03;
@@ -209,7 +250,14 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                     let position_format = fmt & 0x03;
                     log(&format!(
                         "    Char {} ('{}'): bitmap header fmt=0x{:02X} img={} esc={} size={} pos={} bytes=[{}]",
-                        char_code, ch, fmt, image_format, escapement_format, size_format, position_format, hex
+                        char_code,
+                        ch,
+                        fmt,
+                        image_format,
+                        escapement_format,
+                        size_format,
+                        position_format,
+                        hex
                     ));
                 }
                 if let Some(mut bmp) = glyph::parse_bitmap_glyph(glyph_data, char_code) {
@@ -222,7 +270,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                     let bmp_h = bmp.y_size;
                     if target_h > 0 && (bmp_h > target_h * 2 || bmp_h < target_h / 2) {
                         if debug_this {
-                            let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+                            let ch = if char_code >= 32 && char_code < 127 {
+                                char_code as u8 as char
+                            } else {
+                                '?'
+                            };
                             log(&format!(
                                 "    Char {} ('{}'): SKIPPING bitmap glyph (size mismatch: bmp_h={} target_h={}), falling through to outline",
                                 char_code, ch, bmp_h, target_h
@@ -235,7 +287,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                             bitmap_count += 1;
                         }
                         if debug_this {
-                            let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+                            let ch = if char_code >= 32 && char_code < 127 {
+                                char_code as u8 as char
+                            } else {
+                                '?'
+                            };
                             log(&format!(
                                 "    Char {} ('{}'): bitmap glyph (zeros=0x{:X}) size={} img={}x{} pos=({}, {})",
                                 char_code,
@@ -264,10 +320,24 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                 let orus_enc = (b0 >> 2) & 3;
                 let count_enc = b0 & 3;
                 let has_extra = (b0 & 0x08) != 0;
-                let hex: String = glyph_data.iter().take(12).map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+                let hex: String = glyph_data
+                    .iter()
+                    .take(12)
+                    .map(|b| format!("{:02X}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 log(&format!(
                     "  [DIAG] Char {} ('{}') byte0=0x{:02X} outFmt={} sizeEnc={} orusEnc={} countEnc={} extraItems={} gpsSize={} bytes=[{}]",
-                    char_code, ch, b0, outline_fmt, size_enc, orus_enc, count_enc, has_extra, size, hex
+                    char_code,
+                    ch,
+                    b0,
+                    outline_fmt,
+                    size_enc,
+                    orus_enc,
+                    count_enc,
+                    has_extra,
+                    size,
+                    hex
                 ));
             }
 
@@ -296,7 +366,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                 if debug_reaction && char_code >= 32 && char_code < 127 {
                     let ch = char_code as u8 as char;
                     let n_contours = outline_glyph.contours.len();
-                    let n_pts: usize = outline_glyph.contours.iter().map(|c| c.commands.len()).sum();
+                    let n_pts: usize = outline_glyph
+                        .contours
+                        .iter()
+                        .map(|c| c.commands.len())
+                        .sum();
                     if n_contours > 0 {
                         let mut min_x = f32::MAX;
                         let mut min_y = f32::MAX;
@@ -326,7 +400,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
                     parsed_count += 1;
                 }
                 if debug_this {
-                    let ch = if char_code >= 32 && char_code < 127 { char_code as u8 as char } else { '?' };
+                    let ch = if char_code >= 32 && char_code < 127 {
+                        char_code as u8 as char
+                    } else {
+                        '?'
+                    };
                     let mut min_x = f32::MAX;
                     let mut max_x = f32::MIN;
                     let mut min_y = f32::MAX;
@@ -367,7 +445,11 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
 
         log(&format!(
             "  Glyphs: {}/{} outline ({} with contours, {} empty), {} bitmap",
-            parsed_count, total_chars, with_contours, parsed_count - with_contours, bitmap_count
+            parsed_count,
+            total_chars,
+            with_contours,
+            parsed_count - with_contours,
+            bitmap_count
         ));
 
         log(&format!(
@@ -383,8 +465,12 @@ pub fn parse_pfr1_font_with_target(data: &[u8], target_em_px: i32) -> Result<Pfr
             font.physical_font.metrics.descender,
         ));
     } else {
-        log(&format!("  GPS section out of range (offset=0x{:X}, size={}, data_len={})",
-            gps_offset, gps_size, data.len()));
+        log(&format!(
+            "  GPS section out of range (offset=0x{:X}, size={}, data_len={})",
+            gps_offset,
+            gps_size,
+            data.len()
+        ));
     }
 
     // Case-folding fallback: if a lowercase letter has no contours,

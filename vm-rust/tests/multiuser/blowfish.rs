@@ -55,7 +55,10 @@ fn test_different_keys_different_output() {
     let mut data2 = vec![0u8; 8];
     cipher2.apply_stream(&mut data2);
 
-    assert_ne!(data1, data2, "different keys should produce different output");
+    assert_ne!(
+        data1, data2,
+        "different keys should produce different output"
+    );
 }
 
 #[test]
@@ -96,8 +99,10 @@ fn test_decode_logon_content() {
     let mut cipher = MUSBlowfish::new(key);
 
     // Encrypt then decrypt should be identity
-    let original = vec![0x00, 0x03, 0x00, 0x00, 0x00, 0x05, 0x48, 0x65,
-                        0x6c, 0x6c, 0x6f, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let original = vec![
+        0x00, 0x03, 0x00, 0x00, 0x00, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
     let mut data = original.clone();
     cipher.encode(&mut data);
     cipher.decode(&mut data);

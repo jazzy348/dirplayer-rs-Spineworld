@@ -1,9 +1,8 @@
-/// PFR1 Rasterizer - Outline-to-bitmap rendering
-/// Implements: Bezier flattening, non-zero winding scanline fill, grid bitmap assembly
-
-use super::types::*;
 use super::glyph::fixed_point_multiply16;
 use super::log;
+/// PFR1 Rasterizer - Outline-to-bitmap rendering
+/// Implements: Bezier flattening, non-zero winding scanline fill, grid bitmap assembly
+use super::types::*;
 
 /// Rasterize a single glyph using the browser's Canvas2D path fill.
 /// This leverages the browser's native rasterizer which handles edge cases
@@ -57,11 +56,11 @@ fn rasterize_glyph_canvas2d(
     // correctly creates holes in characters like 'o', 'e', 'q', etc.
     // Canvas2D's default fill() already uses non-zero winding, but we specify explicitly.
     {
-        
         let fill_rule = wasm_bindgen::JsValue::from_str("nonzero");
         let _ = js_sys::Reflect::apply(
             &js_sys::Function::from(
-                js_sys::Reflect::get(ctx.as_ref(), &"fill".into()).unwrap_or(wasm_bindgen::JsValue::UNDEFINED)
+                js_sys::Reflect::get(ctx.as_ref(), &"fill".into())
+                    .unwrap_or(wasm_bindgen::JsValue::UNDEFINED),
             ),
             ctx.as_ref(),
             &js_sys::Array::of1(&fill_rule),
@@ -87,10 +86,14 @@ fn rasterize_glyph_canvas2d(
 
 /// Flatten a cubic bezier curve into line segments using de Casteljau subdivision
 fn flatten_cubic_bezier(
-    x0: f32, y0: f32,
-    x1: f32, y1: f32,
-    x2: f32, y2: f32,
-    x3: f32, y3: f32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    x3: f32,
+    y3: f32,
     tolerance: f32,
     output: &mut Vec<(f32, f32)>,
 ) {
@@ -124,8 +127,12 @@ fn flatten_cubic_bezier(
     let x0123 = (x012 + x123) * 0.5;
     let y0123 = (y012 + y123) * 0.5;
 
-    flatten_cubic_bezier(x0, y0, x01, y01, x012, y012, x0123, y0123, tolerance, output);
-    flatten_cubic_bezier(x0123, y0123, x123, y123, x23, y23, x3, y3, tolerance, output);
+    flatten_cubic_bezier(
+        x0, y0, x01, y01, x012, y012, x0123, y0123, tolerance, output,
+    );
+    flatten_cubic_bezier(
+        x0123, y0123, x123, y123, x23, y23, x3, y3, tolerance, output,
+    );
 }
 
 /// Convert contour commands to line segments (flattening curves)
@@ -148,10 +155,14 @@ fn contour_to_edges(contour: &PfrContour, tolerance: f32) -> Vec<(f32, f32)> {
             }
             PfrCmdType::CurveTo => {
                 flatten_cubic_bezier(
-                    cur_x, cur_y,
-                    cmd.x1, cmd.y1,
-                    cmd.x2, cmd.y2,
-                    cmd.x, cmd.y,
+                    cur_x,
+                    cur_y,
+                    cmd.x1,
+                    cmd.y1,
+                    cmd.x2,
+                    cmd.y2,
+                    cmd.x,
+                    cmd.y,
                     tolerance,
                     &mut points,
                 );
@@ -177,7 +188,9 @@ fn rasterize_glyph_to_bitmap(
     offset_x: f32,
     offset_y: f32,
 ) -> Vec<u8> {
-    rasterize_glyph_to_bitmap_oversampled(glyph, width, height, scale_x, scale_y, offset_x, offset_y, 1)
+    rasterize_glyph_to_bitmap_oversampled(
+        glyph, width, height, scale_x, scale_y, offset_x, offset_y, 1,
+    )
 }
 
 fn rasterize_glyph_to_alpha_mask(
@@ -191,7 +204,9 @@ fn rasterize_glyph_to_alpha_mask(
     oversample: usize,
 ) -> Vec<u8> {
     if oversample <= 1 {
-        let bitmap = rasterize_glyph_to_bitmap_raw(glyph, width, height, scale_x, scale_y, offset_x, offset_y);
+        let bitmap = rasterize_glyph_to_bitmap_raw(
+            glyph, width, height, scale_x, scale_y, offset_x, offset_y,
+        );
         let bytes_per_row = (width + 7) / 8;
         let mut alpha = vec![0u8; width * height];
         for y in 0..height {
@@ -213,7 +228,15 @@ fn rasterize_glyph_to_alpha_mask(
     let hi_offset_x = offset_x * oversample as f32;
     let hi_offset_y = offset_y * oversample as f32;
 
-    let hi_bitmap = rasterize_glyph_to_bitmap_raw(glyph, hi_w, hi_h, hi_scale_x, hi_scale_y, hi_offset_x, hi_offset_y);
+    let hi_bitmap = rasterize_glyph_to_bitmap_raw(
+        glyph,
+        hi_w,
+        hi_h,
+        hi_scale_x,
+        hi_scale_y,
+        hi_offset_x,
+        hi_offset_y,
+    );
     let hi_bpr = (hi_w + 7) / 8;
 
     let mut alpha = vec![0u8; width * height];
@@ -263,7 +286,9 @@ fn rasterize_glyph_to_bitmap_oversampled(
     oversample: usize,
 ) -> Vec<u8> {
     if oversample <= 1 {
-        return rasterize_glyph_to_bitmap_raw(glyph, width, height, scale_x, scale_y, offset_x, offset_y);
+        return rasterize_glyph_to_bitmap_raw(
+            glyph, width, height, scale_x, scale_y, offset_x, offset_y,
+        );
     }
 
     let hi_w = width * oversample;
@@ -273,7 +298,15 @@ fn rasterize_glyph_to_bitmap_oversampled(
     let hi_offset_x = offset_x * oversample as f32;
     let hi_offset_y = offset_y * oversample as f32;
 
-    let hi_bitmap = rasterize_glyph_to_bitmap_raw(glyph, hi_w, hi_h, hi_scale_x, hi_scale_y, hi_offset_x, hi_offset_y);
+    let hi_bitmap = rasterize_glyph_to_bitmap_raw(
+        glyph,
+        hi_w,
+        hi_h,
+        hi_scale_x,
+        hi_scale_y,
+        hi_offset_x,
+        hi_offset_y,
+    );
     let hi_bpr = (hi_w + 7) / 8;
 
     let bytes_per_row = (width + 7) / 8;
@@ -434,7 +467,9 @@ pub struct RasterizedFont {
 /// Steepen alpha ramp for crisper glyph edges.
 /// Alpha below `lo` -> 0, above `hi` -> 255, between -> linear remap to 0..255.
 fn steepen_alpha_ramp(alpha: &mut [u8], lo: u8, hi: u8) {
-    if lo >= hi { return; }
+    if lo >= hi {
+        return;
+    }
     let range = (hi - lo) as f32;
     for a in alpha.iter_mut() {
         let v = *a;
@@ -496,7 +531,9 @@ pub fn rasterize_pfr1_font(
 
     // Determine cell dimensions
     // Find max glyph width from set_widths and from actual glyph bbox widths.
-    let max_set_width = parsed_font.glyphs.values()
+    let max_set_width = parsed_font
+        .glyphs
+        .values()
         .map(|g| g.set_width)
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or(phys.standard_set_width as f32);
@@ -513,7 +550,11 @@ pub fn rasterize_pfr1_font(
     // For coords_scaled fonts, glyph coordinates are in pixel space after zone table
     // transformation. Skip glyphs with unreasonably large bbox — they indicate
     // zone table errors and would otherwise blow up the atlas cell width.
-    let bbox_limit = if coords_scaled { target_height as f32 * 4.0 } else { f32::MAX };
+    let bbox_limit = if coords_scaled {
+        target_height as f32 * 4.0
+    } else {
+        f32::MAX
+    };
     for glyph in parsed_font.glyphs.values() {
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
@@ -579,7 +620,9 @@ pub fn rasterize_pfr1_font(
     let baseline_row_px = if phys.metrics.ascender != 0 {
         let mut bl = phys.metrics.ascender as f32 * pixel_scale;
         bl = bl.round(); // snap to integer for crisp glyph placement
-        if !bl.is_finite() { bl = 0.0; }
+        if !bl.is_finite() {
+            bl = 0.0;
+        }
         bl
     } else {
         target_height as f32
@@ -601,8 +644,10 @@ pub fn rasterize_pfr1_font(
     let bitmap_width = cell_width * grid_columns;
     let bitmap_height = cell_height * grid_rows;
 
-    log(&format!("Rasterizing PFR1 font: {}x{} cells, {}x{} grid, {}x{} bitmap, scale={:.4}",
-        cell_width, cell_height, grid_columns, grid_rows, bitmap_width, bitmap_height, scale));
+    log(&format!(
+        "Rasterizing PFR1 font: {}x{} cells, {}x{} grid, {}x{} bitmap, scale={:.4}",
+        cell_width, cell_height, grid_columns, grid_rows, bitmap_width, bitmap_height, scale
+    ));
     log(&format!(
         "Rasterize metrics: asc={} desc={} cell_height={} target_height={} scale_y={} coords_scaled={} px_scale={:.6}",
         phys.metrics.ascender,
@@ -611,14 +656,19 @@ pub fn rasterize_pfr1_font(
         target_height,
         scale_y,
         coords_scaled,
-        if outline_res > 0.0 { target_em_px / outline_res } else { 0.0 }
+        if outline_res > 0.0 {
+            target_em_px / outline_res
+        } else {
+            0.0
+        }
     ));
 
     log(&format!(
         "[PFR1 rasterize] '{}': target={}px cell={}x{} scale={:.4} outline={} bitmap={} coords_scaled={} fill=nonzero",
         parsed_font.font_name,
         target_height,
-        cell_width, cell_height,
+        cell_width,
+        cell_height,
         scale,
         parsed_font.glyphs.len(),
         parsed_font.bitmap_glyphs.len(),
@@ -652,10 +702,7 @@ pub fn rasterize_pfr1_font(
     // Director advance width precomputation:
     // matrix2136_A = FixedPointMultiply16(targetSize << 16, matrixA << 8)
     let out_res_i = phys.outline_resolution as i32;
-    let matrix2136_a = fixed_point_multiply16(
-        (target_height as i32) << 16,
-        font_matrix[0] << 8,
-    );
+    let matrix2136_a = fixed_point_multiply16((target_height as i32) << 16, font_matrix[0] << 8);
 
     // For coords_scaled fonts, glyph coordinates are already in pixel space (post-zone-table).
     // right within their atlas cells, breaking text rendering alignment.
@@ -668,9 +715,8 @@ pub fn rasterize_pfr1_font(
         use wasm_bindgen::JsCast;
         (|| -> Option<web_sys::CanvasRenderingContext2d> {
             let document = web_sys::window()?.document()?;
-            let canvas: web_sys::HtmlCanvasElement = document
-                .create_element("canvas").ok()?
-                .dyn_into().ok()?;
+            let canvas: web_sys::HtmlCanvasElement =
+                document.create_element("canvas").ok()?.dyn_into().ok()?;
             canvas.set_width(cell_width as u32);
             canvas.set_height(cell_height as u32);
             // Use willReadFrequently to optimize repeated getImageData calls
@@ -679,17 +725,22 @@ pub fn rasterize_pfr1_font(
                 &context_attrs,
                 &wasm_bindgen::JsValue::from_str("willReadFrequently"),
                 &wasm_bindgen::JsValue::TRUE,
-            ).ok()?;
+            )
+            .ok()?;
             let ctx: web_sys::CanvasRenderingContext2d = canvas
-                .get_context_with_context_options("2d", &context_attrs).ok()??
-                .dyn_into().ok()?;
+                .get_context_with_context_options("2d", &context_attrs)
+                .ok()??
+                .dyn_into()
+                .ok()?;
             Some(ctx)
         })()
     };
 
     for (&char_code, glyph) in &parsed_font.glyphs {
         let idx = char_code as usize;
-        if idx >= num_chars { continue; }
+        if idx >= num_chars {
+            continue;
+        }
 
         // Director advance width (sub_6A11CC67): 16.16 fixed-point formula.
         // v2 = ((outlineRes/2 + (csw << 16)) / outlineRes
@@ -714,7 +765,7 @@ pub fn rasterize_pfr1_font(
         // pre-rendered by the font designer. The bitmap loop will handle rendering.
         // UNLESS "outline" preference is set, in which case always rasterize from outlines.
         let prefer_outline = {
-            use crate::player::font::{get_glyph_preference, GlyphPreference};
+            use crate::player::font::{GlyphPreference, get_glyph_preference};
             get_glyph_preference() == GlyphPreference::Outline
         };
         if !prefer_outline && parsed_font.bitmap_glyphs.contains_key(&char_code) {
@@ -757,7 +808,11 @@ pub fn rasterize_pfr1_font(
         let glyph_scale_x = scale_x;
         // y' = baseline - ty. If the font matrix already flipped Y (D<0),
         // then ty is already inverted, so we should not flip again.
-        let glyph_scale_y = if matrix_scale_y < 0.0 { scale_y } else { -scale_y };
+        let glyph_scale_y = if matrix_scale_y < 0.0 {
+            scale_y
+        } else {
+            -scale_y
+        };
         // Use font metrics for a stable baseline across glyphs.
         // For coords_scaled fonts, use zero x-offset: the zone table maps coordinates
         // A global offset would shift ALL glyphs (even those with x>=0) and break
@@ -796,9 +851,14 @@ pub fn rasterize_pfr1_font(
                 {
                     canvas_ctx.as_ref().and_then(|ctx| {
                         let mut alpha = rasterize_glyph_canvas2d(
-                            ctx, glyph, cell_width, cell_height,
-                            glyph_scale_x, glyph_scale_y,
-                            glyph_offset_x, glyph_offset_y,
+                            ctx,
+                            glyph,
+                            cell_width,
+                            cell_height,
+                            glyph_scale_x,
+                            glyph_scale_y,
+                            glyph_offset_x,
+                            glyph_offset_y,
                         )?;
                         // Threshold to binary: Canvas2D anti-aliases at edges,
                         // but for integer-coordinate pixel fonts the coverage
@@ -811,7 +871,9 @@ pub fn rasterize_pfr1_font(
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                { None::<Vec<u8>> }
+                {
+                    None::<Vec<u8>>
+                }
             };
             canvas_result.unwrap_or_else(|| {
                 // Fallback to software scanline if Canvas2D unavailable
@@ -832,9 +894,14 @@ pub fn rasterize_pfr1_font(
                 {
                     canvas_ctx.as_ref().and_then(|ctx| {
                         let mut alpha = rasterize_glyph_canvas2d(
-                            ctx, glyph, cell_width, cell_height,
-                            glyph_scale_x, glyph_scale_y,
-                            glyph_offset_x, glyph_offset_y,
+                            ctx,
+                            glyph,
+                            cell_width,
+                            cell_height,
+                            glyph_scale_x,
+                            glyph_scale_y,
+                            glyph_offset_x,
+                            glyph_offset_y,
                         )?;
                         // Steepen alpha ramp for crisper edges at small sizes.
                         // lo=48 removes faint fringe, hi=208 saturates near-solid.
@@ -843,7 +910,9 @@ pub fn rasterize_pfr1_font(
                     })
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                { None::<Vec<u8>> }
+                {
+                    None::<Vec<u8>>
+                }
             };
             canvas_result.unwrap_or_else(|| {
                 let mut alpha = rasterize_glyph_to_alpha_mask(
@@ -871,9 +940,9 @@ pub fn rasterize_pfr1_font(
                     if px < bitmap_width && py < bitmap_height {
                         let rgba_idx = (py * bitmap_width + px) * 4;
                         if rgba_idx + 3 < rgba.len() {
-                            rgba[rgba_idx] = 0;         // R (black text)
-                            rgba[rgba_idx + 1] = 0;     // G
-                            rgba[rgba_idx + 2] = 0;     // B
+                            rgba[rgba_idx] = 0; // R (black text)
+                            rgba[rgba_idx + 1] = 0; // G
+                            rgba[rgba_idx + 2] = 0; // B
                             rgba[rgba_idx + 3] = coverage; // A (anti-aliased)
                         }
                     }
@@ -887,11 +956,13 @@ pub fn rasterize_pfr1_font(
     // the bitmap glyph is used for rendering (cleaner pixel patterns).
     // Skip entirely when "outline" preference is set.
     let skip_bitmap_glyphs = {
-        use crate::player::font::{get_glyph_preference, GlyphPreference};
+        use crate::player::font::{GlyphPreference, get_glyph_preference};
         get_glyph_preference() == GlyphPreference::Outline
     };
     for (&char_code, bmp_glyph) in &parsed_font.bitmap_glyphs {
-        if skip_bitmap_glyphs { continue; }
+        if skip_bitmap_glyphs {
+            continue;
+        }
         let has_outline = parsed_font.glyphs.contains_key(&char_code);
         if has_outline {
             bitmap_overlap_outline += 1;
@@ -913,7 +984,9 @@ pub fn rasterize_pfr1_font(
         }
 
         let idx = char_code as usize;
-        if idx >= num_chars { continue; }
+        if idx >= num_chars {
+            continue;
+        }
 
         let col = idx % grid_columns;
         let row = idx / grid_columns;
@@ -932,11 +1005,7 @@ pub fn rasterize_pfr1_font(
             if trace_bitmap_debug {
                 log(&format!(
                     "[pfr1.bitmap] skip char={} unreasonable size {}x{} for cell {}x{}",
-                    char_code,
-                    bmp_glyph.x_size,
-                    bmp_glyph.y_size,
-                    cell_width,
-                    cell_height
+                    char_code, bmp_glyph.x_size, bmp_glyph.y_size, cell_width, cell_height
                 ));
             }
             continue;
@@ -946,7 +1015,9 @@ pub fn rasterize_pfr1_font(
         if !has_outline {
             let bmp_adv = if outline_res > 0.0 {
                 let advance_f = bmp_glyph.set_width as f32 * target_height as f32 / outline_res;
-                advance_f.round().max(if bmp_glyph.set_width > 0 { 1.0 } else { 0.0 }) as u16
+                advance_f
+                    .round()
+                    .max(if bmp_glyph.set_width > 0 { 1.0 } else { 0.0 }) as u16
             } else {
                 ((bmp_glyph.set_width as f32) * set_width_scale).max(1.0) as u16
             };
@@ -960,9 +1031,13 @@ pub fn rasterize_pfr1_font(
         let glyph_bits_per_row = bmp_glyph.x_size as usize;
         for gy in 0..bmp_glyph.y_size as usize {
             let py_signed = cell_y as i32 + py_base + gy as i32;
-            if py_signed < 0 || py_signed as usize >= bitmap_height { continue; }
+            if py_signed < 0 || py_signed as usize >= bitmap_height {
+                continue;
+            }
             let py = py_signed as usize;
-            if py >= cell_y + cell_height { continue; }
+            if py >= cell_y + cell_height {
+                continue;
+            }
             for gx in 0..bmp_glyph.x_size as usize {
                 let bit_index = gy * glyph_bits_per_row + gx;
                 let byte_idx = bit_index / 8;
@@ -977,9 +1052,13 @@ pub fn rasterize_pfr1_font(
                     }
                     bitmap_pixels_drawn += 1;
                     let px_signed = cell_x as i32 + px_base + gx as i32;
-                    if px_signed < 0 || px_signed as usize >= bitmap_width { continue; }
+                    if px_signed < 0 || px_signed as usize >= bitmap_width {
+                        continue;
+                    }
                     let px = px_signed as usize;
-                    if px >= cell_x + cell_width { continue; }
+                    if px >= cell_x + cell_width {
+                        continue;
+                    }
                     let rgba_idx = (py * bitmap_width + px) * 4;
                     if rgba_idx + 3 < rgba.len() {
                         rgba[rgba_idx] = 0;
@@ -995,10 +1074,7 @@ pub fn rasterize_pfr1_font(
     if trace_bitmap_debug {
         log(&format!(
             "[pfr1.bitmap] summary overlap_outline={} bitmap_only={} pixels_drawn={} pfr_black_pixel={}",
-            bitmap_overlap_outline,
-            bitmap_only,
-            bitmap_pixels_drawn,
-            parsed_font.pfr_black_pixel
+            bitmap_overlap_outline, bitmap_only, bitmap_pixels_drawn, parsed_font.pfr_black_pixel
         ));
 
         // Alpha histogram diagnostic — count pixels by alpha value to detect anti-aliasing
@@ -1011,14 +1087,23 @@ pub fn rasterize_pfr1_font(
         log(&format!(
             "PFR1-V2 '{}': target_h={} design_size={} cell={}x{} scale={:.4} coords_scaled={} outline_res={} target_em_px={} asc={} | outlines={} bitmaps={} (overlap={} bmp_only={} px_drawn={}) | alpha: 0={} 255={} other={}",
             parsed_font.font_name,
-            target_height, design_size,
-            cell_width, cell_height,
-            scale, coords_scaled, outline_res, target_em_px,
+            target_height,
+            design_size,
+            cell_width,
+            cell_height,
+            scale,
+            coords_scaled,
+            outline_res,
+            target_em_px,
             phys.metrics.ascender,
             parsed_font.glyphs.len(),
             parsed_font.bitmap_glyphs.len(),
-            bitmap_overlap_outline, bitmap_only, bitmap_pixels_drawn,
-            alpha_hist[0], alpha_hist[255], non_binary
+            bitmap_overlap_outline,
+            bitmap_only,
+            bitmap_pixels_drawn,
+            alpha_hist[0],
+            alpha_hist[255],
+            non_binary
         ));
     }
 
@@ -1041,7 +1126,6 @@ pub fn rasterize_pfr1_font(
         }
         false
     };
-
 
     let cell_bbox_h = |rgba: &[u8], cx: usize, cy: usize| -> usize {
         let mut min_y = cell_height as i32;
@@ -1107,7 +1191,6 @@ pub fn rasterize_pfr1_font(
                 src_idx_opt = Some(ui);
             }
         }
-
 
         if let Some(src_idx) = src_idx_opt {
             copy_cell(&mut rgba, src_idx, li);

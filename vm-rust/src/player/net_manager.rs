@@ -6,7 +6,7 @@ use manual_future::{ManualFuture, ManualFutureCompleter};
 use percent_encoding::percent_decode_str;
 use url::Url;
 
-use super::net_task::{fetch_net_task, NetResult, NetTask, NetTaskState};
+use super::net_task::{NetResult, NetTask, NetTaskState, fetch_net_task};
 
 pub struct NetManager {
     pub base_path: Option<Url>,
@@ -39,7 +39,9 @@ impl NetManagerSharedState {
     }
 
     pub async fn fulfill_task(&mut self, id: u32, result: NetResult) {
-        let (bytes_loaded, bytes_total) = self.task_states.get(&id)
+        let (bytes_loaded, bytes_total) = self
+            .task_states
+            .get(&id)
             .map(|s| (s.bytes_loaded, s.bytes_total))
             .unwrap_or((0, 0));
         let final_bytes = match &result {
@@ -49,7 +51,11 @@ impl NetManagerSharedState {
         let new_state = NetTaskState {
             result: Some(result),
             bytes_loaded: final_bytes,
-            bytes_total: if bytes_total > 0 { bytes_total } else { final_bytes },
+            bytes_total: if bytes_total > 0 {
+                bytes_total
+            } else {
+                final_bytes
+            },
         };
         self.task_states.insert(id, new_state);
 
@@ -200,7 +206,9 @@ impl NetManager {
         };
 
         // Also check by resolved URL to catch relative vs absolute URL duplicates
-        if let Some(existing_task) = find_task_with_resolved_url(&self.tasks, &net_task.resolved_url) {
+        if let Some(existing_task) =
+            find_task_with_resolved_url(&self.tasks, &net_task.resolved_url)
+        {
             return existing_task.id;
         }
         let task_id = net_task.id;
@@ -210,7 +218,14 @@ impl NetManager {
         // Set task initial state
         {
             let mut shared_shared = self.shared_state.try_lock().unwrap();
-            shared_shared.update_task_state(task_id, NetTaskState { result: None, bytes_loaded: 0, bytes_total: 0 });
+            shared_shared.update_task_state(
+                task_id,
+                NetTaskState {
+                    result: None,
+                    bytes_loaded: 0,
+                    bytes_total: 0,
+                },
+            );
         }
 
         // Push the task
@@ -228,9 +243,11 @@ impl NetManager {
                 js_sys::Reflect::set(&detail, &"url".into(), &resolved_url_str.into()).unwrap();
                 event_init.set_detail(&detail);
 
-                let event =
-                    web_sys::CustomEvent::new_with_event_init_dict("dirplayer:netRequest", &event_init)
-                        .unwrap();
+                let event = web_sys::CustomEvent::new_with_event_init_dict(
+                    "dirplayer:netRequest",
+                    &event_init,
+                )
+                .unwrap();
                 window.dispatch_event(&event).unwrap();
             }
             #[cfg(not(target_arch = "wasm32"))]
@@ -238,7 +255,9 @@ impl NetManager {
                 // In native (test) mode, read the file directly from disk
                 // and fulfill the task immediately (no spawn_local) so that
                 // await_task callers don't block on a future that never runs.
-                let file_path = resolved_url_str.strip_prefix("file://").unwrap_or(&resolved_url_str);
+                let file_path = resolved_url_str
+                    .strip_prefix("file://")
+                    .unwrap_or(&resolved_url_str);
                 let result: super::net_task::NetResult = match std::fs::read(file_path) {
                     Ok(bytes) => Ok(bytes),
                     Err(_) => Err(-1),
@@ -297,7 +316,14 @@ impl NetManager {
         // Set task initial state
         {
             let mut shared_shared = self.shared_state.try_lock().unwrap();
-            shared_shared.update_task_state(task_id, NetTaskState { result: None, bytes_loaded: 0, bytes_total: 0 });
+            shared_shared.update_task_state(
+                task_id,
+                NetTaskState {
+                    result: None,
+                    bytes_loaded: 0,
+                    bytes_total: 0,
+                },
+            );
         }
 
         // Push the task and execute it
@@ -332,10 +358,7 @@ fn normalize_task_url(url: &str, base_path: Option<&Url>) -> Url {
     }
 }
 
-pub fn find_task_with_url<'a>(
-    tasks: &'a HashMap<u32, NetTask>,
-    url: &str,
-) -> Option<&'a NetTask> {
+pub fn find_task_with_url<'a>(tasks: &'a HashMap<u32, NetTask>, url: &str) -> Option<&'a NetTask> {
     let decoded_url = percent_decode_str(url)
         .decode_utf8()
         .unwrap_or_else(|_| url.into());

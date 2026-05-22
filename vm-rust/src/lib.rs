@@ -7,8 +7,8 @@ pub mod rendering_gpu;
 pub mod utils;
 
 use async_std::task::spawn_local;
-use log::{debug, warn};
 use js_api::JsApi;
+use log::{debug, warn};
 use num::ToPrimitive;
 use utils::set_panic_hook;
 use wasm_bindgen::prelude::*;
@@ -19,14 +19,15 @@ extern crate pest_derive;
 pub mod director;
 
 use player::{
-    cast_lib::{cast_member_ref, CastMemberRef},
+    PLAYER_OPT,
+    cast_lib::{CastMemberRef, cast_member_ref},
     cast_member::CastMemberType,
-    commands::{player_dispatch, PlayerVMCommand},
+    commands::{PlayerVMCommand, player_dispatch},
     datum_ref::DatumId,
     eval::eval_lingo_command,
     init_player, reserve_player_mut, reserve_player_ref,
+    keyboard_events::{get_keyboard_focus_sprite_at, sprite_accepts_keyboard_focus},
     score::get_sprite_at,
-    PLAYER_OPT,
 };
 
 #[wasm_bindgen]
@@ -116,33 +117,27 @@ pub fn reset() {
 #[wasm_bindgen]
 pub fn add_breakpoint(script_name: String, handler_name: String, bytecode_index: usize) {
     reserve_player_mut(|player| {
-        player.breakpoint_manager.add_breakpoint(
-            script_name,
-            handler_name,
-            bytecode_index,
-        );
+        player
+            .breakpoint_manager
+            .add_breakpoint(script_name, handler_name, bytecode_index);
     });
 }
 
 #[wasm_bindgen]
 pub fn remove_breakpoint(script_name: String, handler_name: String, bytecode_index: usize) {
     reserve_player_mut(|player| {
-        player.breakpoint_manager.remove_breakpoint(
-            script_name,
-            handler_name,
-            bytecode_index,
-        );
+        player
+            .breakpoint_manager
+            .remove_breakpoint(script_name, handler_name, bytecode_index);
     });
 }
 
 #[wasm_bindgen]
 pub fn toggle_breakpoint(script_name: String, handler_name: String, bytecode_index: usize) {
     reserve_player_mut(|player| {
-        player.breakpoint_manager.toggle_breakpoint(
-            script_name,
-            handler_name,
-            bytecode_index,
-        );
+        player
+            .breakpoint_manager
+            .toggle_breakpoint(script_name, handler_name, bytecode_index);
     });
 }
 
@@ -257,21 +252,31 @@ pub fn player_print_member_bitmap_hex(cast_lib: i32, cast_member: i32) {
 ///   `vm.player_print_filmloop_sprites(2, 145)` for the spiderweb filmloop.
 #[wasm_bindgen]
 pub fn player_print_filmloop_sprites(cast_lib: i32, cast_member: i32) {
-    use crate::player::{cast_member::CastMemberType, reserve_player_ref};
     use crate::player::score::get_channel_number_from_index;
+    use crate::player::{cast_member::CastMemberType, reserve_player_ref};
     reserve_player_ref(|player| {
-        let member_ref = CastMemberRef { cast_lib, cast_member };
+        let member_ref = CastMemberRef {
+            cast_lib,
+            cast_member,
+        };
         let Some(member) = player.movie.cast_manager.find_member_by_ref(&member_ref) else {
-            web_sys::console::warn_1(&format!(
-                "[filmloop-dump] member {}:{} not found", cast_lib, cast_member
-            ).into());
+            web_sys::console::warn_1(
+                &format!(
+                    "[filmloop-dump] member {}:{} not found",
+                    cast_lib, cast_member
+                )
+                .into(),
+            );
             return;
         };
         let CastMemberType::FilmLoop(film) = &member.member_type else {
-            web_sys::console::warn_1(&format!(
-                "[filmloop-dump] member {}:{} ('{}') is not a filmloop",
-                cast_lib, cast_member, member.name
-            ).into());
+            web_sys::console::warn_1(
+                &format!(
+                    "[filmloop-dump] member {}:{} ('{}') is not a filmloop",
+                    cast_lib, cast_member, member.name
+                )
+                .into(),
+            );
             return;
         };
 
@@ -280,15 +285,28 @@ pub fn player_print_filmloop_sprites(cast_lib: i32, cast_member: i32) {
         let init_data = &film.score.channel_initialization_data;
 
         // Resolve active sprite per channel: most-recent frame_idx <= target
-        let mut latest: std::collections::HashMap<u16, (u32, &crate::director::chunks::score::ScoreFrameChannelData)> =
-            std::collections::HashMap::new();
+        let mut latest: std::collections::HashMap<
+            u16,
+            (u32, &crate::director::chunks::score::ScoreFrameChannelData),
+        > = std::collections::HashMap::new();
         for (frame_idx, channel_idx, data) in init_data.iter() {
-            if *channel_idx < 6 { continue; }
-            if data.cast_member == 0 { continue; }
-            if *frame_idx > frame_idx_target { continue; }
+            if *channel_idx < 6 {
+                continue;
+            }
+            if data.cast_member == 0 {
+                continue;
+            }
+            if *frame_idx > frame_idx_target {
+                continue;
+            }
             latest
                 .entry(*channel_idx)
-                .and_modify(|(f, d)| if *frame_idx > *f { *f = *frame_idx; *d = data; })
+                .and_modify(|(f, d)| {
+                    if *frame_idx > *f {
+                        *f = *frame_idx;
+                        *d = data;
+                    }
+                })
                 .or_insert((*frame_idx, data));
         }
         let mut entries: Vec<_> = latest.into_iter().collect();
@@ -305,36 +323,68 @@ pub fn player_print_filmloop_sprites(cast_lib: i32, cast_member: i32) {
         let mut all_raw: Vec<_> = init_data.iter().collect();
         all_raw.sort_by_key(|(f, c, _)| (*c, *f));
         for (f, c, d) in all_raw.iter().take(80) {
-            let ilib = if d.cast_lib == 65535 { cast_lib } else { d.cast_lib as i32 };
-            let nm = player.movie.cast_manager
-                .find_filmloop_inner_member(&CastMemberRef { cast_lib: ilib, cast_member: d.cast_member as i32 })
+            let ilib = if d.cast_lib == 65535 {
+                cast_lib
+            } else {
+                d.cast_lib as i32
+            };
+            let nm = player
+                .movie
+                .cast_manager
+                .find_filmloop_inner_member(&CastMemberRef {
+                    cast_lib: ilib,
+                    cast_member: d.cast_member as i32,
+                })
                 .map(|m| m.name.clone())
                 .unwrap_or_else(|| "<no_member>".into());
-            web_sys::console::warn_1(&format!(
-                "[filmloop-raw]   f={} ch={} ink={} blend={} member=({},{}) '{}' size={}x{}",
-                f, c, d.ink, d.blend, ilib, d.cast_member, nm, d.width, d.height
-            ).into());
+            web_sys::console::warn_1(
+                &format!(
+                    "[filmloop-raw]   f={} ch={} ink={} blend={} member=({},{}) '{}' size={}x{}",
+                    f, c, d.ink, d.blend, ilib, d.cast_member, nm, d.width, d.height
+                )
+                .into(),
+            );
         }
 
         for (channel_idx, (frame_idx, data)) in entries {
             let channel_num = get_channel_number_from_index(channel_idx as u32);
-            let resolved_lib = if data.cast_lib == 65535 { cast_lib } else { data.cast_lib as i32 };
-            let sprite_ref = CastMemberRef { cast_lib: resolved_lib, cast_member: data.cast_member as i32 };
-            let inner = player.movie.cast_manager.find_filmloop_inner_member(&sprite_ref);
+            let resolved_lib = if data.cast_lib == 65535 {
+                cast_lib
+            } else {
+                data.cast_lib as i32
+            };
+            let sprite_ref = CastMemberRef {
+                cast_lib: resolved_lib,
+                cast_member: data.cast_member as i32,
+            };
+            let inner = player
+                .movie
+                .cast_manager
+                .find_filmloop_inner_member(&sprite_ref);
             let (mname, mtype, bm_info) = match inner {
                 Some(m) => {
                     let info = if let CastMemberType::Bitmap(bm) = &m.member_type {
                         let bmp = player.bitmap_manager.get_bitmap(bm.image_ref);
                         match bmp {
-                            Some(b) => format!(" bm={}x{} bd={} obd={} use_alpha={} pal={:?}",
-                                b.width, b.height, b.bit_depth, b.original_bit_depth,
-                                b.use_alpha, b.palette_ref),
+                            Some(b) => format!(
+                                " bm={}x{} bd={} obd={} use_alpha={} pal={:?}",
+                                b.width,
+                                b.height,
+                                b.bit_depth,
+                                b.original_bit_depth,
+                                b.use_alpha,
+                                b.palette_ref
+                            ),
                             None => " bm=<no_data>".into(),
                         }
                     } else {
                         String::new()
                     };
-                    (m.name.clone(), format!("{:?}", m.member_type.member_type_id()), info)
+                    (
+                        m.name.clone(),
+                        format!("{:?}", m.member_type.member_type_id()),
+                        info,
+                    )
                 }
                 None => ("<not found>".into(), "<none>".into(), String::new()),
             };
@@ -358,23 +408,46 @@ pub fn player_print_filmloop_sprites(cast_lib: i32, cast_member: i32) {
             if let Some(m) = inner {
                 if let CastMemberType::FilmLoop(inner_film) = &m.member_type {
                     let inner_target = inner_film.current_frame.saturating_sub(1);
-                    let mut inner_latest: std::collections::HashMap<u16, (u32, &crate::director::chunks::score::ScoreFrameChannelData)> =
-                        std::collections::HashMap::new();
+                    let mut inner_latest: std::collections::HashMap<
+                        u16,
+                        (u32, &crate::director::chunks::score::ScoreFrameChannelData),
+                    > = std::collections::HashMap::new();
                     for (f, c, d) in inner_film.score.channel_initialization_data.iter() {
-                        if *c < 6 || d.cast_member == 0 || *f > inner_target { continue; }
+                        if *c < 6 || d.cast_member == 0 || *f > inner_target {
+                            continue;
+                        }
                         inner_latest
                             .entry(*c)
-                            .and_modify(|(ef, ed)| if *f > *ef { *ef = *f; *ed = d; })
+                            .and_modify(|(ef, ed)| {
+                                if *f > *ef {
+                                    *ef = *f;
+                                    *ed = d;
+                                }
+                            })
                             .or_insert((*f, d));
                     }
                     let mut inner_entries: Vec<_> = inner_latest.into_iter().collect();
                     inner_entries.sort_by_key(|(c, _)| *c);
                     for (ic, (ifr, id)) in inner_entries {
                         let icn = get_channel_number_from_index(ic as u32);
-                        let ilib = if id.cast_lib == 65535 { resolved_lib } else { id.cast_lib as i32 };
-                        let inested_ref = CastMemberRef { cast_lib: ilib, cast_member: id.cast_member as i32 };
-                        let (inn_name, inn_type) = match player.movie.cast_manager.find_filmloop_inner_member(&inested_ref) {
-                            Some(im) => (im.name.clone(), format!("{:?}", im.member_type.member_type_id())),
+                        let ilib = if id.cast_lib == 65535 {
+                            resolved_lib
+                        } else {
+                            id.cast_lib as i32
+                        };
+                        let inested_ref = CastMemberRef {
+                            cast_lib: ilib,
+                            cast_member: id.cast_member as i32,
+                        };
+                        let (inn_name, inn_type) = match player
+                            .movie
+                            .cast_manager
+                            .find_filmloop_inner_member(&inested_ref)
+                        {
+                            Some(im) => (
+                                im.name.clone(),
+                                format!("{:?}", im.member_type.member_type_id()),
+                            ),
                             None => ("<not found>".into(), "<none>".into()),
                         };
                         web_sys::console::warn_1(&format!(
@@ -480,6 +553,16 @@ pub fn player_get_sprite_at(x: f64, y: f64) -> i32 {
     })
 }
 
+#[wasm_bindgen]
+pub fn player_get_keyboard_focus_sprite_at(x: f64, y: f64) -> i32 {
+    reserve_player_mut(|player| {
+        let (mx, my) = crate::player::stage::canvas_to_movie_coords(player, x, y);
+        get_keyboard_focus_sprite_at(player, mx as i32, my as i32)
+            .map(|n| n as i32)
+            .unwrap_or(0)
+    })
+}
+
 /// Check if a sprite is an editable Field or Text member (for mobile keyboard
 /// focus and to gate caret/selection events from JS).
 #[wasm_bindgen]
@@ -497,6 +580,11 @@ pub fn is_sprite_editable_field(sprite_id: i32) -> bool {
     })
 }
 
+#[wasm_bindgen]
+pub fn is_sprite_keyboard_focusable(sprite_id: i32) -> bool {
+    reserve_player_mut(|player| sprite_accepts_keyboard_focus(player, sprite_id as i16))
+}
+
 /// Place the caret in an editable Field/Text at the given canvas coordinates.
 /// `extend` mirrors a shift-click: extends from the existing anchor instead
 /// of collapsing the selection.
@@ -511,7 +599,10 @@ pub fn field_set_caret_at(sprite_id: i32, canvas_x: f64, canvas_y: f64, extend: 
         crate::player::stage::canvas_to_movie_coords(player, canvas_x, canvas_y)
     });
     crate::player::keyboard_events::set_caret_at_screen(
-        sprite_id as i16, mx as i32, my as i32, mode,
+        sprite_id as i16,
+        mx as i32,
+        my as i32,
+        mode,
     );
 }
 
@@ -523,7 +614,9 @@ pub fn field_drag_extend_to(sprite_id: i32, canvas_x: f64, canvas_y: f64) {
         crate::player::stage::canvas_to_movie_coords(player, canvas_x, canvas_y)
     });
     crate::player::keyboard_events::set_caret_at_screen(
-        sprite_id as i16, mx as i32, my as i32,
+        sprite_id as i16,
+        mx as i32,
+        my as i32,
         crate::player::keyboard_events::CaretAtMode::DragExtend,
     );
 }
@@ -535,7 +628,9 @@ pub fn field_select_word_at(sprite_id: i32, canvas_x: f64, canvas_y: f64) {
         crate::player::stage::canvas_to_movie_coords(player, canvas_x, canvas_y)
     });
     crate::player::keyboard_events::set_caret_at_screen(
-        sprite_id as i16, mx as i32, my as i32,
+        sprite_id as i16,
+        mx as i32,
+        my as i32,
         crate::player::keyboard_events::CaretAtMode::SelectWord,
     );
 }
@@ -547,7 +642,9 @@ pub fn field_select_line_at(sprite_id: i32, canvas_x: f64, canvas_y: f64) {
         crate::player::stage::canvas_to_movie_coords(player, canvas_x, canvas_y)
     });
     crate::player::keyboard_events::set_caret_at_screen(
-        sprite_id as i16, mx as i32, my as i32,
+        sprite_id as i16,
+        mx as i32,
+        my as i32,
         crate::player::keyboard_events::CaretAtMode::SelectLine,
     );
 }
@@ -557,18 +654,27 @@ pub fn field_select_line_at(sprite_id: i32, canvas_x: f64, canvas_y: f64) {
 #[wasm_bindgen]
 pub fn is_field_focused() -> bool {
     reserve_player_ref(|player| {
-        if player.keyboard_focus_sprite < 0 { return false; }
+        if player.keyboard_focus_sprite < 0 {
+            return false;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
         let member = sprite
             .and_then(|s| s.member.as_ref())
             .and_then(|m| player.movie.cast_manager.find_member_by_ref(m));
-        member.map_or(false, |m| matches!(&m.member_type,
-            CastMemberType::Field(f) if f.editable
-        ) || matches!(&m.member_type,
-            CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable)
-        ))
+        member.map_or(false, |m| {
+            matches!(&m.member_type,
+                CastMemberType::Field(f) if f.editable
+            ) || matches!(&m.member_type,
+                CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable)
+            )
+        })
     })
+}
+
+#[wasm_bindgen]
+pub fn edit_shortcuts_enabled() -> bool {
+    reserve_player_ref(|player| player.movie.edit_shortcuts_enabled)
 }
 
 /// Selected text from the focused editable Field/Text. Empty string if no
@@ -577,17 +683,19 @@ pub fn is_field_focused() -> bool {
 #[wasm_bindgen]
 pub fn get_focused_field_selected_text() -> String {
     reserve_player_ref(|player| {
-        if player.keyboard_focus_sprite < 0 { return String::new(); }
+        if player.keyboard_focus_sprite < 0 {
+            return String::new();
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
         let member = sprite
             .and_then(|s| s.member.as_ref())
             .and_then(|m| player.movie.cast_manager.find_member_by_ref(m));
-        let Some(member) = member else { return String::new() };
+        let Some(member) = member else {
+            return String::new();
+        };
         let (text, lo, hi) = match &member.member_type {
-            CastMemberType::Field(f) if f.editable => {
-                (&f.text, f.sel_start, f.sel_end)
-            }
+            CastMemberType::Field(f) if f.editable => (&f.text, f.sel_start, f.sel_end),
             CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => {
                 (&t.text, t.sel_start, t.sel_end)
             }
@@ -602,8 +710,12 @@ pub fn get_focused_field_selected_text() -> String {
         // would panic.
         let mut lo_b = lo as usize;
         let mut hi_b = hi as usize;
-        while lo_b < text.len() && !text.is_char_boundary(lo_b) { lo_b += 1; }
-        while hi_b < text.len() && !text.is_char_boundary(hi_b) { hi_b += 1; }
+        while lo_b < text.len() && !text.is_char_boundary(lo_b) {
+            lo_b += 1;
+        }
+        while hi_b < text.len() && !text.is_char_boundary(hi_b) {
+            hi_b += 1;
+        }
         text[lo_b..hi_b].to_string()
     })
 }
@@ -612,20 +724,34 @@ pub fn get_focused_field_selected_text() -> String {
 #[wasm_bindgen]
 pub fn field_select_all() {
     reserve_player_mut(|player| {
-        if player.keyboard_focus_sprite < 0 { return; }
+        if player.keyboard_focus_sprite < 0 {
+            return;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
-        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else { return };
-        let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) else {
+        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else {
+            return;
+        };
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        else {
             return;
         };
         let (len, sel_start, sel_end, sel_anchor) = match &mut member.member_type {
-            CastMemberType::Field(f) if f.editable => {
-                (f.text.len() as i32, &mut f.sel_start, &mut f.sel_end, &mut f.sel_anchor)
-            }
-            CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => {
-                (t.text.len() as i32, &mut t.sel_start, &mut t.sel_end, &mut t.sel_anchor)
-            }
+            CastMemberType::Field(f) if f.editable => (
+                f.text.len() as i32,
+                &mut f.sel_start,
+                &mut f.sel_end,
+                &mut f.sel_anchor,
+            ),
+            CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => (
+                t.text.len() as i32,
+                &mut t.sel_start,
+                &mut t.sel_end,
+                &mut t.sel_anchor,
+            ),
             _ => return,
         };
         *sel_start = 0;
@@ -640,23 +766,39 @@ pub fn field_select_all() {
 #[wasm_bindgen]
 pub fn delete_focused_field_selection() {
     reserve_player_mut(|player| {
-        if player.keyboard_focus_sprite < 0 { return; }
+        if player.keyboard_focus_sprite < 0 {
+            return;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
-        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else { return };
-        let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) else {
+        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else {
+            return;
+        };
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        else {
             return;
         };
         let (text, sel_start, sel_end, sel_anchor) = match &mut member.member_type {
             CastMemberType::Field(f) if f.editable => (
-                &mut f.text, &mut f.sel_start, &mut f.sel_end, &mut f.sel_anchor,
+                &mut f.text,
+                &mut f.sel_start,
+                &mut f.sel_end,
+                &mut f.sel_anchor,
             ),
             CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => (
-                &mut t.text, &mut t.sel_start, &mut t.sel_end, &mut t.sel_anchor,
+                &mut t.text,
+                &mut t.sel_start,
+                &mut t.sel_end,
+                &mut t.sel_anchor,
             ),
             _ => return,
         };
-        crate::player::keyboard_events::apply_text_insertion(text, sel_start, sel_end, sel_anchor, "");
+        crate::player::keyboard_events::apply_text_insertion(
+            text, sel_start, sel_end, sel_anchor, "",
+        );
         let s = *sel_start;
         let e = *sel_end;
         player.text_selection_start = s.max(0) as u16;
@@ -681,25 +823,41 @@ pub fn set_clipboard_mirror(text: String) {
 #[wasm_bindgen]
 pub fn ime_composition_start() {
     reserve_player_mut(|player| {
-        if player.keyboard_focus_sprite < 0 { return; }
+        if player.keyboard_focus_sprite < 0 {
+            return;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
-        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else { return };
-        let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) else {
+        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else {
+            return;
+        };
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        else {
             return;
         };
         let (text, sel_start, sel_end, sel_anchor) = match &mut member.member_type {
             CastMemberType::Field(f) if f.editable => (
-                &mut f.text, &mut f.sel_start, &mut f.sel_end, &mut f.sel_anchor,
+                &mut f.text,
+                &mut f.sel_start,
+                &mut f.sel_end,
+                &mut f.sel_anchor,
             ),
             CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => (
-                &mut t.text, &mut t.sel_start, &mut t.sel_end, &mut t.sel_anchor,
+                &mut t.text,
+                &mut t.sel_start,
+                &mut t.sel_end,
+                &mut t.sel_anchor,
             ),
             _ => return,
         };
         // Collapse any existing selection so the composition replaces it cleanly.
         if *sel_start != *sel_end {
-            crate::player::keyboard_events::apply_text_insertion(text, sel_start, sel_end, sel_anchor, "");
+            crate::player::keyboard_events::apply_text_insertion(
+                text, sel_start, sel_end, sel_anchor, "",
+            );
         }
         let pos = (*sel_start).max(0);
         player.ime_composition = Some((pos, pos));
@@ -714,20 +872,36 @@ pub fn ime_composition_start() {
 #[wasm_bindgen]
 pub fn ime_composition_update(text: String) {
     reserve_player_mut(|player| {
-        let Some((start, end)) = player.ime_composition else { return };
-        if player.keyboard_focus_sprite < 0 { return; }
+        let Some((start, end)) = player.ime_composition else {
+            return;
+        };
+        if player.keyboard_focus_sprite < 0 {
+            return;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
-        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else { return };
-        let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) else {
+        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else {
+            return;
+        };
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        else {
             return;
         };
         let (text_buf, sel_start, sel_end, sel_anchor) = match &mut member.member_type {
             CastMemberType::Field(f) if f.editable => (
-                &mut f.text, &mut f.sel_start, &mut f.sel_end, &mut f.sel_anchor,
+                &mut f.text,
+                &mut f.sel_start,
+                &mut f.sel_end,
+                &mut f.sel_anchor,
             ),
             CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => (
-                &mut t.text, &mut t.sel_start, &mut t.sel_end, &mut t.sel_anchor,
+                &mut t.text,
+                &mut t.sel_start,
+                &mut t.sel_end,
+                &mut t.sel_anchor,
             ),
             _ => return,
         };
@@ -761,23 +935,39 @@ pub fn ime_composition_end(text: String) {
 #[wasm_bindgen]
 pub fn paste_text_into_focused_field(text: String) {
     reserve_player_mut(|player| {
-        if player.keyboard_focus_sprite < 0 { return; }
+        if player.keyboard_focus_sprite < 0 {
+            return;
+        }
         let sprite_id = player.keyboard_focus_sprite as i16;
         let sprite = player.movie.score.get_sprite(sprite_id);
-        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else { return };
-        let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) else {
+        let Some(member_ref) = sprite.and_then(|s| s.member.clone()) else {
+            return;
+        };
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        else {
             return;
         };
         let (target, sel_start, sel_end, sel_anchor) = match &mut member.member_type {
             CastMemberType::Field(f) if f.editable => (
-                &mut f.text, &mut f.sel_start, &mut f.sel_end, &mut f.sel_anchor,
+                &mut f.text,
+                &mut f.sel_start,
+                &mut f.sel_end,
+                &mut f.sel_anchor,
             ),
             CastMemberType::Text(t) if t.info.as_ref().map_or(false, |i| i.editable) => (
-                &mut t.text, &mut t.sel_start, &mut t.sel_end, &mut t.sel_anchor,
+                &mut t.text,
+                &mut t.sel_start,
+                &mut t.sel_end,
+                &mut t.sel_anchor,
             ),
             _ => return,
         };
-        crate::player::keyboard_events::apply_text_insertion(target, sel_start, sel_end, sel_anchor, &text);
+        crate::player::keyboard_events::apply_text_insertion(
+            target, sel_start, sel_end, sel_anchor, &text,
+        );
         let s = *sel_start;
         let e = *sel_end;
         player.text_selection_start = s.max(0) as u16;
@@ -799,30 +989,22 @@ pub fn request_datum(datum_id: u32) {
 
 #[wasm_bindgen]
 pub fn get_cast_chunk_list(cast_number: u32) -> JsValue {
-    reserve_player_ref(|player| {
-        JsApi::get_cast_chunk_list_for(player, cast_number).into()
-    })
+    reserve_player_ref(|player| JsApi::get_cast_chunk_list_for(player, cast_number).into())
 }
 
 #[wasm_bindgen]
 pub fn get_movie_top_level_chunks() -> JsValue {
-    reserve_player_ref(|player| {
-        JsApi::get_movie_top_level_chunks(player).into()
-    })
+    reserve_player_ref(|player| JsApi::get_movie_top_level_chunks(player).into())
 }
 
 #[wasm_bindgen]
 pub fn get_chunk_bytes(cast_number: u32, chunk_id: u32) -> Option<Vec<u8>> {
-    reserve_player_ref(|player| {
-        JsApi::get_chunk_bytes(player, cast_number, chunk_id)
-    })
+    reserve_player_ref(|player| JsApi::get_chunk_bytes(player, cast_number, chunk_id))
 }
 
 #[wasm_bindgen]
 pub fn get_parsed_chunk(cast_number: u32, chunk_id: u32) -> JsValue {
-    reserve_player_ref(|player| {
-        JsApi::get_parsed_chunk(player, cast_number, chunk_id).into()
-    })
+    reserve_player_ref(|player| JsApi::get_parsed_chunk(player, cast_number, chunk_id).into())
 }
 
 #[wasm_bindgen]
@@ -930,14 +1112,21 @@ pub fn provide_net_task_error(task_id: u32) {
 /// Receive a rendered Flash frame from JavaScript (Ruffle) and store it as a bitmap.
 /// This allows Flash content to be composited into the Director stage rendering pipeline.
 #[wasm_bindgen]
-pub fn update_flash_frame(cast_lib: i32, cast_member: i32, width: u32, height: u32, rgba_data: &[u8]) {
+pub fn update_flash_frame(
+    cast_lib: i32,
+    cast_member: i32,
+    width: u32,
+    height: u32,
+    rgba_data: &[u8],
+) {
     use player::bitmap::bitmap::{Bitmap, PaletteRef, get_system_default_palette};
 
     let expected_len = (width * height * 4) as usize;
     if rgba_data.len() != expected_len {
         warn!(
             "update_flash_frame: expected {} bytes, got {}",
-            expected_len, rgba_data.len()
+            expected_len,
+            rgba_data.len()
         );
         return;
     }
@@ -1017,7 +1206,11 @@ fn js_value_to_datum_ref(item: &JsValue) -> player::datum_ref::DatumRef {
     js_value_to_datum_ref_with_flash(item, 1, 1)
 }
 
-fn js_value_to_datum_ref_with_flash(item: &JsValue, flash_cast_lib: i32, flash_cast_member: i32) -> player::datum_ref::DatumRef {
+fn js_value_to_datum_ref_with_flash(
+    item: &JsValue,
+    flash_cast_lib: i32,
+    flash_cast_member: i32,
+) -> player::datum_ref::DatumRef {
     use director::lingo::datum::{Datum, DatumType};
 
     if item.is_null() || item.is_undefined() {
@@ -1042,7 +1235,11 @@ fn js_value_to_datum_ref_with_flash(item: &JsValue, flash_cast_lib: i32, flash_c
         let mut items = std::collections::VecDeque::new();
         for i in 0..array.length() {
             let val = array.get(i);
-            items.push_back(js_value_to_datum_ref_with_flash(&val, flash_cast_lib, flash_cast_member));
+            items.push_back(js_value_to_datum_ref_with_flash(
+                &val,
+                flash_cast_lib,
+                flash_cast_member,
+            ));
         }
         // Use XmlChildNodes type for 0-based indexing (Flash arrays are 0-based)
         return player::player_alloc_datum(Datum::List(DatumType::XmlChildNodes, items, false));
@@ -1051,16 +1248,25 @@ fn js_value_to_datum_ref_with_flash(item: &JsValue, flash_cast_lib: i32, flash_c
         let obj = js_sys::Object::from(item.clone());
 
         // Check for __dirplayer_stored_path - this is a Flash object reference
-        if let Ok(stored_path) = js_sys::Reflect::get(&obj, &JsValue::from_str("__dirplayer_stored_path")) {
+        if let Ok(stored_path) =
+            js_sys::Reflect::get(&obj, &JsValue::from_str("__dirplayer_stored_path"))
+        {
             if let Some(path) = stored_path.as_string() {
-                let flash_ref = director::lingo::datum::FlashObjectRef::from_path_with_member(&path, flash_cast_lib, flash_cast_member);
+                let flash_ref = director::lingo::datum::FlashObjectRef::from_path_with_member(
+                    &path,
+                    flash_cast_lib,
+                    flash_cast_member,
+                );
                 return player::player_alloc_datum(Datum::FlashObjectRef(flash_ref));
             }
         }
 
         // Convert JS object to PropList
         let entries = js_sys::Object::entries(&obj);
-        let mut props: std::collections::VecDeque<(player::datum_ref::DatumRef, player::datum_ref::DatumRef)> = std::collections::VecDeque::new();
+        let mut props: std::collections::VecDeque<(
+            player::datum_ref::DatumRef,
+            player::datum_ref::DatumRef,
+        )> = std::collections::VecDeque::new();
         let mut flash_type: Option<String> = None;
 
         for i in 0..entries.length() {
@@ -1091,7 +1297,14 @@ fn js_value_to_datum_ref_with_flash(item: &JsValue, flash_cast_lib: i32, flash_c
 }
 
 #[wasm_bindgen]
-pub fn trigger_lingo_callback_on_script(cast_lib: i32, cast_member: i32, handler_name: String, args: String, flash_cast_lib: i32, flash_cast_member: i32) -> bool {
+pub fn trigger_lingo_callback_on_script(
+    cast_lib: i32,
+    cast_member: i32,
+    handler_name: String,
+    args: String,
+    flash_cast_lib: i32,
+    flash_cast_member: i32,
+) -> bool {
     use director::lingo::datum::Datum;
 
     let args_js_value = match js_sys::JSON::parse(&args) {
@@ -1108,13 +1321,13 @@ pub fn trigger_lingo_callback_on_script(cast_lib: i32, cast_member: i32, handler
         let array = js_sys::Array::from(&args_js_value);
         for i in 0..array.length() {
             let item = array.get(i);
-            let datum_ref = js_value_to_datum_ref_with_flash(&item, flash_cast_lib, flash_cast_member);
+            let datum_ref =
+                js_value_to_datum_ref_with_flash(&item, flash_cast_lib, flash_cast_member);
             arg_refs.push(datum_ref);
         }
     } else {
         return false;
     }
-
 
     player_dispatch_with_result(PlayerVMCommand::TriggerLingoCallbackOnScript {
         cast_lib,
@@ -1125,7 +1338,12 @@ pub fn trigger_lingo_callback_on_script(cast_lib: i32, cast_member: i32, handler
 }
 
 #[wasm_bindgen]
-pub fn set_lingo_script_property(cast_lib: i32, cast_member: i32, prop_name: String, value: JsValue) -> bool {
+pub fn set_lingo_script_property(
+    cast_lib: i32,
+    cast_member: i32,
+    prop_name: String,
+    value: JsValue,
+) -> bool {
     use director::lingo::datum::Datum;
 
     let datum = if let Some(s) = value.as_string() {
@@ -1216,7 +1434,10 @@ pub fn clear_font_cache() {
         player.font_manager.fonts.clear();
         player.font_manager.font_by_id.clear();
         player.font_manager.font_counter = 0;
-        debug!("[clear_font_cache] Cleared {} cached fonts. Reload movie to re-rasterize.", count);
+        debug!(
+            "[clear_font_cache] Cleared {} cached fonts. Reload movie to re-rasterize.",
+            count
+        );
     });
 }
 
@@ -1237,7 +1458,10 @@ pub fn get_renderer_backend() -> String {
 #[wasm_bindgen(js_name = "exportW3dRaw")]
 pub fn export_w3d_raw(cast_lib: i32, cast_member: i32) {
     reserve_player_ref(|player| {
-        let member_ref = CastMemberRef { cast_lib, cast_member };
+        let member_ref = CastMemberRef {
+            cast_lib,
+            cast_member,
+        };
         let member = match player.movie.cast_manager.find_member_by_ref(&member_ref) {
             Some(m) => m,
             None => return,
@@ -1249,11 +1473,21 @@ pub fn export_w3d_raw(cast_lib: i32, cast_member: i32) {
         // Find IFX start in the raw data
         let data = &w3d.w3d_data;
         let ifx_magic = [0x49u8, 0x46, 0x58, 0x00];
-        let offset = (0..data.len().min(256)).find(|&i| i + 4 <= data.len() && data[i..i+4] == ifx_magic);
+        let offset =
+            (0..data.len().min(256)).find(|&i| i + 4 <= data.len() && data[i..i + 4] == ifx_magic);
         if let Some(off) = offset {
             let ifx_data = &data[off..];
-            trigger_browser_download(&format!("member_{}_{}.w3d", cast_lib, cast_member), ifx_data, "application/octet-stream");
-            debug!("Exported {} bytes of IFX data (offset {} in {} byte XMED)", ifx_data.len(), off, data.len());
+            trigger_browser_download(
+                &format!("member_{}_{}.w3d", cast_lib, cast_member),
+                ifx_data,
+                "application/octet-stream",
+            );
+            debug!(
+                "Exported {} bytes of IFX data (offset {} in {} byte XMED)",
+                ifx_data.len(),
+                off,
+                data.len()
+            );
         } else {
             debug!("No IFX magic found in W3D data");
         }
@@ -1263,11 +1497,16 @@ pub fn export_w3d_raw(cast_lib: i32, cast_member: i32) {
 #[wasm_bindgen(js_name = "exportW3dObj")]
 pub fn export_w3d_obj(cast_lib: i32, cast_member: i32) {
     reserve_player_ref(|player| {
-        let member_ref = CastMemberRef { cast_lib, cast_member };
+        let member_ref = CastMemberRef {
+            cast_lib,
+            cast_member,
+        };
         let member = match player.movie.cast_manager.find_member_by_ref(&member_ref) {
             Some(m) => m,
             None => {
-                web_sys::console::error_1(&format!("Member {}:{} not found", cast_lib, cast_member).into());
+                web_sys::console::error_1(
+                    &format!("Member {}:{} not found", cast_lib, cast_member).into(),
+                );
                 return;
             }
         };
@@ -1301,9 +1540,12 @@ pub fn export_w3d_obj(cast_lib: i32, cast_member: i32) {
         let obj_filename = format!("{}.obj", name);
         let glb_filename = format!("{}.glb", name);
         let zip_data = build_zip_with_glb(
-            &obj_filename, obj_data.as_bytes(),
-            &mtl_filename, mtl_data.as_bytes(),
-            &glb_filename, &glb_data,
+            &obj_filename,
+            obj_data.as_bytes(),
+            &mtl_filename,
+            mtl_data.as_bytes(),
+            &glb_filename,
+            &glb_data,
             &scene.texture_images,
         );
 
@@ -1311,7 +1553,13 @@ pub fn export_w3d_obj(cast_lib: i32, cast_member: i32) {
 
         debug!(
             "Exported {}.obj ({} bytes), {}.mtl ({} bytes), {}.glb ({} bytes), {} textures",
-            name, obj_data.len(), name, mtl_data.len(), name, glb_data.len(), scene.texture_images.len()
+            name,
+            obj_data.len(),
+            name,
+            mtl_data.len(),
+            name,
+            glb_data.len(),
+            scene.texture_images.len()
         );
     });
 }
@@ -1326,8 +1574,11 @@ pub fn list_w3d_members() -> String {
                 if member.member_type.as_shockwave3d().is_some() {
                     let line = format!(
                         "castLib {}  member {} \"{}\"  (call wasm.exportW3dObj({}, {}) to download)\n",
-                        lib_idx + 1, member.number, member.name,
-                        lib_idx + 1, member.number
+                        lib_idx + 1,
+                        member.number,
+                        member.name,
+                        lib_idx + 1,
+                        member.number
                     );
                     result.push_str(&line);
                 }
@@ -1343,9 +1594,12 @@ pub fn list_w3d_members() -> String {
 
 /// Build a minimal uncompressed ZIP file containing OBJ + MTL + textures
 fn build_zip_with_glb(
-    obj_name: &str, obj_data: &[u8],
-    mtl_name: &str, mtl_data: &[u8],
-    glb_name: &str, glb_data: &[u8],
+    obj_name: &str,
+    obj_data: &[u8],
+    mtl_name: &str,
+    mtl_data: &[u8],
+    glb_name: &str,
+    glb_data: &[u8],
     textures: &std::collections::HashMap<String, Vec<u8>>,
 ) -> Vec<u8> {
     let mut files: Vec<(String, &[u8])> = Vec::new();
@@ -1377,15 +1631,15 @@ fn build_zip_with_glb(
         // Local file header (0x04034b50)
         zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]); // signature
         zip.extend_from_slice(&20u16.to_le_bytes()); // version needed
-        zip.extend_from_slice(&0u16.to_le_bytes());  // flags
-        zip.extend_from_slice(&0u16.to_le_bytes());  // compression (0=stored)
-        zip.extend_from_slice(&0u16.to_le_bytes());  // mod time
-        zip.extend_from_slice(&0u16.to_le_bytes());  // mod date
-        zip.extend_from_slice(&crc.to_le_bytes());   // crc32
+        zip.extend_from_slice(&0u16.to_le_bytes()); // flags
+        zip.extend_from_slice(&0u16.to_le_bytes()); // compression (0=stored)
+        zip.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        zip.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        zip.extend_from_slice(&crc.to_le_bytes()); // crc32
         zip.extend_from_slice(&(data.len() as u32).to_le_bytes()); // compressed size
         zip.extend_from_slice(&(data.len() as u32).to_le_bytes()); // uncompressed size
         zip.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes()); // name length
-        zip.extend_from_slice(&0u16.to_le_bytes());  // extra length
+        zip.extend_from_slice(&0u16.to_le_bytes()); // extra length
         zip.extend_from_slice(name_bytes);
         zip.extend_from_slice(data);
     }
@@ -1399,19 +1653,19 @@ fn build_zip_with_glb(
         central_dir.extend_from_slice(&[0x50, 0x4B, 0x01, 0x02]); // signature
         central_dir.extend_from_slice(&20u16.to_le_bytes()); // version made by
         central_dir.extend_from_slice(&20u16.to_le_bytes()); // version needed
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // flags
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // compression
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // mod time
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // mod date
-        central_dir.extend_from_slice(&crc.to_le_bytes());   // crc32
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // flags
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // compression
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // mod time
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // mod date
+        central_dir.extend_from_slice(&crc.to_le_bytes()); // crc32
         central_dir.extend_from_slice(&(data.len() as u32).to_le_bytes()); // compressed size
         central_dir.extend_from_slice(&(data.len() as u32).to_le_bytes()); // uncompressed size
         central_dir.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes()); // name length
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // extra length
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // comment length
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // disk number
-        central_dir.extend_from_slice(&0u16.to_le_bytes());  // internal attrs
-        central_dir.extend_from_slice(&0u32.to_le_bytes());  // external attrs
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // extra length
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // comment length
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // disk number
+        central_dir.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
+        central_dir.extend_from_slice(&0u32.to_le_bytes()); // external attrs
         central_dir.extend_from_slice(&offsets[i].to_le_bytes()); // local header offset
         central_dir.extend_from_slice(name_bytes);
     }
@@ -1420,13 +1674,13 @@ fn build_zip_with_glb(
 
     // End of central directory
     zip.extend_from_slice(&[0x50, 0x4B, 0x05, 0x06]); // signature
-    zip.extend_from_slice(&0u16.to_le_bytes());  // disk number
-    zip.extend_from_slice(&0u16.to_le_bytes());  // cd disk number
+    zip.extend_from_slice(&0u16.to_le_bytes()); // disk number
+    zip.extend_from_slice(&0u16.to_le_bytes()); // cd disk number
     zip.extend_from_slice(&(files.len() as u16).to_le_bytes()); // entries on disk
     zip.extend_from_slice(&(files.len() as u16).to_le_bytes()); // total entries
     zip.extend_from_slice(&(central_dir.len() as u32).to_le_bytes()); // cd size
     zip.extend_from_slice(&cd_offset.to_le_bytes()); // cd offset
-    zip.extend_from_slice(&0u16.to_le_bytes());  // comment length
+    zip.extend_from_slice(&0u16.to_le_bytes()); // comment length
 
     zip
 }
@@ -1510,8 +1764,16 @@ fn trigger_browser_download(filename: &str, data: &[u8], mime_type: &str) {
 pub fn mcp_list_scripts(cast_lib: i32, limit: i32, offset: i32) -> String {
     reserve_player_ref(|player| {
         let cast_lib_opt = if cast_lib < 0 { None } else { Some(cast_lib) };
-        let limit_opt = if limit < 0 { None } else { Some(limit as usize) };
-        let offset_opt = if offset < 0 { None } else { Some(offset as usize) };
+        let limit_opt = if limit < 0 {
+            None
+        } else {
+            Some(limit as usize)
+        };
+        let offset_opt = if offset < 0 {
+            None
+        } else {
+            Some(offset as usize)
+        };
         player::mcp::mcp_list_scripts(player, cast_lib_opt, limit_opt, offset_opt)
     })
 }
@@ -1538,7 +1800,11 @@ pub fn mcp_decompile_handler(cast_lib: i32, cast_member: i32, handler_name: Stri
 #[wasm_bindgen]
 pub fn mcp_get_call_stack(depth: i32, include_locals: bool) -> String {
     reserve_player_ref(|player| {
-        let depth_opt = if depth < 0 { None } else { Some(depth as usize) };
+        let depth_opt = if depth < 0 {
+            None
+        } else {
+            Some(depth as usize)
+        };
         player::mcp::mcp_get_call_stack(player, depth_opt, include_locals)
     })
 }
@@ -1582,14 +1848,9 @@ pub fn mcp_list_cast_libs() -> String {
 
 #[wasm_bindgen]
 pub fn mcp_get_console_output(last_n_lines: usize) -> String {
-    let lines = reserve_player_ref(|player| {
-        player
-            .console
-            .read_tail(last_n_lines) 
-    });
+    let lines = reserve_player_ref(|player| player.console.read_tail(last_n_lines));
     return lines;
 }
-
 
 #[wasm_bindgen]
 pub fn mcp_list_cast_members(cast_lib: i32) -> String {
@@ -1601,9 +1862,7 @@ pub fn mcp_list_cast_members(cast_lib: i32) -> String {
 
 #[wasm_bindgen]
 pub fn mcp_inspect_cast_member(cast_lib: i32, cast_member: i32) -> String {
-    reserve_player_ref(|player| {
-        player::mcp::mcp_inspect_cast_member(player, cast_lib, cast_member)
-    })
+    reserve_player_ref(|player| player::mcp::mcp_inspect_cast_member(player, cast_lib, cast_member))
 }
 
 #[wasm_bindgen]

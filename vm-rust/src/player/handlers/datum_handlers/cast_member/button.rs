@@ -1,9 +1,7 @@
 use crate::{
     director::lingo::datum::{Datum, datum_bool},
     player::{
-        DirPlayer, ScriptError,
-        cast_lib::CastMemberRef,
-        cast_member::ButtonType,
+        DirPlayer, ScriptError, cast_lib::CastMemberRef, cast_member::ButtonType,
         handlers::datum_handlers::cast_member_ref::borrow_member_mut,
     },
 };
@@ -28,7 +26,7 @@ impl ButtonMemberHandlers {
                 let button = member.member_type.as_button().unwrap();
                 let count_of = player.get_datum(&args[0]).string_value()?;
                 use crate::player::handlers::datum_handlers::string_chunk::StringChunkUtils;
-                
+
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
                     &button.field.text,
@@ -64,14 +62,16 @@ impl ButtonMemberHandlers {
             "width" => Ok(Datum::Int(button.field.width as i32)),
             "height" => Ok(Datum::Int(button.field.height as i32)),
             "hilite" => Ok(datum_bool(button.hilite)),
-            "buttonType" => Ok(Datum::Symbol(button.button_type.symbol_string().to_string())),
-            "foreColor" => {
-                match &button.field.fore_color {
-                    Some(crate::player::sprite::ColorRef::Rgb(r, _, _)) => Ok(Datum::Int(*r as i32)),
-                    Some(crate::player::sprite::ColorRef::PaletteIndex(idx)) => Ok(Datum::Int(*idx as i32)),
-                    None => Ok(Datum::Int(255)),
+            "buttonType" => Ok(Datum::Symbol(
+                button.button_type.symbol_string().to_string(),
+            )),
+            "foreColor" => match &button.field.fore_color {
+                Some(crate::player::sprite::ColorRef::Rgb(r, _, _)) => Ok(Datum::Int(*r as i32)),
+                Some(crate::player::sprite::ColorRef::PaletteIndex(idx)) => {
+                    Ok(Datum::Int(*idx as i32))
                 }
-            }
+                None => Ok(Datum::Int(255)),
+            },
             "wordWrap" => Ok(datum_bool(button.field.word_wrap)),
             "border" => Ok(Datum::Int(button.field.border as i32)),
             "editable" => Ok(datum_bool(button.field.editable)),
@@ -92,7 +92,12 @@ impl ButtonMemberHandlers {
                 member_ref,
                 |_player| value.string_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_button_mut().unwrap().field.set_text_preserving_caret(value?.trim_end_matches('\0').to_string());
+                    cast_member
+                        .member_type
+                        .as_button_mut()
+                        .unwrap()
+                        .field
+                        .set_text_preserving_caret(value?.trim_end_matches('\0').to_string());
                     Ok(())
                 },
             ),
@@ -113,8 +118,15 @@ impl ButtonMemberHandlers {
                     match type_str.to_lowercase().as_str() {
                         "pushbutton" | "#pushbutton" => button.button_type = ButtonType::PushButton,
                         "checkbox" | "#checkbox" => button.button_type = ButtonType::CheckBox,
-                        "radiobutton" | "#radiobutton" => button.button_type = ButtonType::RadioButton,
-                        _ => return Err(ScriptError::new(format!("Unknown button type: {}", type_str))),
+                        "radiobutton" | "#radiobutton" => {
+                            button.button_type = ButtonType::RadioButton
+                        }
+                        _ => {
+                            return Err(ScriptError::new(format!(
+                                "Unknown button type: {}",
+                                type_str
+                            )));
+                        }
                     }
                     Ok(())
                 },
@@ -131,7 +143,12 @@ impl ButtonMemberHandlers {
                 member_ref,
                 |_player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_button_mut().unwrap().field.font_size = value? as u16;
+                    cast_member
+                        .member_type
+                        .as_button_mut()
+                        .unwrap()
+                        .field
+                        .font_size = value? as u16;
                     Ok(())
                 },
             ),
@@ -139,7 +156,12 @@ impl ButtonMemberHandlers {
                 member_ref,
                 |_player| value.string_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_button_mut().unwrap().field.alignment = value?;
+                    cast_member
+                        .member_type
+                        .as_button_mut()
+                        .unwrap()
+                        .field
+                        .alignment = value?;
                     Ok(())
                 },
             ),
@@ -155,7 +177,12 @@ impl ButtonMemberHandlers {
                 member_ref,
                 |_player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_button_mut().unwrap().field.height = value? as u16;
+                    cast_member
+                        .member_type
+                        .as_button_mut()
+                        .unwrap()
+                        .field
+                        .height = value? as u16;
                     Ok(())
                 },
             ),

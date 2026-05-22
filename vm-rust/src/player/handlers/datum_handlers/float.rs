@@ -24,7 +24,7 @@ impl FloatDatumHandlers {
                     Ok(player.alloc_datum(Datum::String(ch.to_string())))
                 } else {
                     Err(ScriptError::new(format!(
-                        "Float {} out of range for char (must be 0-255)", 
+                        "Float {} out of range for char (must be 0-255)",
                         float_value
                     )))
                 }

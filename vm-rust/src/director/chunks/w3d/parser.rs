@@ -1,14 +1,13 @@
-/// Top-level W3D file parser. Reads the IFX container format and dispatches to block parsers.
-/// Ported from W3DFileParser.cs.
-
-use std::collections::HashMap;
-use log::debug;
 use super::bitstream::IFXBitStreamCompressed;
 use super::block_reader::W3dBlockReader;
 use super::block_types::*;
 use super::clod_decoder::ClodMeshDecoder;
 use super::primitives;
 use super::types::*;
+use log::debug;
+/// Top-level W3D file parser. Reads the IFX container format and dispatches to block parsers.
+/// Ported from W3DFileParser.cs.
+use std::collections::HashMap;
 
 const W3D_PARSER_LOG: bool = false;
 
@@ -50,8 +49,15 @@ impl W3dFileParser {
         }
 
         // Magic: "IFX\0"
-        if self.data[0] != 0x49 || self.data[1] != 0x46 || self.data[2] != 0x58 || self.data[3] != 0x00 {
-            return Err(format!("Bad W3D magic: {:02X} {:02X} {:02X} {:02X}", self.data[0], self.data[1], self.data[2], self.data[3]));
+        if self.data[0] != 0x49
+            || self.data[1] != 0x46
+            || self.data[2] != 0x58
+            || self.data[3] != 0x00
+        {
+            return Err(format!(
+                "Bad W3D magic: {:02X} {:02X} {:02X} {:02X}",
+                self.data[0], self.data[1], self.data[2], self.data[3]
+            ));
         }
         self.pos = 4;
 
@@ -82,7 +88,10 @@ impl W3dFileParser {
 
             let name = block_type_name(block_type);
             if name != "Unknown" {
-                log(&format!("Block {} type=0x{:08X} ({}) size={}", block_index, block_type, name, block_size));
+                log(&format!(
+                    "Block {} type=0x{:08X} ({}) size={}",
+                    block_index, block_type, name, block_size
+                ));
             }
 
             if let Err(e) = self.parse_block(&block) {
@@ -108,10 +117,13 @@ impl W3dFileParser {
 
         // Ensure DefaultShader exists (Director always has one)
         if !self.scene.shaders.iter().any(|s| s.name == "DefaultShader") {
-            self.scene.shaders.insert(0, W3dShader {
-                name: "DefaultShader".to_string(),
-                ..Default::default()
-            });
+            self.scene.shaders.insert(
+                0,
+                W3dShader {
+                    name: "DefaultShader".to_string(),
+                    ..Default::default()
+                },
+            );
         }
 
         // Director built-in "defaultmodel" plane resource (used by overlay/HUD scripts)
@@ -125,22 +137,39 @@ impl W3dFileParser {
             // UVs in IFX [-0.5, 0.5] range for CLOD remap: u_out = u_in + 0.5, v_out = 0.5 - v_in
             let plane = ClodDecodedMesh {
                 name: "defaultmodel".to_string(),
-                positions: vec![[-0.5,-0.5,0.0],[0.5,-0.5,0.0],[0.5,0.5,0.0],[-0.5,0.5,0.0]],
-                normals: vec![[0.0,0.0,-1.0]; 4],
-                tex_coords: vec![vec![[0.5,-0.5],[-0.5,-0.5],[-0.5,0.5],[0.5,0.5]]],
-                faces: vec![[0,2,1],[0,3,2]],
-                diffuse_colors: vec![], specular_colors: vec![],
-                bone_indices: vec![], bone_weights: vec![],
+                positions: vec![
+                    [-0.5, -0.5, 0.0],
+                    [0.5, -0.5, 0.0],
+                    [0.5, 0.5, 0.0],
+                    [-0.5, 0.5, 0.0],
+                ],
+                normals: vec![[0.0, 0.0, -1.0]; 4],
+                tex_coords: vec![vec![[0.5, -0.5], [-0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]],
+                faces: vec![[0, 2, 1], [0, 3, 2]],
+                diffuse_colors: vec![],
+                specular_colors: vec![],
+                bone_indices: vec![],
+                bone_weights: vec![],
             };
-            self.scene.clod_meshes.insert("defaultmodel".to_string(), vec![plane]);
+            self.scene
+                .clod_meshes
+                .insert("defaultmodel".to_string(), vec![plane]);
             // Also register in model_resources so modelResource("defaultmodel") lookups work
             if !self.scene.model_resources.contains_key("defaultmodel") {
-                self.scene.model_resources.insert("defaultmodel".to_string(), ModelResourceInfo {
-                    name: "defaultmodel".to_string(),
-                    shading_count: 1,
-                    pos_iq: 1.0, norm_iq: 1.0, normal_crease: 1.0, tc_iq: 1.0, diff_iq: 1.0, spec_iq: 1.0,
-                    ..Default::default()
-                });
+                self.scene.model_resources.insert(
+                    "defaultmodel".to_string(),
+                    ModelResourceInfo {
+                        name: "defaultmodel".to_string(),
+                        shading_count: 1,
+                        pos_iq: 1.0,
+                        norm_iq: 1.0,
+                        normal_crease: 1.0,
+                        tc_iq: 1.0,
+                        diff_iq: 1.0,
+                        spec_iq: 1.0,
+                        ..Default::default()
+                    },
+                );
             }
         }
 
@@ -163,10 +192,17 @@ impl W3dFileParser {
             });
         }
 
-        log(&format!("Parse complete: {} materials, {} shaders, {} nodes, {} lights, {} textures, {} skeletons, {} motions, {} mesh resources",
-            self.scene.materials.len(), self.scene.shaders.len(), self.scene.nodes.len(),
-            self.scene.lights.len(), self.scene.texture_images.len(),
-            self.scene.skeletons.len(), self.scene.motions.len(), self.scene.clod_meshes.len()));
+        log(&format!(
+            "Parse complete: {} materials, {} shaders, {} nodes, {} lights, {} textures, {} skeletons, {} motions, {} mesh resources",
+            self.scene.materials.len(),
+            self.scene.shaders.len(),
+            self.scene.nodes.len(),
+            self.scene.lights.len(),
+            self.scene.texture_images.len(),
+            self.scene.skeletons.len(),
+            self.scene.motions.len(),
+            self.scene.clod_meshes.len()
+        ));
 
         Ok(())
     }
@@ -193,8 +229,9 @@ impl W3dFileParser {
             VIEW_NODE => self.parse_view_node(&mut r, true)?,
             VIEW_NODE_V1 => self.parse_view_node(&mut r, false)?,
 
-            SHADER_LIT_TEXTURE_V0 | SHADER_LIT_TEXTURE_V1 | SHADER_LIT_TEXTURE =>
-                self.parse_shader_lit_texture(&mut r, block.block_type)?,
+            SHADER_LIT_TEXTURE_V0 | SHADER_LIT_TEXTURE_V1 | SHADER_LIT_TEXTURE => {
+                self.parse_shader_lit_texture(&mut r, block.block_type)?
+            }
 
             TEXTURE_DECL => self.parse_texture_declaration(&mut r)?,
             TEXTURE_CONT => self.parse_texture_continuation(&mut r)?,
@@ -210,23 +247,39 @@ impl W3dFileParser {
             DISTAL_EDGE_MERGE => self.parse_distal_edge_merge(&block.data)?,
             COMPRESSED_GEOM => self.parse_compressed_geom(&block.data)?,
 
-            PLANE => { let _ = primitives::parse_plane(&mut r); }
-            BOX => { let _ = primitives::parse_box(&mut r); }
-            SPHERE => { let _ = primitives::parse_sphere(&mut r); }
-            CYLINDER | CYLINDER2 => { let _ = primitives::parse_cylinder(&mut r); }
-            PARTICLE_SYS => { let _ = primitives::parse_particle_system(&mut r); }
-            GLYPH_3D => { let _ = primitives::parse_glyph_3d(&mut r); }
-            PHYSICS_MESH => { let _ = primitives::parse_physics_mesh(&mut r); }
+            PLANE => {
+                let _ = primitives::parse_plane(&mut r);
+            }
+            BOX => {
+                let _ = primitives::parse_box(&mut r);
+            }
+            SPHERE => {
+                let _ = primitives::parse_sphere(&mut r);
+            }
+            CYLINDER | CYLINDER2 => {
+                let _ = primitives::parse_cylinder(&mut r);
+            }
+            PARTICLE_SYS => {
+                let _ = primitives::parse_particle_system(&mut r);
+            }
+            GLYPH_3D => {
+                let _ = primitives::parse_glyph_3d(&mut r);
+            }
+            PHYSICS_MESH => {
+                let _ = primitives::parse_physics_mesh(&mut r);
+            }
 
             // Skeleton modifiers, shader variants, and other modifier blocks
             // Parse minimally to consume bitstream correctly
-            SKELETON_MODIFIER | MODIFIER_PARAM_92 | MODIFIER_PARAM_97 =>
-                self.parse_skeleton_modifier(&mut r)?,
+            SKELETON_MODIFIER | MODIFIER_PARAM_92 | MODIFIER_PARAM_97 => {
+                self.parse_skeleton_modifier(&mut r)?
+            }
             MODIFIER_PARAM_94 => self.parse_modifier_param(&mut r, "MRM")?,
             MODIFIER_PARAM_95 => self.parse_modifier_param(&mut r, "Physics")?,
-            SHADER_PAINTER_V0 | SHADER_PAINTER | SHADER_INKER |
-            SHADER_ENGRAVER | SHADER_NEWSPRINT | SHADER_PARTICLE =>
-                self.parse_npr_shader(&mut r, block.block_type)?,
+            SHADER_PAINTER_V0 | SHADER_PAINTER | SHADER_INKER | SHADER_ENGRAVER
+            | SHADER_NEWSPRINT | SHADER_PARTICLE => {
+                self.parse_npr_shader(&mut r, block.block_type)?
+            }
             UV_GENERATOR => self.parse_uv_generator(&mut r)?,
             SUBDIV_SURFACE => self.parse_subdiv_surface(&mut r)?,
             PHYSICS_MODIFIER => self.parse_modifier_param(&mut r, "PhysicsMod")?,
@@ -248,17 +301,49 @@ impl W3dFileParser {
         let name = r.read_ifx_string()?;
         let attrs = r.read_u32()?;
 
-        let mut mat = W3dMaterial { name: name.clone(), ..Default::default() };
-        if (attrs & 0x01) != 0 { mat.ambient = r.read_color_rgba()?; }
-        if (attrs & 0x02) != 0 { mat.diffuse = r.read_color_rgba()?; }
-        if (attrs & 0x04) != 0 { mat.specular = r.read_color_rgba()?; }
-        if (attrs & 0x08) != 0 { mat.emissive = r.read_color_rgba()?; }
-        if (attrs & 0x10) != 0 { mat.reflectivity = r.read_f32()?; }
-        if (attrs & 0x20) != 0 { mat.opacity = r.read_f32()?; }
-        if (attrs & 0x40) != 0 { let _ = r.read_f32()?; } // reserved
-        if (attrs & 0x80) != 0 { mat.shininess = r.read_f32()?; }
+        let mut mat = W3dMaterial {
+            name: name.clone(),
+            ..Default::default()
+        };
+        if (attrs & 0x01) != 0 {
+            mat.ambient = r.read_color_rgba()?;
+        }
+        if (attrs & 0x02) != 0 {
+            mat.diffuse = r.read_color_rgba()?;
+        }
+        if (attrs & 0x04) != 0 {
+            mat.specular = r.read_color_rgba()?;
+        }
+        if (attrs & 0x08) != 0 {
+            mat.emissive = r.read_color_rgba()?;
+        }
+        if (attrs & 0x10) != 0 {
+            mat.reflectivity = r.read_f32()?;
+        }
+        if (attrs & 0x20) != 0 {
+            mat.opacity = r.read_f32()?;
+        }
+        if (attrs & 0x40) != 0 {
+            let _ = r.read_f32()?;
+        } // reserved
+        if (attrs & 0x80) != 0 {
+            mat.shininess = r.read_f32()?;
+        }
 
-        log(&format!("  Material: \"{}\" diffuse=({:.2},{:.2},{:.2}) emissive=({:.2},{:.2},{:.2}) opacity={:.2} reflectivity={:.4} shininess={:.4} attrs=0x{:02X}", name, mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], mat.emissive[0], mat.emissive[1], mat.emissive[2], mat.opacity, mat.reflectivity, mat.shininess, attrs));
+        log(&format!(
+            "  Material: \"{}\" diffuse=({:.2},{:.2},{:.2}) emissive=({:.2},{:.2},{:.2}) opacity={:.2} reflectivity={:.4} shininess={:.4} attrs=0x{:02X}",
+            name,
+            mat.diffuse[0],
+            mat.diffuse[1],
+            mat.diffuse[2],
+            mat.emissive[0],
+            mat.emissive[1],
+            mat.emissive[2],
+            mat.opacity,
+            mat.reflectivity,
+            mat.shininess,
+            attrs
+        ));
         self.scene.materials.push(mat);
         Ok(())
     }
@@ -284,7 +369,10 @@ impl W3dFileParser {
             _ => W3dLightType::Point,
         };
 
-        log(&format!("  Light: \"{}\" type={:?} color=({:.2},{:.2},{:.2})", name, light_type, cr, cg, cb));
+        log(&format!(
+            "  Light: \"{}\" type={:?} color=({:.2},{:.2},{:.2})",
+            name, light_type, cr, cg, cb
+        ));
         self.scene.lights.push(W3dLight {
             name,
             light_type,
@@ -296,7 +384,11 @@ impl W3dFileParser {
         Ok(())
     }
 
-    fn parse_node_header(&self, r: &mut W3dBlockReader, has_bounds: bool) -> Result<[f32; 16], String> {
+    fn parse_node_header(
+        &self,
+        r: &mut W3dBlockReader,
+        has_bounds: bool,
+    ) -> Result<[f32; 16], String> {
         let matrix = r.read_matrix4x4()?;
         if has_bounds {
             let _bound_sphere = r.read_vec4()?;
@@ -328,7 +420,9 @@ impl W3dFileParser {
         let parent = r.read_ifx_string()?;
         let resource = r.read_ifx_string()?;
         let transform = self.parse_node_header(r, has_bounds)?;
-        if r.remaining() >= 2 { let _light_res = r.read_ifx_string()?; }
+        if r.remaining() >= 2 {
+            let _light_res = r.read_ifx_string()?;
+        }
 
         self.scene.nodes.push(W3dNode {
             name,
@@ -356,12 +450,23 @@ impl W3dFileParser {
             ..Default::default()
         };
 
-        if r.remaining() >= 2 { node.model_resource_name = r.read_ifx_string()?; }
-        if r.remaining() >= 2 { let _style = r.read_ifx_string()?; }
-        if r.remaining() >= 4 { let _render_pass = r.read_u32()?; }
-        if r.remaining() >= 2 { node.shader_name = r.read_ifx_string()?; }
+        if r.remaining() >= 2 {
+            node.model_resource_name = r.read_ifx_string()?;
+        }
+        if r.remaining() >= 2 {
+            let _style = r.read_ifx_string()?;
+        }
+        if r.remaining() >= 4 {
+            let _render_pass = r.read_u32()?;
+        }
+        if r.remaining() >= 2 {
+            node.shader_name = r.read_ifx_string()?;
+        }
 
-        log(&format!("  ModelNode: \"{}\" resource=\"{}\"", name, node.model_resource_name));
+        log(&format!(
+            "  ModelNode: \"{}\" resource=\"{}\"",
+            name, node.model_resource_name
+        ));
         self.scene.nodes.push(node);
         Ok(())
     }
@@ -390,8 +495,15 @@ impl W3dFileParser {
 
         log(&format!(
             "  ViewNode: \"{}\" parent=\"{}\" viewAttrs=0x{:X} near={} far={} fov={}\n    pos: ({:.3},{:.3},{:.3})",
-            node.name, node.parent_name, view_attrs, node.near_plane, node.far_plane, node.fov,
-            transform[12], transform[13], transform[14],
+            node.name,
+            node.parent_name,
+            view_attrs,
+            node.near_plane,
+            node.far_plane,
+            node.fov,
+            transform[12],
+            transform[13],
+            transform[14],
         ));
 
         // Skip remaining view data
@@ -399,7 +511,11 @@ impl W3dFileParser {
         Ok(())
     }
 
-    fn parse_shader_lit_texture(&mut self, r: &mut W3dBlockReader, block_type: u32) -> Result<(), String> {
+    fn parse_shader_lit_texture(
+        &mut self,
+        r: &mut W3dBlockReader,
+        block_type: u32,
+    ) -> Result<(), String> {
         let is_v200 = block_type == SHADER_LIT_TEXTURE; // -200
         let name = r.read_ifx_string()?;
         let attrs = r.read_u32()?;
@@ -444,7 +560,12 @@ impl W3dFileParser {
             }
         }
 
-        log(&format!("  Shader: \"{}\" material=\"{}\" layers={}", name, shader.material_name, shader.texture_layers.len()));
+        log(&format!(
+            "  Shader: \"{}\" material=\"{}\" layers={}",
+            name,
+            shader.material_name,
+            shader.texture_layers.len()
+        ));
         self.scene.shaders.push(shader);
         Ok(())
     }
@@ -465,7 +586,9 @@ impl W3dFileParser {
         };
 
         // NPR shaders start with the same header as LitTexture
-        if r.remaining() < 4 { return Ok(()); } // too short
+        if r.remaining() < 4 {
+            return Ok(());
+        } // too short
         let name = match r.read_ifx_string() {
             Ok(s) => s,
             Err(_) => return Ok(()), // malformed — skip gracefully
@@ -489,13 +612,19 @@ impl W3dFileParser {
         // Try to read texture layers (same format as LitTexture)
         let is_v200 = block_type == SHADER_PAINTER;
         for layer in 0..8u32 {
-            if (attrs & (1 << (16 + layer))) == 0 { continue; }
-            if r.remaining() < 10 { break; } // not enough data
+            if (attrs & (1 << (16 + layer))) == 0 {
+                continue;
+            }
+            if r.remaining() < 10 {
+                break;
+            } // not enough data
             let tex_name = match r.read_ifx_string() {
                 Ok(s) => s,
                 Err(_) => break,
             };
-            if r.remaining() < 4 + 1 + 1 + 4 + 1 + 64 + 64 + 1 { break; }
+            if r.remaining() < 4 + 1 + 1 + 4 + 1 + 64 + 64 + 1 {
+                break;
+            }
             let intensity = r.read_f32()?;
             let blend_func = r.read_u8()?;
             let blend_src = r.read_u8()?;
@@ -520,8 +649,13 @@ impl W3dFileParser {
             });
         }
 
-        log(&format!("  NPR Shader ({:?}): \"{}\" material=\"{}\" layers={}",
-            shader.shader_type, name, shader.material_name, shader.texture_layers.len()));
+        log(&format!(
+            "  NPR Shader ({:?}): \"{}\" material=\"{}\" layers={}",
+            shader.shader_type,
+            name,
+            shader.material_name,
+            shader.texture_layers.len()
+        ));
         self.scene.shaders.push(shader);
         Ok(())
     }
@@ -537,10 +671,15 @@ impl W3dFileParser {
         let image_size = r.remaining();
         if image_size > 0 {
             let image_data = r.read_bytes(image_size)?;
-            let entry = self.scene.texture_images.entry(name.clone()).or_insert_with(Vec::new);
+            let entry = self
+                .scene
+                .texture_images
+                .entry(name.clone())
+                .or_insert_with(Vec::new);
             entry.extend_from_slice(&image_data);
 
-            let format = if image_data.len() >= 2 && image_data[0] == 0xFF && image_data[1] == 0xD8 {
+            let format = if image_data.len() >= 2 && image_data[0] == 0xFF && image_data[1] == 0xD8
+            {
                 "JPEG"
             } else if image_data.len() >= 2 && image_data[0] == 0x89 && image_data[1] == 0x50 {
                 "PNG"
@@ -548,7 +687,10 @@ impl W3dFileParser {
                 "unknown"
             };
             let total = entry.len();
-            log(&format!("  Texture: \"{}\" cont={} chunk={} bytes total={} bytes ({})", name, _cont_index, image_size, total, format));
+            log(&format!(
+                "  Texture: \"{}\" cont={} chunk={} bytes total={} bytes ({})",
+                name, _cont_index, image_size, total, format
+            ));
         }
         Ok(())
     }
@@ -559,7 +701,13 @@ impl W3dFileParser {
         let mip_mode = r.read_u8()?;
         let mag_filter = r.read_u8()?;
         let image_type = r.read_u8()?;
-        self.scene.texture_infos.push(W3dTextureInfo { name, render_format, mip_mode, mag_filter, image_type });
+        self.scene.texture_infos.push(W3dTextureInfo {
+            name,
+            render_format,
+            mip_mode,
+            mag_filter,
+            image_type,
+        });
         Ok(())
     }
 
@@ -597,11 +745,18 @@ impl W3dFileParser {
         let num_shaders = r.read_u32()?;
         res_info.shading_count = num_shaders;
         for _ in 0..num_shaders {
-            if r.remaining() < 2 { break; }
+            if r.remaining() < 2 {
+                break;
+            }
             let shader_name = r.read_ifx_string()?;
-            let mut binding = ModelShaderBinding { name: shader_name, mesh_bindings: Vec::new() };
+            let mut binding = ModelShaderBinding {
+                name: shader_name,
+                mesh_bindings: Vec::new(),
+            };
             for _ in 0..num_meshes {
-                if r.remaining() < 2 { break; }
+                if r.remaining() < 2 {
+                    break;
+                }
                 binding.mesh_bindings.push(r.read_ifx_string()?);
             }
             res_info.shader_bindings.push(binding);
@@ -629,8 +784,10 @@ impl W3dFileParser {
             res_info.max_resolution = r.read_u32()?;
         }
 
-        log(&format!("  ModelResource: \"{}\" meshes={} maxRes={} descAttrs=0x{:X} nbr={}",
-            name, num_meshes, res_info.max_resolution, description_attrs, has_neighbor_mesh));
+        log(&format!(
+            "  ModelResource: \"{}\" meshes={} maxRes={} descAttrs=0x{:X} nbr={}",
+            name, num_meshes, res_info.max_resolution, description_attrs, has_neighbor_mesh
+        ));
 
         self.last_model_resource_name = name.clone();
         self.model_resources.insert(name, res_info);
@@ -648,13 +805,17 @@ impl W3dFileParser {
         let num_tex_coords = r.read_u32()?;
         let _num_tex_layers = r.read_u8()?;
 
-        log(&format!("  RawMesh: \"{}\" faces={} pos={} norm={} tc={}",
-            name, num_faces, num_positions, num_normals, num_tex_coords));
+        log(&format!(
+            "  RawMesh: \"{}\" faces={} pos={} norm={} tc={}",
+            name, num_faces, num_positions, num_normals, num_tex_coords
+        ));
 
         // Read face indices (3 u32 per face for position indices)
         let mut faces = Vec::with_capacity(num_faces as usize);
         for _ in 0..num_faces {
-            if r.remaining() < 12 { break; }
+            if r.remaining() < 12 {
+                break;
+            }
             let a = r.read_u32()?;
             let b = r.read_u32()?;
             let c = r.read_u32()?;
@@ -664,7 +825,9 @@ impl W3dFileParser {
         // Read positions
         let mut positions = Vec::with_capacity(num_positions as usize);
         for _ in 0..num_positions {
-            if r.remaining() < 12 { break; }
+            if r.remaining() < 12 {
+                break;
+            }
             let x = r.read_f32()?;
             let y = r.read_f32()?;
             let z = r.read_f32()?;
@@ -674,7 +837,9 @@ impl W3dFileParser {
         // Read normals
         let mut normals = Vec::with_capacity(num_normals as usize);
         for _ in 0..num_normals {
-            if r.remaining() < 12 { break; }
+            if r.remaining() < 12 {
+                break;
+            }
             let x = r.read_f32()?;
             let y = r.read_f32()?;
             let z = r.read_f32()?;
@@ -684,7 +849,9 @@ impl W3dFileParser {
         // Read vertex colors (RGBA, 4 floats per color)
         let mut vertex_colors = Vec::with_capacity(num_vertex_colors as usize);
         for _ in 0..num_vertex_colors {
-            if r.remaining() < 16 { break; }
+            if r.remaining() < 16 {
+                break;
+            }
             let cr = r.read_f32()?;
             let cg = r.read_f32()?;
             let cb = r.read_f32()?;
@@ -695,7 +862,9 @@ impl W3dFileParser {
         // Read texcoords
         let mut tex_coords = Vec::with_capacity(num_tex_coords as usize);
         for _ in 0..num_tex_coords {
-            if r.remaining() < 8 { break; }
+            if r.remaining() < 8 {
+                break;
+            }
             let u = r.read_f32()?;
             let v = r.read_f32()?;
             tex_coords.push([u, v]);
@@ -717,10 +886,15 @@ impl W3dFileParser {
         let skel_name = r.read_ifx_string()?;
         let num_bones = r.read_u32()?;
 
-        let mut skeleton = W3dSkeleton { name: skel_name.clone(), bones: Vec::with_capacity(num_bones as usize) };
+        let mut skeleton = W3dSkeleton {
+            name: skel_name.clone(),
+            bones: Vec::with_capacity(num_bones as usize),
+        };
 
         for _ in 0..num_bones {
-            if r.remaining() < 2 { break; }
+            if r.remaining() < 2 {
+                break;
+            }
             let bone_name = r.read_ifx_string()?;
             let parent_idx = r.read_u32()?;
             let length = r.read_f32()?;
@@ -736,7 +910,11 @@ impl W3dFileParser {
 
             skeleton.bones.push(W3dBone {
                 name: bone_name,
-                parent_index: if parent_idx == 0xFFFFFFFF { -1 } else { parent_idx as i32 },
+                parent_index: if parent_idx == 0xFFFFFFFF {
+                    -1
+                } else {
+                    parent_idx as i32
+                },
                 length,
                 dir_x: dx,
                 dir_y: dy,
@@ -749,7 +927,11 @@ impl W3dFileParser {
             });
         }
 
-        log(&format!("  Skeleton: \"{}\" bones={}", skel_name, skeleton.bones.len()));
+        log(&format!(
+            "  Skeleton: \"{}\" bones={}",
+            skel_name,
+            skeleton.bones.len()
+        ));
         self.scene.skeletons.push(skeleton);
         Ok(())
     }
@@ -763,7 +945,10 @@ impl W3dFileParser {
         let time_iq = bs.read_f32();
         let rot_iq = bs.read_f32();
 
-        let mut motion = W3dMotion { name: motion_name.clone(), tracks: Vec::with_capacity(track_count as usize) };
+        let mut motion = W3dMotion {
+            name: motion_name.clone(),
+            tracks: Vec::with_capacity(track_count as usize),
+        };
 
         for _ in 0..track_count {
             let bone_name = bs.read_ifx_string();
@@ -782,9 +967,11 @@ impl W3dFileParser {
             };
 
             // Accumulators for delta-coding
-            let (mut acc_time, mut acc_pos_x, mut acc_pos_y, mut acc_pos_z) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            let (mut acc_time, mut acc_pos_x, mut acc_pos_y, mut acc_pos_z) =
+                (0.0f32, 0.0f32, 0.0f32, 0.0f32);
             let (mut acc_scale_x, mut acc_scale_y, mut acc_scale_z) = (1.0f32, 1.0f32, 1.0f32);
-            let (mut acc_rot_w, mut acc_rot_x, mut acc_rot_y, mut acc_rot_z) = (1.0f32, 0.0f32, 0.0f32, 0.0f32);
+            let (mut acc_rot_w, mut acc_rot_x, mut acc_rot_y, mut acc_rot_z) =
+                (1.0f32, 0.0f32, 0.0f32, 0.0f32);
 
             for k in 0..keyframe_count {
                 let is_first_or_last = k == 0 || k == keyframe_count - 1;
@@ -796,7 +983,9 @@ impl W3dFileParser {
                     let time_sign = bs.read_compressed_u8(1);
                     let time_mag = bs.read_compressed_u32(2);
                     let mut dt = time_mag as f32 * time_iq;
-                    if (time_sign & 1) != 0 { dt = -dt; }
+                    if (time_sign & 1) != 0 {
+                        dt = -dt;
+                    }
                     dt
                 };
                 acc_time += delta_time;
@@ -834,10 +1023,18 @@ impl W3dFileParser {
                     let mut dz = (rot_mag3 as f32 * rot_iq).min(1.0);
                     let mut dw = (1.0 - dx * dx - dy * dy - dz * dz).abs().sqrt();
 
-                    if (rot_sign & 1) != 0 { dw = -dw; }
-                    if (rot_sign & 2) != 0 { dx = -dx; }
-                    if (rot_sign & 4) != 0 { dy = -dy; }
-                    if (rot_sign & 8) != 0 { dz = -dz; }
+                    if (rot_sign & 1) != 0 {
+                        dw = -dw;
+                    }
+                    if (rot_sign & 2) != 0 {
+                        dx = -dx;
+                    }
+                    if (rot_sign & 4) != 0 {
+                        dy = -dy;
+                    }
+                    if (rot_sign & 8) != 0 {
+                        dz = -dz;
+                    }
 
                     // Hamilton product: q_new = q_prev * q_delta (standard order)
                     let (pw, px, py, pz) = (acc_rot_w, acc_rot_x, acc_rot_y, acc_rot_z);
@@ -884,7 +1081,12 @@ impl W3dFileParser {
             motion.tracks.push(track);
         }
 
-        log(&format!("  Motion: \"{}\" tracks={} duration={:.3}s", motion_name, motion.tracks.len(), motion.duration()));
+        log(&format!(
+            "  Motion: \"{}\" tracks={} duration={:.3}s",
+            motion_name,
+            motion.tracks.len(),
+            motion.duration()
+        ));
         self.scene.motions.push(motion);
         Ok(())
     }
@@ -915,7 +1117,10 @@ impl W3dFileParser {
         }
 
         res_info.sync_table = Some(sync_table);
-        log(&format!("  SyncTable for \"{}\" ({} meshes)", name, num_meshes));
+        log(&format!(
+            "  SyncTable for \"{}\" ({} meshes)",
+            name, num_meshes
+        ));
         Ok(())
     }
 
@@ -944,14 +1149,24 @@ impl W3dFileParser {
                 let face_b = bs.read_u32();
                 let corner_b = bs.read_compressed_u32(5) % 3;
 
-                merges.push(DistalEdgeMergeRecord { mesh_a, face_a, corner_a, mesh_b, face_b, corner_b });
+                merges.push(DistalEdgeMergeRecord {
+                    mesh_a,
+                    face_a,
+                    corner_a,
+                    mesh_b,
+                    face_b,
+                    corner_b,
+                });
             }
 
             merges_list.push(merges);
         }
 
         res_info.distal_edge_merges = Some(merges_list);
-        log(&format!("  DistalEdgeMerge for \"{}\" ({} resolutions)", name, resolution_count));
+        log(&format!(
+            "  DistalEdgeMerge for \"{}\" ({} resolutions)",
+            name, resolution_count
+        ));
         Ok(())
     }
 
@@ -977,10 +1192,16 @@ impl W3dFileParser {
 
     fn parse_uv_generator(&mut self, r: &mut W3dBlockReader) -> Result<(), String> {
         // UV Generator block: contains orientation mode + transform matrix
-        if r.remaining() < 4 { return Ok(()); }
+        if r.remaining() < 4 {
+            return Ok(());
+        }
         let name = r.read_ifx_string().unwrap_or_default();
         // Read orientation mode: 0=planar, 1=spherical, 2=cylindrical, 3=reflection
-        let mode = if r.remaining() >= 4 { r.read_u32().unwrap_or(0) as u8 } else { 0 };
+        let mode = if r.remaining() >= 4 {
+            r.read_u32().unwrap_or(0) as u8
+        } else {
+            0
+        };
         log(&format!("  UV Generator: \"{}\" mode={}", name, mode));
 
         // Store on the last model resource (UV generators follow their parent resource)
@@ -1000,8 +1221,15 @@ impl W3dFileParser {
     fn parse_modifier_param(&mut self, r: &mut W3dBlockReader, kind: &str) -> Result<(), String> {
         let name = if r.remaining() >= 2 {
             r.read_ifx_string().unwrap_or_default()
-        } else { String::new() };
-        log(&format!("  {} modifier: \"{}\" ({} bytes)", kind, name, r.remaining()));
+        } else {
+            String::new()
+        };
+        log(&format!(
+            "  {} modifier: \"{}\" ({} bytes)",
+            kind,
+            name,
+            r.remaining()
+        ));
         Ok(())
     }
 
@@ -1009,12 +1237,29 @@ impl W3dFileParser {
     fn parse_subdiv_surface(&mut self, r: &mut W3dBlockReader) -> Result<(), String> {
         let name = if r.remaining() >= 2 {
             r.read_ifx_string().unwrap_or_default()
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         // Read SDS parameters if available
-        let depth = if r.remaining() >= 4 { r.read_u32().unwrap_or(1) } else { 1 };
-        let tension = if r.remaining() >= 4 { r.read_f32().unwrap_or(0.0) } else { 0.0 };
-        let error = if r.remaining() >= 4 { r.read_f32().unwrap_or(0.0) } else { 0.0 };
-        log(&format!("  Subdiv Surface: \"{}\" depth={} tension={:.2} error={:.2}", name, depth, tension, error));
+        let depth = if r.remaining() >= 4 {
+            r.read_u32().unwrap_or(1)
+        } else {
+            1
+        };
+        let tension = if r.remaining() >= 4 {
+            r.read_f32().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let error = if r.remaining() >= 4 {
+            r.read_f32().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        log(&format!(
+            "  Subdiv Surface: \"{}\" depth={} tension={:.2} error={:.2}",
+            name, depth, tension, error
+        ));
         Ok(())
     }
 
@@ -1022,10 +1267,21 @@ impl W3dFileParser {
     fn parse_inker_modifier(&mut self, r: &mut W3dBlockReader) -> Result<(), String> {
         let name = if r.remaining() >= 2 {
             r.read_ifx_string().unwrap_or_default()
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         // Read inker parameters
-        let line_width = if r.remaining() >= 4 { r.read_f32().unwrap_or(1.0) } else { 1.0 };
-        log(&format!("  Inker Modifier: \"{}\" lineWidth={:.2} ({} bytes remaining)", name, line_width, r.remaining()));
+        let line_width = if r.remaining() >= 4 {
+            r.read_f32().unwrap_or(1.0)
+        } else {
+            1.0
+        };
+        log(&format!(
+            "  Inker Modifier: \"{}\" lineWidth={:.2} ({} bytes remaining)",
+            name,
+            line_width,
+            r.remaining()
+        ));
         Ok(())
     }
 
@@ -1033,15 +1289,24 @@ impl W3dFileParser {
     fn parse_extra_texcoords(&mut self, r: &mut W3dBlockReader, kind: &str) -> Result<(), String> {
         let name = if r.remaining() >= 2 {
             r.read_ifx_string().unwrap_or_default()
-        } else { String::new() };
-        log(&format!("  {}: \"{}\" ({} bytes)", kind, name, r.remaining()));
+        } else {
+            String::new()
+        };
+        log(&format!(
+            "  {}: \"{}\" ({} bytes)",
+            kind,
+            name,
+            r.remaining()
+        ));
         Ok(())
     }
 
     // ─── Helpers ───
 
     fn read_u32_le(&mut self) -> u32 {
-        if self.pos + 4 > self.data.len() { return 0; }
+        if self.pos + 4 > self.data.len() {
+            return 0;
+        }
         let v = u32::from_le_bytes([
             self.data[self.pos],
             self.data[self.pos + 1],

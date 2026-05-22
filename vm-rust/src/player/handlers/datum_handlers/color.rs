@@ -1,16 +1,33 @@
 use crate::{
     director::lingo::datum::Datum,
     player::{
-        bitmap::bitmap::{get_system_default_palette, resolve_color_ref, PaletteRef},
+        DatumRef, DirPlayer, ScriptError,
+        bitmap::bitmap::{
+            PaletteRef, get_system_default_palette, resolve_color_ref, resolve_palette_table,
+        },
         reserve_player_mut,
         sprite::ColorRef,
-        DatumRef, DirPlayer, ScriptError,
     },
 };
 
 pub struct ColorDatumHandlers {}
 
 impl ColorDatumHandlers {
+    fn palette_index_for_color(player: &DirPlayer, color_ref: &ColorRef) -> u8 {
+        match color_ref {
+            ColorRef::PaletteIndex(index) => *index,
+            ColorRef::Rgb(..) => {
+                let palettes = player.movie.cast_manager.palettes();
+                let palette_ref = player
+                    .movie
+                    .score
+                    .get_frame_palette(player.movie.current_frame);
+                let palette = resolve_palette_table(&palettes, &palette_ref, 8);
+                color_ref.to_index(&palette)
+            }
+        }
+    }
+
     pub fn call(
         datum: &DatumRef,
         handler_name: &str,
@@ -69,11 +86,16 @@ impl ColorDatumHandlers {
             "ilk" => Ok(player.alloc_datum(Datum::Symbol("color".to_owned()))),
             "colorType" => match color_ref {
                 ColorRef::Rgb(..) => Ok(player.alloc_datum(Datum::Symbol("rgb".to_owned()))),
-                ColorRef::PaletteIndex(_) => Ok(player.alloc_datum(Datum::Symbol("paletteIndex".to_owned()))),
+                ColorRef::PaletteIndex(_) => {
+                    Ok(player.alloc_datum(Datum::Symbol("paletteIndex".to_owned())))
+                }
             },
             "paletteIndex" => match color_ref {
                 ColorRef::PaletteIndex(i) => Ok(player.alloc_datum(Datum::Int(*i as i32))),
-                ColorRef::Rgb(..) => Err(ScriptError::new("RGB color has no palette index".to_owned())),
+                ColorRef::Rgb(..) => {
+                    let index = Self::palette_index_for_color(player, color_ref);
+                    Ok(player.alloc_datum(Datum::Int(index as i32)))
+                }
             },
             _ => Err(ScriptError::new(format!(
                 "Cannot get color property {}",
@@ -150,16 +172,16 @@ impl ColorDatumHandlers {
                     }
                     "paletteIndex" => {
                         if let ColorRef::Rgb(r, g, b) = color_ref {
-                            // Convert RGB to nearest palette index (default to index based on luminance)
-                            let luminance = (r as u16 * 30 + g as u16 * 59 + b as u16 * 11) / 100;
-                            let index = if luminance > 128 { 0u8 } else { 255u8 };
+                            let index =
+                                Self::palette_index_for_color(player, &ColorRef::Rgb(r, g, b));
                             let color_mut = player.get_datum_mut(datum).to_color_ref_mut()?;
                             *color_mut = ColorRef::PaletteIndex(index);
                         }
                         Ok(())
                     }
                     _ => Err(ScriptError::new(format!(
-                        "Invalid colorType: {}. Expected #rgb or #paletteIndex", symbol
+                        "Invalid colorType: {}. Expected #rgb or #paletteIndex",
+                        symbol
                     ))),
                 }
             }

@@ -228,12 +228,10 @@ impl IFXBitStreamCompressed {
         let mut low = self.low;
         let mut high;
         // Match C# u32 arithmetic: range * combined / total (all in u32, wrapping)
-        high = low.wrapping_sub(1).wrapping_add(
-            (range.wrapping_mul(value_cum_freq + value_freq)) / total_cum_freq
-        );
-        low = low.wrapping_add(
-            (range.wrapping_mul(value_cum_freq)) / total_cum_freq
-        );
+        high = low
+            .wrapping_sub(1)
+            .wrapping_add((range.wrapping_mul(value_cum_freq + value_freq)) / total_cum_freq);
+        low = low.wrapping_add((range.wrapping_mul(value_cum_freq)) / total_cum_freq);
 
         // Update context
         if context < STATIC_FULL && context != CONTEXT8 {
@@ -326,8 +324,13 @@ impl IFXBitStreamCompressed {
         let u_value = u_value as u32;
 
         // Match C# u32 arithmetic
-        let mut low = self.low.wrapping_add(range.wrapping_mul(u_value) / total_cum_freq);
-        let mut high = self.low.wrapping_sub(1).wrapping_add(range.wrapping_mul(u_value + 1) / total_cum_freq);
+        let mut low = self
+            .low
+            .wrapping_add(range.wrapping_mul(u_value) / total_cum_freq);
+        let mut high = self
+            .low
+            .wrapping_sub(1)
+            .wrapping_add(range.wrapping_mul(u_value + 1) / total_cum_freq);
 
         let mut bit_count = READ_COUNT[(((low >> 12) ^ (high >> 12)) & 0x0F) as usize] as i32;
         low &= FAST_NOT_MASK[bit_count as usize];
@@ -421,21 +424,37 @@ impl IFXBitStreamCompressed {
     fn increment_position(&mut self) {
         self.data_position += 1;
         let pos = self.data_position as usize;
-        self.data_local = if pos < self.data.len() { self.data[pos] } else { 0 };
-        self.data_local_next = if pos + 1 < self.data.len() { self.data[pos + 1] } else { 0 };
+        self.data_local = if pos < self.data.len() {
+            self.data[pos]
+        } else {
+            0
+        };
+        self.data_local_next = if pos + 1 < self.data.len() {
+            self.data[pos + 1]
+        } else {
+            0
+        };
     }
 
     fn seek_to_bit(&mut self, position: u32) {
         self.data_position = position >> 5;
         self.data_bit_offset = (position & 0x1F) as i32;
         let pos = self.data_position as usize;
-        self.data_local = if pos < self.data.len() { self.data[pos] } else { 0 };
-        self.data_local_next = if pos + 1 < self.data.len() { self.data[pos + 1] } else { 0 };
+        self.data_local = if pos < self.data.len() {
+            self.data[pos]
+        } else {
+            0
+        };
+        self.data_local_next = if pos + 1 < self.data.len() {
+            self.data[pos + 1]
+        } else {
+            0
+        };
     }
 
     fn swap_bits8(r_value: &mut u32) {
-        *r_value = (SWAP8[(*r_value & 0xf) as usize] << 4)
-            | SWAP8[((*r_value >> 4) & 0xf) as usize];
+        *r_value =
+            (SWAP8[(*r_value & 0xf) as usize] << 4) | SWAP8[((*r_value >> 4) & 0xf) as usize];
     }
 
     // ─── Context Manager ───
@@ -504,7 +523,9 @@ impl IFXBitStreamCompressed {
                     return sym_count[symbol as usize] as u32;
                 }
             }
-            if symbol == 0 { return 1; } // escape default
+            if symbol == 0 {
+                return 1;
+            } // escape default
             return 0;
         }
         // Static context: uniform distribution, frequency = 1
@@ -532,7 +553,9 @@ impl IFXBitStreamCompressed {
             }
             return 1; // just escape symbol
         }
-        if context == CONTEXT8 { return 256; }
+        if context == CONTEXT8 {
+            return 256;
+        }
         // Static context: range = context - 1024
         context - 1024
     }
@@ -540,8 +563,12 @@ impl IFXBitStreamCompressed {
     fn get_symbol_from_frequency(&self, context: u32, symbol_frequency: u32) -> u32 {
         if Self::is_dynamic_context(context) {
             if let Some(cum_count) = &self.cumulative_count[context as usize] {
-                if symbol_frequency == 0 { return 0; }
-                if (cum_count[0] as u32) < symbol_frequency { return 0; }
+                if symbol_frequency == 0 {
+                    return 0;
+                }
+                if (cum_count[0] as u32) < symbol_frequency {
+                    return 0;
+                }
 
                 let mut r_value = 0u32;
                 for i in 0..cum_count.len() as u32 {

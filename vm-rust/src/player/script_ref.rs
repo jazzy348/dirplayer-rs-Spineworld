@@ -1,4 +1,8 @@
-use super::{allocator::{ScriptInstanceAllocatorTrait, ALLOCATOR_RESETTING}, script::ScriptInstanceId, PLAYER_OPT};
+use super::{
+    PLAYER_OPT,
+    allocator::{ALLOCATOR_RESETTING, ScriptInstanceAllocatorTrait},
+    script::ScriptInstanceId,
+};
 
 #[derive(Debug)]
 pub struct ScriptInstanceRef(ScriptInstanceId, *mut u32);

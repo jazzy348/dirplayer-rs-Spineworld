@@ -1,6 +1,5 @@
 /// PFR1 Stroke Builder
-
-use super::types::{PfrContour, PfrCmd, PfrStroke, PfrStrokeType};
+use super::types::{PfrCmd, PfrContour, PfrStroke, PfrStrokeType};
 
 pub fn build_contours_from_strokes(strokes: &[PfrStroke]) -> Vec<PfrContour> {
     let mut contours = Vec::new();
@@ -41,10 +40,22 @@ fn build_line_stroke(contour: &mut PfrContour, stroke: &PfrStroke) {
     let len = (dx * dx + dy * dy).sqrt();
 
     if len < 0.001 {
-        contour.commands.push(PfrCmd::move_to(stroke.start_x - half_width, stroke.start_y - half_width));
-        contour.commands.push(PfrCmd::line_to(stroke.start_x + half_width, stroke.start_y - half_width));
-        contour.commands.push(PfrCmd::line_to(stroke.start_x + half_width, stroke.start_y + half_width));
-        contour.commands.push(PfrCmd::line_to(stroke.start_x - half_width, stroke.start_y + half_width));
+        contour.commands.push(PfrCmd::move_to(
+            stroke.start_x - half_width,
+            stroke.start_y - half_width,
+        ));
+        contour.commands.push(PfrCmd::line_to(
+            stroke.start_x + half_width,
+            stroke.start_y - half_width,
+        ));
+        contour.commands.push(PfrCmd::line_to(
+            stroke.start_x + half_width,
+            stroke.start_y + half_width,
+        ));
+        contour.commands.push(PfrCmd::line_to(
+            stroke.start_x - half_width,
+            stroke.start_y + half_width,
+        ));
         contour.commands.push(PfrCmd::close());
         return;
     }
@@ -73,10 +84,14 @@ fn build_curve_stroke(contour: &mut PfrContour, stroke: &PfrStroke) {
     let half_width = width * 0.5;
 
     let points = flatten_cubic_bezier(
-        stroke.start_x, stroke.start_y,
-        stroke.control1_x, stroke.control1_y,
-        stroke.control2_x, stroke.control2_y,
-        stroke.end_x, stroke.end_y,
+        stroke.start_x,
+        stroke.start_y,
+        stroke.control1_x,
+        stroke.control1_y,
+        stroke.control2_x,
+        stroke.control2_y,
+        stroke.end_x,
+        stroke.end_y,
         0.5,
     );
 
@@ -114,40 +129,52 @@ fn build_curve_stroke(contour: &mut PfrContour, stroke: &PfrStroke) {
         return;
     }
 
-    contour.commands.push(PfrCmd::move_to(left_side[0].0, left_side[0].1));
+    contour
+        .commands
+        .push(PfrCmd::move_to(left_side[0].0, left_side[0].1));
 
     for i in 1..left_side.len() {
-        contour.commands.push(PfrCmd::line_to(left_side[i].0, left_side[i].1));
+        contour
+            .commands
+            .push(PfrCmd::line_to(left_side[i].0, left_side[i].1));
     }
 
     for i in (0..right_side.len()).rev() {
-        contour.commands.push(PfrCmd::line_to(right_side[i].0, right_side[i].1));
+        contour
+            .commands
+            .push(PfrCmd::line_to(right_side[i].0, right_side[i].1));
     }
 
     contour.commands.push(PfrCmd::close());
 }
 
 fn flatten_cubic_bezier(
-    x0: f32, y0: f32,
-    x1: f32, y1: f32,
-    x2: f32, y2: f32,
-    x3: f32, y3: f32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    x3: f32,
+    y3: f32,
     tolerance: f32,
 ) -> Vec<(f32, f32)> {
     let mut points = Vec::new();
     points.push((x0, y0));
-    flatten_cubic_bezier_recursive(
-        x0, y0, x1, y1, x2, y2, x3, y3, tolerance, 0, &mut points,
-    );
+    flatten_cubic_bezier_recursive(x0, y0, x1, y1, x2, y2, x3, y3, tolerance, 0, &mut points);
     points.push((x3, y3));
     points
 }
 
 fn flatten_cubic_bezier_recursive(
-    x0: f32, y0: f32,
-    x1: f32, y1: f32,
-    x2: f32, y2: f32,
-    x3: f32, y3: f32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    x3: f32,
+    y3: f32,
     tolerance: f32,
     depth: u32,
     out: &mut Vec<(f32, f32)>,
@@ -180,7 +207,31 @@ fn flatten_cubic_bezier_recursive(
     let x0123 = (x012 + x123) * 0.5;
     let y0123 = (y012 + y123) * 0.5;
 
-    flatten_cubic_bezier_recursive(x0, y0, x01, y01, x012, y012, x0123, y0123, tolerance, depth + 1, out);
+    flatten_cubic_bezier_recursive(
+        x0,
+        y0,
+        x01,
+        y01,
+        x012,
+        y012,
+        x0123,
+        y0123,
+        tolerance,
+        depth + 1,
+        out,
+    );
     out.push((x0123, y0123));
-    flatten_cubic_bezier_recursive(x0123, y0123, x123, y123, x23, y23, x3, y3, tolerance, depth + 1, out);
+    flatten_cubic_bezier_recursive(
+        x0123,
+        y0123,
+        x123,
+        y123,
+        x23,
+        y23,
+        x3,
+        y3,
+        tolerance,
+        depth + 1,
+        out,
+    );
 }

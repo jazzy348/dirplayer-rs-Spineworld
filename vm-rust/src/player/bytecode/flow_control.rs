@@ -1,9 +1,17 @@
 use crate::{
     director::lingo::datum::{Datum, DatumType},
     player::{
-        HandlerExecutionResult, PLAYER_OPT, ScriptError, compare::datum_is_zero, datum_formatting::format_datum, datum_ref::DatumRef, handlers::datum_handlers::{
+        HandlerExecutionResult, PLAYER_OPT, ScriptError,
+        compare::datum_is_zero,
+        datum_formatting::format_datum,
+        datum_ref::DatumRef,
+        handlers::datum_handlers::{
             player_call_datum_handler, script_instance::ScriptInstanceUtils,
-        }, player_call_script_handler_raw_args, player_ext_call, player_handle_scope_return, reserve_player_mut, reserve_player_ref, script::{get_current_handler_def, get_current_script, get_name}
+        },
+        handlers::manager::BuiltInHandlerManager,
+        player_call_script_handler_raw_args, player_ext_call, player_handle_scope_return,
+        reserve_player_mut, reserve_player_ref,
+        script::{get_current_handler_def, get_current_script, get_name},
     },
 };
 
@@ -72,7 +80,21 @@ impl FlowControlBytecodeHandler {
     pub async fn local_call(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let (handler_ref, is_no_ret, args, receiver) = reserve_player_mut(|player| {
+        enum LocalCallTarget {
+            BuiltIn {
+                name: String,
+                args: Vec<DatumRef>,
+                is_no_ret: bool,
+            },
+            Script {
+                handler_ref: crate::player::script::ScriptHandlerRef,
+                args: Vec<DatumRef>,
+                receiver: Option<crate::player::script_ref::ScriptInstanceRef>,
+                is_no_ret: bool,
+            },
+        }
+
+        let target = reserve_player_mut(|player| {
             let arg_list_id = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                 match scope.stack.pop() {
@@ -81,7 +103,11 @@ impl FlowControlBytecodeHandler {
                         let current_handler_name = ctx.get_name(scope.handler_name_id);
                         return Err(ScriptError::new(format!(
                             "local_call: stack underflow in handler '{}' (script={}:{}, scope_ref={}, bytecode_index={})",
-                            current_handler_name, scope.script_ref.cast_lib, scope.script_ref.cast_member, ctx.scope_ref, scope.bytecode_index
+                            current_handler_name,
+                            scope.script_ref.cast_lib,
+                            scope.script_ref.cast_member,
+                            ctx.scope_ref,
+                            scope.bytecode_index
                         )));
                     }
                 }
@@ -98,13 +124,31 @@ impl FlowControlBytecodeHandler {
             let mut handler_ref = script
                 .get_own_handler_ref_at(player.get_ctx_current_bytecode(&ctx).obj as usize)
                 .unwrap();
-            let handler_name = &handler_ref.1;
+            let handler_name = handler_ref.1.clone();
+
+            // Director scripts can define object property handlers named `count`,
+            // while still using the built-in `count(list)` inside those handlers.
+            // Treat one-argument list counts as the built-in to avoid rebinding
+            // the list as `me` for the current script's `count` handler.
+            if handler_name.eq_ignore_ascii_case("count")
+                && args.len() == 1
+                && matches!(
+                    player.get_datum(&args[0]).type_enum(),
+                    DatumType::List | DatumType::PropList | DatumType::Void
+                )
+            {
+                return Ok(LocalCallTarget::BuiltIn {
+                    name: handler_name,
+                    args,
+                    is_no_ret,
+                });
+            }
 
             // if first arg is a script or script instance and has a handler by the same name
             // use that handler instead
-            let mut receiver;
+            let receiver;
             let receiver_handler =
-                ScriptInstanceUtils::get_handler_from_first_arg(&args, handler_name);
+                ScriptInstanceUtils::get_handler_from_first_arg(&args, &handler_name);
             if receiver_handler.is_some() {
                 let handler_pair = receiver_handler.unwrap();
                 receiver = handler_pair.0;
@@ -115,11 +159,33 @@ impl FlowControlBytecodeHandler {
                     scope.receiver.clone()
                 });
             }
-            Ok((handler_ref, is_no_ret, args, receiver))
+            Ok(LocalCallTarget::Script {
+                handler_ref,
+                args,
+                receiver,
+                is_no_ret,
+            })
         })?;
-        let scope = player_call_script_handler_raw_args(receiver, handler_ref, &args, true).await?;
-        player_handle_scope_return(&scope);
-        let result = scope.return_value;
+
+        let (result, is_no_ret) = match target {
+            LocalCallTarget::BuiltIn {
+                name,
+                args,
+                is_no_ret,
+            } => (BuiltInHandlerManager::call_handler(&name, &args)?, is_no_ret),
+            LocalCallTarget::Script {
+                handler_ref,
+                args,
+                receiver,
+                is_no_ret,
+            } => {
+                let scope =
+                    player_call_script_handler_raw_args(receiver, handler_ref, &args, true).await?;
+                player_handle_scope_return(&scope);
+                (scope.return_value, is_no_ret)
+            }
+        };
+
         if !is_no_ret {
             reserve_player_mut(|player| {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -141,7 +207,11 @@ impl FlowControlBytecodeHandler {
                         let current_handler_name = ctx.get_name(scope.handler_name_id);
                         return Err(ScriptError::new(format!(
                             "jmp_if_zero: stack underflow in handler '{}' (script={}:{}, scope_ref={}, bytecode_index={})",
-                            current_handler_name, scope.script_ref.cast_lib, scope.script_ref.cast_member, ctx.scope_ref, scope.bytecode_index
+                            current_handler_name,
+                            scope.script_ref.cast_lib,
+                            scope.script_ref.cast_member,
+                            ctx.scope_ref,
+                            scope.bytecode_index
                         )));
                     }
                 }
@@ -187,13 +257,9 @@ impl FlowControlBytecodeHandler {
         // let token = start_profiling("_obj_call_prepare".to_string());
         let (obj_ref, handler_name, args, is_no_ret) = reserve_player_mut(|player| {
             let bytecode = player.get_ctx_current_bytecode(&ctx);
-            let target_handler_name = get_name(
-                &player,
-                &ctx,
-                bytecode.obj as u16,
-            )
-            .map(|s| s.to_owned())
-            .unwrap_or_else(|| "?".to_owned());
+            let target_handler_name = get_name(&player, &ctx, bytecode.obj as u16)
+                .map(|s| s.to_owned())
+                .unwrap_or_else(|| "?".to_owned());
             let arg_list_id = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                 match scope.stack.pop() {
@@ -202,7 +268,12 @@ impl FlowControlBytecodeHandler {
                         let current_handler_name = ctx.get_name(scope.handler_name_id);
                         return Err(ScriptError::new(format!(
                             "obj_call '{}': stack underflow in handler '{}' (script={}:{}, scope_ref={}, bytecode_index={})",
-                            target_handler_name, current_handler_name, scope.script_ref.cast_lib, scope.script_ref.cast_member, ctx.scope_ref, scope.bytecode_index
+                            target_handler_name,
+                            current_handler_name,
+                            scope.script_ref.cast_lib,
+                            scope.script_ref.cast_member,
+                            ctx.scope_ref,
+                            scope.bytecode_index
                         )));
                     }
                 }
@@ -245,8 +316,12 @@ impl FlowControlBytecodeHandler {
         // Stack: [..., ArgList([receiver, args...]), Symbol(handlerName)]
         let (obj_ref, handler_name, args, is_no_ret) = reserve_player_mut(|player| {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-            let handler_name_ref = scope.stack.pop().ok_or_else(|| ScriptError::new("obj_call_v4: stack underflow (handler name)".to_string()))?;
-            let arg_list_ref = scope.stack.pop().ok_or_else(|| ScriptError::new("obj_call_v4: stack underflow (arg list)".to_string()))?;
+            let handler_name_ref = scope.stack.pop().ok_or_else(|| {
+                ScriptError::new("obj_call_v4: stack underflow (handler name)".to_string())
+            })?;
+            let arg_list_ref = scope.stack.pop().ok_or_else(|| {
+                ScriptError::new("obj_call_v4: stack underflow (arg list)".to_string())
+            })?;
 
             let handler_name = player.get_datum(&handler_name_ref).symbol_value()?;
 
@@ -300,12 +375,20 @@ impl FlowControlBytecodeHandler {
     ) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-            let arg1 = scope.stack.pop().ok_or_else(|| ScriptError::new("call_javascript: stack underflow (arg1)".to_string()))?;
-            let arg2 = scope.stack.pop().ok_or_else(|| ScriptError::new("call_javascript: stack underflow (arg2)".to_string()))?;
+            let arg1 = scope.stack.pop().ok_or_else(|| {
+                ScriptError::new("call_javascript: stack underflow (arg1)".to_string())
+            })?;
+            let arg2 = scope.stack.pop().ok_or_else(|| {
+                ScriptError::new("call_javascript: stack underflow (arg2)".to_string())
+            })?;
             let arg1_formatted = format_datum(&arg1, player);
             let arg2_formatted = format_datum(&arg2, player);
 
-            log::warn!("TODO: call_javascript with args: {}, {}", arg1_formatted, arg2_formatted);
+            log::warn!(
+                "TODO: call_javascript with args: {}, {}",
+                arg1_formatted,
+                arg2_formatted
+            );
             Ok(HandlerExecutionResult::Advance)
         })
     }

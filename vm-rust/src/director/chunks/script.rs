@@ -1,11 +1,14 @@
 use binary_reader::BinaryReader;
 use itertools::Itertools;
 
-use crate::director::{chunks::literal::{LiteralStore, LiteralType}, lingo::datum::Datum};
+use crate::director::{
+    chunks::literal::{LiteralStore, LiteralType},
+    lingo::datum::Datum,
+};
 
 use super::handler::{HandlerDef, HandlerRecord};
 use crate::director::static_datum::StaticDatum;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
 #[derive(Clone)]
 pub struct ScriptChunk {
@@ -86,7 +89,9 @@ impl ScriptChunk {
         } else {
             literal_records
                 .iter()
-                .map(|record| LiteralStore::read_data(reader, record, literals_data_offset).unwrap())
+                .map(|record| {
+                    LiteralStore::read_data(reader, record, literals_data_offset).unwrap()
+                })
                 .collect_vec()
         };
 

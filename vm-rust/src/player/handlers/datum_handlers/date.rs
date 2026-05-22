@@ -1,6 +1,6 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
 
 pub struct DateObject {

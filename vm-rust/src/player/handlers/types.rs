@@ -1,12 +1,13 @@
-use std::collections::VecDeque;
 use itertools::Itertools;
 use log::{debug, warn};
+use std::collections::VecDeque;
 
 use crate::{
-    director::lingo::datum::{datum_bool, Datum, DatumType},
+    director::lingo::datum::{Datum, DatumType, datum_bool},
     player::{
+        DatumRef, DirPlayer, MathObject, ScriptError, XmlDocument,
         allocator::ScriptInstanceAllocatorTrait,
-        bitmap::bitmap::{get_system_default_palette, Bitmap, BuiltInPalette, PaletteRef},
+        bitmap::bitmap::{Bitmap, BuiltInPalette, PaletteRef, get_system_default_palette},
         ci_string::CiStr,
         compare::sort_datums,
         datum_formatting::format_datum,
@@ -15,7 +16,6 @@ use crate::{
         reserve_player_mut, reserve_player_ref,
         sprite::{ColorRef, CursorRef},
         xtra::manager::{create_xtra_instance, is_xtra_registered},
-        DatumRef, DirPlayer, MathObject, ScriptError, XmlDocument,
     },
 };
 
@@ -72,6 +72,7 @@ impl TypeUtils {
             Datum::PlayerRef => Ok(vec!["player"]),
             Datum::MovieRef => Ok(vec!["movie"]),
             Datum::MouseRef => Ok(vec!["mouse"]),
+            Datum::GlobalRef => Ok(vec!["global"]),
             Datum::XmlRef(..) => Ok(vec!["xml"]),
             Datum::DateRef(..) => Ok(vec!["date"]),
             Datum::MathRef(..) => Ok(vec!["math"]),
@@ -125,7 +126,10 @@ impl TypeUtils {
                     )));
                 }
 
-                player.alloc_datum(Datum::inline_component_to_datum(vals[idx], Datum::inline_is_float(*flags, idx)))
+                player.alloc_datum(Datum::inline_component_to_datum(
+                    vals[idx],
+                    Datum::inline_is_float(*flags, idx),
+                ))
             }
             Datum::List(_, list, _) => {
                 let position = prop_key.int_value()?;
@@ -145,18 +149,24 @@ impl TypeUtils {
                         return Err(ScriptError::new(format!(
                             "Invalid sub-prop position for point: {}",
                             index
-                        )))
+                        )));
                     }
                 };
 
-                player.alloc_datum(Datum::inline_component_to_datum(vals[idx], Datum::inline_is_float(*flags, idx)))
+                player.alloc_datum(Datum::inline_component_to_datum(
+                    vals[idx],
+                    Datum::inline_is_float(*flags, idx),
+                ))
             }
             Datum::ScriptInstanceRef(instance_ref) => {
                 // Numeric index
                 if let Ok(index) = prop_key.int_value() {
                     let instance = player.allocator.get_script_instance(instance_ref);
-                    let mut property_names: Vec<String> =
-                        instance.properties.keys().map(|k| k.as_str().to_owned()).collect();
+                    let mut property_names: Vec<String> = instance
+                        .properties
+                        .keys()
+                        .map(|k| k.as_str().to_owned())
+                        .collect();
                     property_names.sort();
                     let zero_based_index = (index - 1) as usize;
 
@@ -194,24 +204,21 @@ impl TypeUtils {
                         let result = i.abs();
                         player.alloc_datum(Datum::Int(result))
                     }
-                    "integer" => {
-                        datum_ref.clone()
-                    }
-                    "float" => {
-                        player.alloc_datum(Datum::Float(*i as f64))
-                    }
+                    "integer" => datum_ref.clone(),
+                    "float" => player.alloc_datum(Datum::Float(*i as f64)),
                     "char" => {
                         // Convert integer to character
                         if *i >= 0 && *i <= 255 {
                             let ch = char::from_u32(*i as u32).unwrap_or('?');
                             player.alloc_datum(Datum::String(ch.to_string()))
                         } else {
-                            return Err(ScriptError::new(format!("Integer {} out of range for char", i)));
+                            return Err(ScriptError::new(format!(
+                                "Integer {} out of range for char",
+                                i
+                            )));
                         }
                     }
-                    "string" => {
-                        player.alloc_datum(Datum::String(i.to_string()))
-                    }
+                    "string" => player.alloc_datum(Datum::String(i.to_string())),
                     _ => {
                         return Err(ScriptError::new(format!(
                             "Unknown property '{}' for integer",
@@ -231,12 +238,8 @@ impl TypeUtils {
                         let result = f.round() as i32;
                         player.alloc_datum(Datum::Int(result))
                     }
-                    "float" => {
-                        datum_ref.clone()
-                    }
-                    "string" => {
-                        player.alloc_datum(Datum::String(f.to_string()))
-                    }
+                    "float" => datum_ref.clone(),
+                    "string" => player.alloc_datum(Datum::String(f.to_string())),
                     _ => {
                         return Err(ScriptError::new(format!(
                             "Unknown property '{}' for float",
@@ -309,7 +312,9 @@ impl TypeUtils {
                 let position = player.get_datum(prop_key_ref).int_value()?;
                 let index = (position - 1) as usize;
                 if index >= 4 {
-                    return Err(ScriptError::new(format!("Rect index out of bounds: {position}")));
+                    return Err(ScriptError::new(format!(
+                        "Rect index out of bounds: {position}"
+                    )));
                 }
                 let new_val = player.get_datum(value_ref).clone();
                 let (component_val, is_float) = Datum::datum_to_inline_component(&new_val)?;
@@ -331,6 +336,39 @@ impl TypeUtils {
 }
 
 impl TypeHandlers {
+    fn rgb_from_list(
+        player: &DirPlayer,
+        items: &VecDeque<DatumRef>,
+    ) -> Result<Option<ColorRef>, ScriptError> {
+        if items.len() < 3 {
+            return Ok(None);
+        }
+
+        let r = player.get_datum(&items[0]).int_value()? as u8;
+        let g = player.get_datum(&items[1]).int_value()? as u8;
+        let b = player.get_datum(&items[2]).int_value()? as u8;
+        Ok(Some(ColorRef::Rgb(r, g, b)))
+    }
+
+    fn point_from_datum(
+        player: &DirPlayer,
+        value: &Datum,
+    ) -> Result<Option<([f64; 2], u8)>, ScriptError> {
+        match value {
+            Datum::Point(values, flags) => Ok(Some((*values, *flags))),
+            Datum::List(_, items, _) if items.len() >= 2 => {
+                let x = player.get_datum(&items[0]).clone();
+                let y = player.get_datum(&items[1]).clone();
+                let point = Datum::build_point(&x, &y)?;
+                match point {
+                    Datum::Point(values, flags) => Ok(Some((values, flags))),
+                    _ => Ok(None),
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub fn objectp(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             let obj = player.get_datum(&args[0]);
@@ -430,9 +468,7 @@ impl TypeHandlers {
                 // relies on Void-on-failure to drive its retry loop). Without
                 // normalising comments and unbalanced brackets here, every
                 // partial attempt dumps a pest parse error to the console.
-                use crate::player::handlers::datum_handlers::string::{
-                    normalise_lingo_expr_for_value,
-                };
+                use crate::player::handlers::datum_handlers::string::normalise_lingo_expr_for_value;
                 let cleaned = normalise_lingo_expr_for_value(&s);
                 // TEMP diagnostic: log EVERY value() call that looks like a
                 // Lingo prop-list/list so we can confirm whether the Coke
@@ -574,12 +610,9 @@ impl TypeHandlers {
                     // Used by Director scripts as a numeric handshake/seed
                     // — e.g. ClubMarian's login flow does
                     // `key3 = bitXor(integer(the systemDate), key1)`.
-                    let date_obj = player
-                        .date_objects
-                        .get(date_id)
-                        .ok_or_else(|| ScriptError::new(format!(
-                            "Date object {} not found", date_id
-                        )))?;
+                    let date_obj = player.date_objects.get(date_id).ok_or_else(|| {
+                        ScriptError::new(format!("Date object {} not found", date_id))
+                    })?;
                     let js_date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
                         date_obj.timestamp_ms as f64,
                     ));
@@ -593,7 +626,7 @@ impl TypeHandlers {
                     return Err(ScriptError::new(format!(
                         "Cannot convert datum of type {} to integer",
                         value.type_str()
-                    )))
+                    )));
                 }
             };
             Ok(player.alloc_datum(result))
@@ -627,7 +660,7 @@ impl TypeHandlers {
                     return Err(ScriptError::new(format!(
                         "Cannot convert datum of type {} to float",
                         value.type_str()
-                    )))
+                    )));
                 }
             };
             Ok(player.alloc_datum(result))
@@ -665,7 +698,9 @@ impl TypeHandlers {
     pub fn point(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             if args.len() != 2 {
-                return Err(ScriptError::new("point() requires exactly 2 arguments".to_string()));
+                return Err(ScriptError::new(
+                    "point() requires exactly 2 arguments".to_string(),
+                ));
             }
 
             let x = player.get_datum(&args[0]).clone();
@@ -678,7 +713,9 @@ impl TypeHandlers {
     pub fn rect(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             if args.len() != 2 && args.len() != 4 {
-                return Err(ScriptError::new("rect() requires 2 or 4 arguments".to_string()));
+                return Err(ScriptError::new(
+                    "rect() requires 2 or 4 arguments".to_string(),
+                ));
             }
 
             // Case 1: rect(left, top, right, bottom)
@@ -693,13 +730,32 @@ impl TypeHandlers {
 
             // Case 2: rect(Point, Point)
             if args.len() == 2 {
-                let (p1, f1) = player.get_datum(&args[0]).to_point_inline()?;
-                let (p2, f2) = player.get_datum(&args[1]).to_point_inline()?;
+                let (p1, f1) = Self::point_from_datum(player, player.get_datum(&args[0]))?
+                    .ok_or_else(|| {
+                        ScriptError::new("rect() requires point-compatible arguments".to_string())
+                    })?;
+                let (p2, f2) = Self::point_from_datum(player, player.get_datum(&args[1]))?
+                    .ok_or_else(|| {
+                        ScriptError::new("rect() requires point-compatible arguments".to_string())
+                    })?;
 
-                let flags = (if Datum::inline_is_float(f1, 0) { 1u8 } else { 0 })
-                    | (if Datum::inline_is_float(f1, 1) { 2u8 } else { 0 })
-                    | (if Datum::inline_is_float(f2, 0) { 4u8 } else { 0 })
-                    | (if Datum::inline_is_float(f2, 1) { 8u8 } else { 0 });
+                let flags = (if Datum::inline_is_float(f1, 0) {
+                    1u8
+                } else {
+                    0
+                }) | (if Datum::inline_is_float(f1, 1) {
+                    2u8
+                } else {
+                    0
+                }) | (if Datum::inline_is_float(f2, 0) {
+                    4u8
+                } else {
+                    0
+                }) | (if Datum::inline_is_float(f2, 1) {
+                    8u8
+                } else {
+                    0
+                });
 
                 return Ok(player.alloc_datum(Datum::Rect([p1[0], p1[1], p2[0], p2[1]], flags)));
             }
@@ -767,8 +823,16 @@ impl TypeHandlers {
                     match player.get_datum(&args[1]) {
                         Datum::CastLib(cast_num) => (*cast_num, None),
                         Datum::CastMember(member_ref) => {
-                            let cn = if member_ref.cast_lib > 0 { member_ref.cast_lib as u32 } else { 1 };
-                            let slot = if member_ref.cast_member > 0 { Some(member_ref.cast_member as u32) } else { None };
+                            let cn = if member_ref.cast_lib > 0 {
+                                member_ref.cast_lib as u32
+                            } else {
+                                1
+                            };
+                            let slot = if member_ref.cast_member > 0 {
+                                Some(member_ref.cast_member as u32)
+                            } else {
+                                None
+                            };
                             (cn, slot)
                         }
                         other => Err(ScriptError::new(format!(
@@ -781,11 +845,8 @@ impl TypeHandlers {
                 };
                 let cast = player.movie.cast_manager.get_cast_mut(cast_num);
                 let member_slot = slot.unwrap_or_else(|| cast.first_free_member_id());
-                let member_ref = cast.create_member_at(
-                    member_slot,
-                    &s,
-                    &mut player.bitmap_manager,
-                )?;
+                let member_ref =
+                    cast.create_member_at(member_slot, &s, &mut player.bitmap_manager)?;
                 player.movie.cast_manager.invalidate_member_name_cache();
                 Ok(player.alloc_datum(Datum::CastMember(member_ref)))
             }),
@@ -838,20 +899,40 @@ impl TypeHandlers {
                 Ok(player.alloc_datum(Datum::ColorRef(ColorRef::Rgb(r, g, b))))
             } else {
                 let first_arg = player.get_datum(&args[0]);
-                if first_arg.is_string() {
-                    let hex_str = first_arg.string_value()?.replace("#", "");
-                    let r_str = if hex_str.len() >= 2 { &hex_str[0..2] } else { "00" };
-                    let g_str = if hex_str.len() >= 4 { &hex_str[2..4] } else { "00" };
-                    let b_str = if hex_str.len() >= 6 { &hex_str[4..6] } else { "00" };
-                    
-                    let r = u8::from_str_radix(r_str, 16).unwrap_or(0);
-                    let g = u8::from_str_radix(g_str, 16).unwrap_or(0);
-                    let b = u8::from_str_radix(b_str, 16).unwrap_or(0);
-                    Ok(player.alloc_datum(Datum::ColorRef(ColorRef::Rgb(r, g, b))))
-                } else {
-                    Err(ScriptError::new(
+                match first_arg {
+                    Datum::String(_) | Datum::StringChunk(..) => {
+                        let hex_str = first_arg.string_value()?.replace("#", "");
+                        let r_str = if hex_str.len() >= 2 {
+                            &hex_str[0..2]
+                        } else {
+                            "00"
+                        };
+                        let g_str = if hex_str.len() >= 4 {
+                            &hex_str[2..4]
+                        } else {
+                            "00"
+                        };
+                        let b_str = if hex_str.len() >= 6 {
+                            &hex_str[4..6]
+                        } else {
+                            "00"
+                        };
+
+                        let r = u8::from_str_radix(r_str, 16).unwrap_or(0);
+                        let g = u8::from_str_radix(g_str, 16).unwrap_or(0);
+                        let b = u8::from_str_radix(b_str, 16).unwrap_or(0);
+                        Ok(player.alloc_datum(Datum::ColorRef(ColorRef::Rgb(r, g, b))))
+                    }
+                    Datum::List(_, items, _) => {
+                        let color_ref = Self::rgb_from_list(player, items)?.ok_or_else(|| {
+                            ScriptError::new("rgb() requires a 3-element color list".to_string())
+                        })?;
+                        Ok(player.alloc_datum(Datum::ColorRef(color_ref)))
+                    }
+                    Datum::ColorRef(_) => Ok(args[0].clone()),
+                    _ => Err(ScriptError::new(
                         "Invalid number of arguments for rgb".to_string(),
-                    ))
+                    )),
                 }
             }
         })
@@ -866,7 +947,11 @@ impl TypeHandlers {
 
     pub fn list(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
-            Ok(player.alloc_datum(Datum::List(DatumType::List, VecDeque::from(args.clone()), false)))
+            Ok(player.alloc_datum(Datum::List(
+                DatumType::List,
+                VecDeque::from(args.clone()),
+                false,
+            )))
         })
     }
 
@@ -874,9 +959,10 @@ impl TypeHandlers {
         reserve_player_mut(|player| {
             // TODO: Palette ref can be on args[3], need to handle it
             if args.len() < 3 {
-                return Err(ScriptError::new(
-                    format!("image() expects at least 3 arguments: width, height, bitDepth, optional alphaDepth, got {}", args.len())
-                ));
+                return Err(ScriptError::new(format!(
+                    "image() expects at least 3 arguments: width, height, bitDepth, optional alphaDepth, got {}",
+                    args.len()
+                )));
             }
 
             let width_datum = player.get_datum(&args[0]);
@@ -924,7 +1010,7 @@ impl TypeHandlers {
                                 return Err(ScriptError::new(format!(
                                     "Invalid 4th argument type for image(): {}, expected symbol",
                                     arg3.type_str()
-                                )))
+                                )));
                             }
                         };
                     }
@@ -936,7 +1022,7 @@ impl TypeHandlers {
                                 return Err(ScriptError::new(format!(
                                     "Invalid 4th argument type for image(): {}, expected palette",
                                     arg3.type_str()
-                                )))
+                                )));
                             }
                         };
                     }
@@ -944,9 +1030,12 @@ impl TypeHandlers {
                         // If the 4th argument is a cast member, then there's no alpha depth specified
                         palette_ref = match arg3 {
                             Datum::CastMember(m) => PaletteRef::Member(m.clone()),
-                            _ => return Err(ScriptError::new(
-                                format!("Invalid 4th argument type for image(): {}, expected int or palette", arg3.type_str())
-                            )),
+                            _ => {
+                                return Err(ScriptError::new(format!(
+                                    "Invalid 4th argument type for image(): {}, expected int or palette",
+                                    arg3.type_str()
+                                )));
+                            }
                         };
                     }
                     _ => {
@@ -992,7 +1081,7 @@ impl TypeHandlers {
                     return Err(ScriptError::new(format!(
                         "Cannot get abs of type: {}",
                         value.type_str()
-                    )))
+                    )));
                 }
             };
             Ok(player.alloc_datum(result))
@@ -1024,11 +1113,26 @@ impl TypeHandlers {
             let (left_vals, _lf) = player.get_datum(&args[0]).to_rect_inline()?;
             let (right_vals, _rf) = player.get_datum(&args[1]).to_rect_inline()?;
 
-            let left_tuple = (left_vals[0] as i32, left_vals[1] as i32, left_vals[2] as i32, left_vals[3] as i32);
-            let right_tuple = (right_vals[0] as i32, right_vals[1] as i32, right_vals[2] as i32, right_vals[3] as i32);
+            let left_tuple = (
+                left_vals[0] as i32,
+                left_vals[1] as i32,
+                left_vals[2] as i32,
+                left_vals[3] as i32,
+            );
+            let right_tuple = (
+                right_vals[0] as i32,
+                right_vals[1] as i32,
+                right_vals[2] as i32,
+                right_vals[3] as i32,
+            );
 
             let (l, t, r, b) = RectUtils::union(left_tuple, right_tuple);
-            let rect = IntRect { left: l, top: t, right: r, bottom: b };
+            let rect = IntRect {
+                left: l,
+                top: t,
+                right: r,
+                bottom: b,
+            };
 
             Ok(player.alloc_datum(rect.to_datum()))
         })
@@ -1061,7 +1165,7 @@ impl TypeHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "vector() expects 0 or 3 arguments".to_string(),
-                    ))
+                    ));
                 }
             };
             Ok(player.alloc_datum(Datum::Vector([x, y, z])))
@@ -1073,10 +1177,7 @@ impl TypeHandlers {
             // transform() with no args returns identity matrix
             if args.is_empty() {
                 return Ok(player.alloc_datum(Datum::Transform3d([
-                    1.0, 0.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0, 0.0,
-                    0.0, 0.0, 1.0, 0.0,
-                    0.0, 0.0, 0.0, 1.0,
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                 ])));
             }
             Err(ScriptError::new("transform() takes 0 arguments".into()))
@@ -1112,24 +1213,66 @@ impl TypeHandlers {
             match args.len() {
                 1 => {
                     // color(paletteIndex) - single argument is palette index
-                    let index = player.get_datum(&args[0]).int_value()? as u8;
-                    Ok(player.alloc_datum(Datum::ColorRef(ColorRef::PaletteIndex(index))))
+                    match player.get_datum(&args[0]) {
+                        Datum::ColorRef(_) => Ok(args[0].clone()),
+                        Datum::List(_, items, _) => {
+                            let color_ref =
+                                Self::rgb_from_list(player, items)?.ok_or_else(|| {
+                                    ScriptError::new(
+                                        "color() requires a 3-element RGB list".to_string(),
+                                    )
+                                })?;
+                            Ok(player.alloc_datum(Datum::ColorRef(color_ref)))
+                        }
+                        other => {
+                            let index = other.int_value()? as u8;
+                            Ok(player.alloc_datum(Datum::ColorRef(ColorRef::PaletteIndex(index))))
+                        }
+                    }
                 }
                 2 => {
                     // color(#rgb, "RRGGBB") or color(#paletteIndex, index)
                     let first = player.get_datum(&args[0]);
                     if let Datum::Symbol(sym) = first {
                         match sym.to_lowercase().as_str() {
-                            "rgb" => {
-                                let hex_str = player.get_datum(&args[1]).string_value()?.replace("#", "");
-                                let r = u8::from_str_radix(&hex_str[0..2], 16).unwrap_or(0);
-                                let g = u8::from_str_radix(&hex_str[2..4], 16).unwrap_or(0);
-                                let b = u8::from_str_radix(&hex_str[4..6], 16).unwrap_or(0);
-                                Ok(player.alloc_datum(Datum::ColorRef(ColorRef::Rgb(r, g, b))))
-                            }
+                            "rgb" => match player.get_datum(&args[1]) {
+                                Datum::List(_, items, _) => {
+                                    let color_ref = Self::rgb_from_list(player, items)?
+                                        .ok_or_else(|| {
+                                            ScriptError::new(
+                                                "color(#rgb) requires a 3-element RGB list"
+                                                    .to_string(),
+                                            )
+                                        })?;
+                                    Ok(player.alloc_datum(Datum::ColorRef(color_ref)))
+                                }
+                                value => {
+                                    let hex_str = value.string_value()?.replace("#", "");
+                                    let r_str = if hex_str.len() >= 2 {
+                                        &hex_str[0..2]
+                                    } else {
+                                        "00"
+                                    };
+                                    let g_str = if hex_str.len() >= 4 {
+                                        &hex_str[2..4]
+                                    } else {
+                                        "00"
+                                    };
+                                    let b_str = if hex_str.len() >= 6 {
+                                        &hex_str[4..6]
+                                    } else {
+                                        "00"
+                                    };
+                                    let r = u8::from_str_radix(r_str, 16).unwrap_or(0);
+                                    let g = u8::from_str_radix(g_str, 16).unwrap_or(0);
+                                    let b = u8::from_str_radix(b_str, 16).unwrap_or(0);
+                                    Ok(player.alloc_datum(Datum::ColorRef(ColorRef::Rgb(r, g, b))))
+                                }
+                            },
                             "paletteindex" => {
                                 let index = player.get_datum(&args[1]).int_value()? as u8;
-                                Ok(player.alloc_datum(Datum::ColorRef(ColorRef::PaletteIndex(index))))
+                                Ok(player
+                                    .alloc_datum(Datum::ColorRef(ColorRef::PaletteIndex(index))))
                             }
                             _ => Err(ScriptError::new(format!(
                                 "color(): unknown color type symbol #{}",
@@ -1138,7 +1281,8 @@ impl TypeHandlers {
                         }
                     } else {
                         Err(ScriptError::new(
-                            "color() with 2 arguments expects first argument to be a symbol".to_string(),
+                            "color() with 2 arguments expects first argument to be a symbol"
+                                .to_string(),
                         ))
                     }
                 }
@@ -1232,9 +1376,10 @@ impl TypeHandlers {
             DatumType::PropList => {
                 PropListDatumHandlers::get_a_prop(datum_ref, &vec![args.get(1).unwrap().clone()])
             }
-            DatumType::ScriptInstanceRef => {
-                ScriptInstanceDatumHandlers::get_a_prop(datum_ref, &vec![args.get(1).unwrap().clone()])
-            }
+            DatumType::ScriptInstanceRef => ScriptInstanceDatumHandlers::get_a_prop(
+                datum_ref,
+                &vec![args.get(1).unwrap().clone()],
+            ),
             _ => Err(ScriptError::new(format!(
                 "Cannot getaProp prop of type: {} (value: {})",
                 datum_type.type_str(),
@@ -1301,17 +1446,34 @@ impl TypeHandlers {
     pub fn intersect(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             if args.len() != 2 {
-                return Err(ScriptError::new("Intersect requires 2 arguments".to_string()));
+                return Err(ScriptError::new(
+                    "Intersect requires 2 arguments".to_string(),
+                ));
             }
 
             let (left_vals, _lf) = player.get_datum(&args[0]).to_rect_inline()?;
             let (right_vals, _rf) = player.get_datum(&args[1]).to_rect_inline()?;
 
-            let left = (left_vals[0] as i32, left_vals[1] as i32, left_vals[2] as i32, left_vals[3] as i32);
-            let right = (right_vals[0] as i32, right_vals[1] as i32, right_vals[2] as i32, right_vals[3] as i32);
+            let left = (
+                left_vals[0] as i32,
+                left_vals[1] as i32,
+                left_vals[2] as i32,
+                left_vals[3] as i32,
+            );
+            let right = (
+                right_vals[0] as i32,
+                right_vals[1] as i32,
+                right_vals[2] as i32,
+                right_vals[3] as i32,
+            );
 
             let (l, t, r, b) = RectUtils::intersect(left, right);
-            let rect = IntRect { left: l, top: t, right: r, bottom: b };
+            let rect = IntRect {
+                left: l,
+                top: t,
+                right: r,
+                bottom: b,
+            };
 
             Ok(player.alloc_datum(rect.to_datum()))
         })
@@ -1329,36 +1491,36 @@ impl TypeHandlers {
             let prop_list_ref = &args[0];
             let position = player.get_datum(&args[1]).int_value()?;
             let index = (position - 1) as usize;
-            
+
             let prop_list = player.get_datum(prop_list_ref);
-            
+
             debug!(
-                "🔍 getPropAt: proplist={}, index={}", 
+                "🔍 getPropAt: proplist={}, index={}",
                 format_concrete_datum(prop_list, player),
                 position
             );
-            
+
             match prop_list {
                 Datum::PropList(entries, _) => {
                     if index >= entries.len() {
                         return Err(ScriptError::new(format!(
-                            "Index {} out of bounds for proplist of length {}", 
-                            position, 
+                            "Index {} out of bounds for proplist of length {}",
+                            position,
                             entries.len()
                         )));
                     }
                     // Return the KEY at this position, not the value!
                     let key_ref = entries[index].0.clone();
-                    
+
                     debug!(
-                        "✅ getPropAt returned key: {}", 
+                        "✅ getPropAt returned key: {}",
                         format_concrete_datum(player.get_datum(&key_ref), player)
                     );
-                    
+
                     Ok(key_ref)
                 }
                 _ => Err(ScriptError::new(
-                    "getPropAt requires a property list".to_string()
+                    "getPropAt requires a property list".to_string(),
                 )),
             }
         })
@@ -1385,7 +1547,7 @@ impl TypeHandlers {
     pub fn sqrt(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             let value = player.get_datum(&args[0]);
-            
+
             let num = if let Ok(f) = value.float_value() {
                 f
             } else if let Ok(i) = value.int_value() {
@@ -1393,11 +1555,11 @@ impl TypeHandlers {
             } else {
                 return Err(ScriptError::new("sqrt requires a number".to_string()));
             };
-            
+
             if num < 0.0 {
                 return Err(ScriptError::new("sqrt of negative number".to_string()));
             }
-            
+
             let result = num.sqrt();
             Ok(player.alloc_datum(Datum::Float(result)))
         })
@@ -1413,7 +1575,7 @@ impl TypeHandlers {
     pub fn atan(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             let value = player.get_datum(&args[0]);
-            
+
             let num = if let Ok(f) = value.float_value() {
                 f
             } else if let Ok(i) = value.int_value() {
@@ -1421,7 +1583,7 @@ impl TypeHandlers {
             } else {
                 return Err(ScriptError::new("atan requires a number".to_string()));
             };
-            
+
             let result = num.atan();
             Ok(player.alloc_datum(Datum::Float(result)))
         })
@@ -1481,74 +1643,86 @@ impl TypeHandlers {
         // - Inside B::start, callAncestor(#start, me, ...) is called
         //   -> current receiver is A, but we need B's ancestor (C)
         //   -> We look at the scope's script_ref to find B, then get B's ancestor
-        let (ancestor_list, original_me_list, instance_datum_refs, handler_name, extra_args) = reserve_player_mut(|player| {
-            let handler_name = player.get_datum(&args[0]).string_value()?;
+        let (ancestor_list, original_me_list, instance_datum_refs, handler_name, extra_args) =
+            reserve_player_mut(|player| {
+                let handler_name = player.get_datum(&args[0]).string_value()?;
 
-            // Get the current scope's script_ref to determine which script we're currently in
-            let current_scope_ref = player.current_scope_ref();
-            let current_script_ref = player.scopes.get(current_scope_ref)
-                .map(|scope| scope.script_ref.clone());
+                // Get the current scope's script_ref to determine which script we're currently in
+                let current_scope_ref = player.current_scope_ref();
+                let current_script_ref = player
+                    .scopes
+                    .get(current_scope_ref)
+                    .map(|scope| scope.script_ref.clone());
 
-            let list_or_script_instance = player.get_datum(&args[1]);
-            let instance_list = match list_or_script_instance {
-                Datum::List(_, list, _) => list.to_owned(),
-                Datum::ScriptInstanceRef(_) => {
-                    VecDeque::from(vec![args[1].clone()])
-                }
-                _ => {
-                    return Err(ScriptError::new(format!(
-                        "Can only callAncestor on script instances and lists"
-                    )))
-                }
-            };
-
-            let mut ancestor_list = vec![];
-            let mut original_me_list = vec![];
-            let mut instance_datum_refs = vec![];
-            for instance_ref in instance_list {
-                let original_me_ref = player.get_datum(&instance_ref).to_script_instance_ref()?;
-
-                // Determine which instance's ancestor to use:
-                // Walk the ancestor chain to find which instance's script matches
-                // the current scope's script_ref (i.e. "which level" we're at).
-                let ancestor_source = if let Some(ref script_ref) = current_script_ref {
-                    let mut walk_ref = original_me_ref.clone();
-                    let mut found = false;
-                    for _ in 0..100 {
-                        let walk_instance = player.allocator.get_script_instance(&walk_ref);
-                        if walk_instance.script == *script_ref {
-                            found = true;
-                            break;
-                        }
-                        if let Some(ref next_ancestor) = walk_instance.ancestor {
-                            walk_ref = next_ancestor.clone();
-                        } else {
-                            break;
-                        }
+                let list_or_script_instance = player.get_datum(&args[1]);
+                let instance_list = match list_or_script_instance {
+                    Datum::List(_, list, _) => list.to_owned(),
+                    Datum::ScriptInstanceRef(_) => VecDeque::from(vec![args[1].clone()]),
+                    _ => {
+                        return Err(ScriptError::new(format!(
+                            "Can only callAncestor on script instances and lists"
+                        )));
                     }
-                    if found { walk_ref } else { original_me_ref.clone() }
-                } else {
-                    original_me_ref.clone()
                 };
 
-                let instance = player.allocator.get_script_instance(&ancestor_source);
-                match instance.ancestor.as_ref() {
-                    Some(ancestor) => {
-                        ancestor_list.push(ancestor.clone());
-                        original_me_list.push(original_me_ref.clone());
-                        instance_datum_refs.push(instance_ref.clone());
-                    }
-                    None => {
-                        // No ancestor — callAncestor is a no-op in Director, return immediately
-                        return Ok((vec![], vec![], vec![], handler_name, vec![]));
+                let mut ancestor_list = vec![];
+                let mut original_me_list = vec![];
+                let mut instance_datum_refs = vec![];
+                for instance_ref in instance_list {
+                    let original_me_ref =
+                        player.get_datum(&instance_ref).to_script_instance_ref()?;
+
+                    // Determine which instance's ancestor to use:
+                    // Walk the ancestor chain to find which instance's script matches
+                    // the current scope's script_ref (i.e. "which level" we're at).
+                    let ancestor_source = if let Some(ref script_ref) = current_script_ref {
+                        let mut walk_ref = original_me_ref.clone();
+                        let mut found = false;
+                        for _ in 0..100 {
+                            let walk_instance = player.allocator.get_script_instance(&walk_ref);
+                            if walk_instance.script == *script_ref {
+                                found = true;
+                                break;
+                            }
+                            if let Some(ref next_ancestor) = walk_instance.ancestor {
+                                walk_ref = next_ancestor.clone();
+                            } else {
+                                break;
+                            }
+                        }
+                        if found {
+                            walk_ref
+                        } else {
+                            original_me_ref.clone()
+                        }
+                    } else {
+                        original_me_ref.clone()
+                    };
+
+                    let instance = player.allocator.get_script_instance(&ancestor_source);
+                    match instance.ancestor.as_ref() {
+                        Some(ancestor) => {
+                            ancestor_list.push(ancestor.clone());
+                            original_me_list.push(original_me_ref.clone());
+                            instance_datum_refs.push(instance_ref.clone());
+                        }
+                        None => {
+                            // No ancestor — callAncestor is a no-op in Director, return immediately
+                            return Ok((vec![], vec![], vec![], handler_name, vec![]));
+                        }
                     }
                 }
-            }
-            // Get extra arguments beyond the instance list (args[2..])
-            // The instance itself will be prepended in each iteration
-            let extra_args = args[2..].to_vec();
-            Ok((ancestor_list, original_me_list, instance_datum_refs, handler_name, extra_args))
-        })?;
+                // Get extra arguments beyond the instance list (args[2..])
+                // The instance itself will be prepended in each iteration
+                let extra_args = args[2..].to_vec();
+                Ok((
+                    ancestor_list,
+                    original_me_list,
+                    instance_datum_refs,
+                    handler_name,
+                    extra_args,
+                ))
+            })?;
 
         let mut result = DatumRef::Void;
         for ((ancestor_ref, original_me_ref), instance_datum_ref) in ancestor_list
@@ -1561,9 +1735,13 @@ impl TypeHandlers {
             // we should call C's handler.
             let handler_and_instance = reserve_player_ref(|player| {
                 let mut walk_ref = ancestor_ref.clone();
-                for _ in 0..100 { // Safety limit
+                for _ in 0..100 {
+                    // Safety limit
                     let walk_instance = player.allocator.get_script_instance(&walk_ref);
-                    let script = player.movie.cast_manager.get_script_by_ref(&walk_instance.script);
+                    let script = player
+                        .movie
+                        .cast_manager
+                        .get_script_by_ref(&walk_instance.script);
                     if let Some(script) = script {
                         if let Some(handler_ref) = script.get_own_handler_ref(&handler_name) {
                             return Some((handler_ref, walk_ref.clone()));
@@ -1591,11 +1769,12 @@ impl TypeHandlers {
                 // but use the handler we found in the ancestor chain.
                 // use_raw_arg_list=true so args are used as-is
                 let scope_result = crate::player::player_call_script_handler_raw_args(
-                    Some(original_me_ref.clone()),  // receiver = original me, for property access
-                    handler_ref,                    // handler from ancestor's script
+                    Some(original_me_ref.clone()), // receiver = original me, for property access
+                    handler_ref,                   // handler from ancestor's script
                     &call_args,
-                    true,  // use_raw_arg_list = true: don't prepend receiver to args
-                ).await?;
+                    true, // use_raw_arg_list = true: don't prepend receiver to args
+                )
+                .await?;
                 crate::player::player_handle_scope_return(&scope_result);
                 result = scope_result.return_value;
             }
@@ -1668,15 +1847,13 @@ impl TypeHandlers {
                 };
                 reserve_player_mut(|player| Ok(player.alloc_datum(Datum::String(value))))
             }
-            "array" => {
-                reserve_player_mut(|player| {
-                    Ok(player.alloc_datum(Datum::List(
-                        crate::director::lingo::datum::DatumType::XmlChildNodes,
-                        VecDeque::new(),
-                        false,
-                    )))
-                })
-            }
+            "array" => reserve_player_mut(|player| {
+                Ok(player.alloc_datum(Datum::List(
+                    crate::director::lingo::datum::DatumType::XmlChildNodes,
+                    VecDeque::new(),
+                    false,
+                )))
+            }),
             _ => Err(ScriptError::new(format!(
                 "newObject: Unsupported object type '{}'",
                 object_type
@@ -1684,27 +1861,30 @@ impl TypeHandlers {
         }
     }
 
-    pub fn sound_busy(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {       
+    pub fn sound_busy(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
             if args.is_empty() {
-                return Err(ScriptError::new("soundBusy requires a channel number".to_string()));
+                return Err(ScriptError::new(
+                    "soundBusy requires a channel number".to_string(),
+                ));
             }
-            
+
             let channel_num_ref = &args[0];
             let channel_num = player.get_datum(channel_num_ref).int_value()?;
-            
+
             // Convert to 0-based index
             let channel_idx = (channel_num - 1) as usize;
-            
+
             // Get the channel directly from sound manager
-            let channel_rc = player.sound_manager.get_channel(channel_idx)
-                .ok_or_else(|| ScriptError::new(format!(
-                    "Sound channel {} out of range",
-                    channel_num
-                )))?;
-            
+            let channel_rc = player
+                .sound_manager
+                .get_channel(channel_idx)
+                .ok_or_else(|| {
+                    ScriptError::new(format!("Sound channel {} out of range", channel_num))
+                })?;
+
             let channel = channel_rc.borrow();
-            
+
             // soundBusy returns true (1) if the channel is Playing, Loading, or Queued
             let status = channel.status.clone();
             let has_source = channel.source_node.is_some();
@@ -1717,7 +1897,9 @@ impl TypeHandlers {
 
             // Check buffer duration for the Playing+source case
             let buffer_duration = if status == SoundStatus::Playing {
-                channel.source_node.as_ref()
+                channel
+                    .source_node
+                    .as_ref()
                     .and_then(|s| s.buffer())
                     .map(|b| b.duration())
             } else {
@@ -1735,8 +1917,15 @@ impl TypeHandlers {
             if is_busy {
                 debug!(
                     "🔍 soundBusy({}) = true, status={:?}, has_source={}, sample_rate={}, sample_count={}, elapsed={:.3}, ctx_time={:.3}, start_time={:.3}, buf_dur={:?}",
-                    channel_num, status, has_source, sample_rate, sample_count,
-                    elapsed_time, ctx_time, start_time, buffer_duration,
+                    channel_num,
+                    status,
+                    has_source,
+                    sample_rate,
+                    sample_count,
+                    elapsed_time,
+                    ctx_time,
+                    start_time,
+                    buffer_duration,
                 );
             }
 
@@ -1771,7 +1960,8 @@ impl TypeHandlers {
                 if start_time > 0.0 && ctx_time - start_time > 5.0 {
                     debug!(
                         "⚠️ soundBusy({}) stuck in Loading for {:.1}s, forcing Idle",
-                        channel_num, ctx_time - start_time
+                        channel_num,
+                        ctx_time - start_time
                     );
                     is_busy = false;
                     channel_rc.borrow_mut().status = SoundStatus::Idle;

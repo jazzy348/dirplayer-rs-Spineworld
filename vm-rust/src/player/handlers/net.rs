@@ -1,9 +1,9 @@
-use std::collections::VecDeque;
 use crate::{
-    director::lingo::datum::{datum_bool, Datum},
-    player::{reserve_player_mut, DatumRef, ScriptError},
+    director::lingo::datum::{Datum, datum_bool},
+    player::{DatumRef, ScriptError, reserve_player_mut},
 };
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use std::collections::VecDeque;
 
 pub struct NetHandlers {}
 
@@ -45,40 +45,54 @@ impl NetHandlers {
         reserve_player_mut(|player| {
             // Support: no args (last task), int task ID, or URL string
             let task_id = if args.is_empty() {
-                player.net_manager.get_last_task_id()
+                player
+                    .net_manager
+                    .get_last_task_id()
                     .ok_or_else(|| ScriptError::new("No network tasks exist".to_string()))?
             } else {
                 let arg = player.get_datum(&args[0]);
                 match arg {
                     Datum::Int(id) => *id as u32,
                     Datum::String(url) => {
-                        player.net_manager.find_task_by_url(url)
-                            .ok_or_else(|| ScriptError::new(format!("Network task not found for URL: {}", url)))?
-                    },
-                    _ => return Err(ScriptError::new(
-                        "getStreamStatus requires an integer task ID or URL string".to_string()
-                    ))
+                        player.net_manager.find_task_by_url(url).ok_or_else(|| {
+                            ScriptError::new(format!("Network task not found for URL: {}", url))
+                        })?
+                    }
+                    _ => {
+                        return Err(ScriptError::new(
+                            "getStreamStatus requires an integer task ID or URL string".to_string(),
+                        ));
+                    }
                 }
             };
 
-            let task = player.net_manager.get_task(task_id)
+            let task = player
+                .net_manager
+                .get_task(task_id)
                 .ok_or_else(|| ScriptError::new(format!("Network task {} not found", task_id)))?;
             let url = task.url.to_owned();
 
-            let task_state = player.net_manager.get_task_state(Some(task_id))
-                .ok_or_else(|| ScriptError::new(format!("Network task state {} not found", task_id)))?;
+            let task_state = player
+                .net_manager
+                .get_task_state(Some(task_id))
+                .ok_or_else(|| {
+                    ScriptError::new(format!("Network task state {} not found", task_id))
+                })?;
 
             let (state, error, bytes_so_far, bytes_total) = match &task_state.result {
                 Some(Ok(bytes)) => {
                     let len = bytes.len() as i32;
                     ("Complete", "OK", len, len)
                 }
-                Some(Err(_code)) => {
-                    ("Error", "Error", 0i32, 0i32)
-                }
+                Some(Err(_code)) => ("Error", "Error", 0i32, 0i32),
                 None => {
                     if task_state.bytes_loaded > 0 {
-                        ("InProgress", "", task_state.bytes_loaded as i32, task_state.bytes_total as i32)
+                        (
+                            "InProgress",
+                            "",
+                            task_state.bytes_loaded as i32,
+                            task_state.bytes_total as i32,
+                        )
                     } else {
                         ("Connecting", "", 0i32, 0i32)
                     }
@@ -118,8 +132,12 @@ impl NetHandlers {
         reserve_player_mut(|player| {
             let task_id = args
                 .get(0)
-                .and_then(|datum_ref| player.get_datum(datum_ref).int_value().ok()).map(|id| id as u32);
-            let task_state = player.net_manager.get_task_state(task_id).ok_or_else(|| ScriptError::new("Network task not found".to_string()))?;
+                .and_then(|datum_ref| player.get_datum(datum_ref).int_value().ok())
+                .map(|id| id as u32);
+            let task_state = player
+                .net_manager
+                .get_task_state(task_id)
+                .ok_or_else(|| ScriptError::new("Network task not found".to_string()))?;
             let is_ok = task_state.is_done() && task_state.result.as_ref().unwrap().is_ok();
             let error = if is_ok {
                 Datum::String("OK".to_owned())
@@ -136,8 +154,12 @@ impl NetHandlers {
         reserve_player_mut(|player| {
             let task_id = args
                 .get(0)
-                .and_then(|datum_ref| player.get_datum(datum_ref).int_value().ok()).map(|id| id as u32);
-            let task_state = player.net_manager.get_task_state(task_id).ok_or_else(|| ScriptError::new("Network task not found".to_string()))?;
+                .and_then(|datum_ref| player.get_datum(datum_ref).int_value().ok())
+                .map(|id| id as u32);
+            let task_state = player
+                .net_manager
+                .get_task_state(task_id)
+                .ok_or_else(|| ScriptError::new("Network task not found".to_string()))?;
             let is_ok = task_state.is_done() && task_state.result.as_ref().unwrap().is_ok();
             let text = if is_ok {
                 let bytes = task_state.result.as_ref().unwrap().as_ref().unwrap();
@@ -208,7 +230,7 @@ impl NetHandlers {
                         return Err(ScriptError::new(format!(
                             "postNetText second argument must be a property list or string, got {}",
                             data_datum.type_str()
-                        )))
+                        )));
                     }
                 }
             } else {

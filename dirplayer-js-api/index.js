@@ -79,6 +79,10 @@ export function onClearAllTimeouts() {
   vmCallbacks.onClearAllTimeouts()
 }
 
+export function onClearTimeouts() {
+  vmCallbacks.onClearAllTimeouts()
+}
+
 export function onDatumSnapshot(datumRef, snapshot) {
   vmCallbacks.onDatumSnapshot(datumRef, snapshot)
 }

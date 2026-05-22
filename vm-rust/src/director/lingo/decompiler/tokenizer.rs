@@ -4,16 +4,16 @@
 /// Token types for syntax highlighting
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenType {
-    Keyword,      // if, then, else, end, repeat, put, set, the, of, etc.
-    Identifier,   // variable and function names
-    Number,       // integers and floats
-    String,       // "quoted strings"
-    Symbol,       // #symbols
-    Operator,     // +, -, *, /, &, =, <>, etc.
-    Comment,      // -- comments
-    Builtin,      // built-in properties/functions (the xxx)
-    Punctuation,  // ( ) [ ] , :
-    Whitespace,   // spaces
+    Keyword,     // if, then, else, end, repeat, put, set, the, of, etc.
+    Identifier,  // variable and function names
+    Number,      // integers and floats
+    String,      // "quoted strings"
+    Symbol,      // #symbols
+    Operator,    // +, -, *, /, &, =, <>, etc.
+    Comment,     // -- comments
+    Builtin,     // built-in properties/functions (the xxx)
+    Punctuation, // ( ) [ ] , :
+    Whitespace,  // spaces
 }
 
 impl TokenType {
@@ -42,12 +42,49 @@ pub struct Span {
 
 /// Keywords in Lingo (case-insensitive)
 const KEYWORDS: &[&str] = &[
-    "if", "then", "else", "end", "repeat", "while", "with", "in", "to", "down",
-    "exit", "return", "next", "put", "into", "before", "after", "set",
-    "global", "property", "on", "me", "new", "case", "of", "otherwise",
-    "tell", "and", "or", "not", "mod", "true", "false", "void",
-    "sprite", "member", "castlib", "field", "the",
-    "char", "word", "line", "item",
+    "if",
+    "then",
+    "else",
+    "end",
+    "repeat",
+    "while",
+    "with",
+    "in",
+    "to",
+    "down",
+    "exit",
+    "return",
+    "next",
+    "put",
+    "into",
+    "before",
+    "after",
+    "set",
+    "global",
+    "property",
+    "on",
+    "me",
+    "new",
+    "case",
+    "of",
+    "otherwise",
+    "tell",
+    "and",
+    "or",
+    "not",
+    "mod",
+    "true",
+    "false",
+    "void",
+    "sprite",
+    "member",
+    "castlib",
+    "field",
+    "the",
+    "char",
+    "word",
+    "line",
+    "item",
 ];
 
 /// Check if a word is a keyword (case-insensitive)
@@ -120,7 +157,9 @@ pub fn tokenize_line(line: &str) -> Vec<Span> {
         }
 
         // Number (including negative numbers and floats)
-        if ch.is_ascii_digit() || (ch == '-' && pos + 1 < chars.len() && chars[pos + 1].is_ascii_digit()) {
+        if ch.is_ascii_digit()
+            || (ch == '-' && pos + 1 < chars.len() && chars[pos + 1].is_ascii_digit())
+        {
             let start = pos;
             if ch == '-' {
                 pos += 1;
@@ -129,7 +168,11 @@ pub fn tokenize_line(line: &str) -> Vec<Span> {
                 pos += 1;
             }
             // Check for decimal point
-            if pos < chars.len() && chars[pos] == '.' && pos + 1 < chars.len() && chars[pos + 1].is_ascii_digit() {
+            if pos < chars.len()
+                && chars[pos] == '.'
+                && pos + 1 < chars.len()
+                && chars[pos + 1].is_ascii_digit()
+            {
                 pos += 1;
                 while pos < chars.len() && chars[pos].is_ascii_digit() {
                     pos += 1;
@@ -252,7 +295,10 @@ mod tests {
     #[test]
     fn test_tokenize_number() {
         let spans = tokenize_line("123 45.67 -89");
-        let numbers: Vec<_> = spans.iter().filter(|s| s.token_type == TokenType::Number).collect();
+        let numbers: Vec<_> = spans
+            .iter()
+            .filter(|s| s.token_type == TokenType::Number)
+            .collect();
         assert_eq!(numbers.len(), 3);
     }
 

@@ -51,7 +51,11 @@ impl<'a> PfrBitReader<'a> {
     }
 
     pub fn remaining(&self) -> usize {
-        if self.pos >= self.data.len() { 0 } else { self.data.len() - self.pos }
+        if self.pos >= self.data.len() {
+            0
+        } else {
+            self.data.len() - self.pos
+        }
     }
 
     pub fn is_eof(&self) -> bool {

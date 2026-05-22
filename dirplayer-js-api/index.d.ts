@@ -47,6 +47,7 @@ type TVmCallbacks = {
   onScheduleTimeout: (timeoutName: string, periodMs: number) => void,
   onClearTimeout: (timeoutName: string) => void,
   onClearAllTimeouts: () => void,
+  onClearTimeouts?: () => void,
   onDatumSnapshot: (datumRef: DatumRef, datum: JsBridgeDatum) => void,
   onScriptInstanceSnapshot: (scriptInstanceRef: ScriptInstanceId, scriptInstance: JsBridgeDatum) => void,
   onChannelChanged: (channelNumber: number, channelData: ScoreSpriteSnapshot) => void,

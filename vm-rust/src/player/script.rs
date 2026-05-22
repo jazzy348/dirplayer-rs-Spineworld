@@ -14,22 +14,22 @@ use crate::director::{
 use super::ci_string::{CiStr, CiString};
 
 use super::{
+    DatumRef, DirPlayer, ScriptError,
     allocator::{DatumAllocatorTrait, ScriptInstanceAllocatorTrait},
     bytecode::handler_manager::BytecodeHandlerContext,
-    cast_lib::{player_cast_lib_set_prop, CastMemberRef},
+    cast_lib::{CastMemberRef, player_cast_lib_set_prop},
     datum_formatting::{format_concrete_datum, format_datum},
     handlers::{
         datum_handlers::{
-            bitmap::BitmapDatumHandlers, cast_member_ref::CastMemberRefHandlers,
-            color::ColorDatumHandlers, int::IntDatumHandlers, list_handlers::ListDatumUtils,
-            point::PointDatumHandlers, prop_list::PropListUtils, rect::RectDatumHandlers,
+            bitmap::BitmapDatumHandlers, cast_member::shockwave3d::Shockwave3dMemberHandlers,
+            cast_member_ref::CastMemberRefHandlers, color::ColorDatumHandlers,
+            date::DateDatumHandlers, float::FloatDatumHandlers, int::IntDatumHandlers,
+            list_handlers::ListDatumUtils, math::MathDatumHandlers, point::PointDatumHandlers,
+            prop_list::PropListUtils, rect::RectDatumHandlers,
             sound_channel::SoundChannelDatumHandlers, string::StringDatumUtils,
             string_chunk::StringChunkHandlers, symbol::SymbolDatumHandlers,
-            timeout::TimeoutDatumHandlers, void::VoidDatumHandlers,
-            date::DateDatumHandlers, math::MathDatumHandlers,
-            vector::VectorDatumHandlers, xml::XmlDatumHandlers,
-            float::FloatDatumHandlers,
-            cast_member::shockwave3d::Shockwave3dMemberHandlers,
+            timeout::TimeoutDatumHandlers, vector::VectorDatumHandlers, void::VoidDatumHandlers,
+            xml::XmlDatumHandlers,
         },
         types::TypeUtils,
     },
@@ -38,7 +38,6 @@ use super::{
     score::{sprite_get_prop, sprite_set_prop},
     script_ref::ScriptInstanceRef,
     stage::{get_stage_prop, set_stage_prop},
-    DatumRef, DirPlayer, ScriptError,
 };
 
 #[derive(Clone)]
@@ -132,7 +131,11 @@ pub fn script_get_prop_opt(
     prop_name: &str,
 ) -> Option<DatumRef> {
     // Check virtual script handler first
-    match super::virtual_scripts::VirtualScriptRegistry::try_get_instance_prop(player, script_instance_ref, prop_name) {
+    match super::virtual_scripts::VirtualScriptRegistry::try_get_instance_prop(
+        player,
+        script_instance_ref,
+        prop_name,
+    ) {
         Ok(Some(datum_ref)) => return Some(datum_ref),
         Ok(None) | Err(_) => {}
     }
@@ -252,11 +255,12 @@ pub fn script_get_prop(
             })
             .collect();
         for (sprite_id, channel_number, fallback) in stage_channel_snapshots {
-            let instance_ids = player.get_sprite_script_instance_ids(
-                sprite_id,
-                fallback.as_slice(),
-            );
-            if instance_ids.iter().any(|si| si.id() == script_instance_ref.id()) {
+            let instance_ids =
+                player.get_sprite_script_instance_ids(sprite_id, fallback.as_slice());
+            if instance_ids
+                .iter()
+                .any(|si| si.id() == script_instance_ref.id())
+            {
                 let datum_ref = player.alloc_datum(Datum::Int(channel_number));
                 return Ok(datum_ref);
             }
@@ -294,7 +298,12 @@ pub fn script_set_prop(
     required: bool,
 ) -> Result<(), ScriptError> {
     // Check virtual script handler first
-    match super::virtual_scripts::VirtualScriptRegistry::try_set_instance_prop(player, script_instance_ref, prop_name, value_ref) {
+    match super::virtual_scripts::VirtualScriptRegistry::try_set_instance_prop(
+        player,
+        script_instance_ref,
+        prop_name,
+        value_ref,
+    ) {
         Ok(Some(())) => return Ok(()),
         Err(e) => return Err(e),
         Ok(None) => {}
@@ -508,6 +517,12 @@ pub async fn player_set_obj_prop(
         Datum::MovieRef => reserve_player_mut(|player| {
             player.set_movie_prop(prop_name, player.get_datum(value_ref).clone())
         }),
+        Datum::GlobalRef => reserve_player_mut(|player| {
+            let value_datum = player.get_datum(value_ref).clone();
+            let stored_ref = player.alloc_datum(value_datum);
+            player.globals.insert(prop_name.to_owned(), stored_ref);
+            Ok(())
+        }),
         Datum::ScriptRef(script_ref) => reserve_player_mut(|player| {
             script_set_static_prop(player, &script_ref, prop_name, value_ref, false)
         }),
@@ -622,11 +637,18 @@ pub fn get_obj_prop(
         Datum::PropList(prop_list, ..) => {
             PropListUtils::get_prop_or_built_in(player, &prop_list, &prop_name)
         }
-        Datum::List(_, list, _) => Ok(player.alloc_datum(ListDatumUtils::get_prop(
-            &list,
-            &prop_name,
-            &player.allocator,
-        )?)),
+        Datum::List(_, list, _) => {
+            if prop_name.eq_ignore_ascii_case("string") {
+                let value = format_concrete_datum(player.get_datum(obj_ref), player);
+                Ok(player.alloc_datum(Datum::String(value)))
+            } else {
+                Ok(player.alloc_datum(ListDatumUtils::get_prop(
+                    &list,
+                    &prop_name,
+                    &player.allocator,
+                )?))
+            }
+        }
         Datum::Stage => {
             let result = get_stage_prop(player, &prop_name)?;
             Ok(player.alloc_datum(result))
@@ -938,6 +960,11 @@ pub fn get_obj_prop(
         Datum::ColorRef(_) => ColorDatumHandlers::get_prop(player, obj_ref, &prop_name),
         Datum::PlayerRef => player.get_player_prop(prop_name),
         Datum::MouseRef => player.get_mouse_prop(&prop_name),
+        Datum::GlobalRef => Ok(player
+            .globals
+            .get(prop_name)
+            .cloned()
+            .unwrap_or(DatumRef::Void)),
         Datum::XmlRef(_) => XmlDatumHandlers::get_prop(player, obj_ref, prop_name),
         Datum::DateRef(_) => DateDatumHandlers::get_prop(player, obj_ref, prop_name),
         Datum::MathRef(_) => MathDatumHandlers::get_prop(player, obj_ref, prop_name),

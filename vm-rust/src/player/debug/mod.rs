@@ -2,7 +2,7 @@ use manual_future::ManualFutureCompleter;
 
 use crate::js_api::JsApi;
 
-use super::{cast_lib::CastMemberRef, script::ScriptHandlerRef, ScriptError};
+use super::{ScriptError, cast_lib::CastMemberRef, script::ScriptHandlerRef};
 
 /// Represents the current step debugging mode
 #[derive(Clone, PartialEq, Debug)]

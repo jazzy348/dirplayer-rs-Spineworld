@@ -5,16 +5,18 @@ use url::Url;
 
 use crate::{
     director::{
-        cast::CastDef, enums::{ScriptType, BitmapInfo},
-        file::{read_director_file_bytes, DirectorFile},
+        cast::CastDef,
+        enums::{BitmapInfo, ScriptType},
+        file::{DirectorFile, read_director_file_bytes},
         lingo::{datum::Datum, script::ScriptContext},
     },
     js_api::JsApi,
-    utils::{get_base_url, get_basename_no_extension, log_i},
     player::{cast_member::ScriptMember, ci_string::CiString},
+    utils::{get_base_url, get_basename_no_extension, log_i},
 };
 
 use super::{
+    PLAYER_OPT, ScriptError,
     allocator::DatumAllocator,
     bitmap::{
         bitmap::{Bitmap, BuiltInPalette, PaletteRef},
@@ -29,7 +31,6 @@ use super::{
     net_task::NetResult,
     reserve_player_mut,
     script::Script,
-    ScriptError, PLAYER_OPT,
 };
 
 pub type CastLibNumber = u32;
@@ -97,9 +98,12 @@ impl CastLib {
             self.load_from_dir_file(cached_file, &file_name, bitmap_manager);
         } else {
             log_i(
-                format_args!("Loading cast {} into castLib {} ('{}')", self.file_name, self.number, self.name)
-                    .to_string()
-                    .as_str(),
+                format_args!(
+                    "Loading cast {} into castLib {} ('{}')",
+                    self.file_name, self.number, self.name
+                )
+                .to_string()
+                .as_str(),
             );
             self.state = CastLibState::Loading;
             let task_id = net_manager.preload_net_thing(self.file_name.clone());
@@ -163,7 +167,6 @@ impl CastLib {
         }
         best
     }
-
 
     fn clear(&mut self) {
         // Clear regardless of state. The previous early-return-when-not-Loaded
@@ -288,9 +291,7 @@ impl CastLib {
             log_i(
                 format_args!(
                     "No cast def found in file {} for castLib {} ('{}')",
-                    load_file_name,
-                    self.number,
-                    self.name
+                    load_file_name, self.number, self.name
                 )
                 .to_string()
                 .as_str(),
@@ -313,7 +314,16 @@ impl CastLib {
         for (id, member_def) in &cast_def.members {
             self.insert_member(
                 *id,
-                CastMember::from(self.number, *id, member_def, &self.lctx, bitmap_manager, self.dir_version, self.palette_id_offset, font_table),
+                CastMember::from(
+                    self.number,
+                    *id,
+                    member_def,
+                    &self.lctx,
+                    bitmap_manager,
+                    self.dir_version,
+                    self.palette_id_offset,
+                    font_table,
+                ),
             );
             JsApi::on_cast_member_name_changed(CastMemberRefHandlers::get_cast_slot_number(
                 self.number,
@@ -326,7 +336,10 @@ impl CastLib {
 
             player_mut.movie.cast_manager.clear_movie_script_cache();
             player_mut.movie.cast_manager.invalidate_member_name_cache();
-            player_mut.movie.cast_manager.load_fonts_into_manager(&mut player_mut.font_manager);
+            player_mut
+                .movie
+                .cast_manager
+                .load_fonts_into_manager(&mut player_mut.font_manager);
         };
     }
 
@@ -342,7 +355,10 @@ impl CastLib {
                 let mut handler_name_map = FxHashMap::default();
                 for handler in &script_def.handlers {
                     let handler_name = &self.lctx.as_ref().unwrap().names[handler.name_id as usize];
-                    handler_name_map.insert(CiString::from(handler_name.clone()), Rc::new(handler.clone()));
+                    handler_name_map.insert(
+                        CiString::from(handler_name.clone()),
+                        Rc::new(handler.clone()),
+                    );
                     handler_names.push(handler_name.to_owned());
                 }
 
@@ -444,21 +460,24 @@ impl CastLib {
         // Use an offset to avoid collision with cast member numbers
         // Behavior scripts are stored at script_id + 1000000
         let cache_key = script_id + 1000000;
-        
+
         // Check if already cached
         if let Some(cached) = self.scripts.get(&cache_key) {
             return Some(cached.clone());
         }
-        
+
         // Get script chunk from lctx.scripts
         let script_chunk = self.lctx.as_ref()?.scripts.get(&script_id)?;
-        
+
         // Build handler map
         let mut handler_names = Vec::new();
         let mut handler_name_map = FxHashMap::default();
         for handler in &script_chunk.handlers {
             let handler_name = &self.lctx.as_ref().unwrap().names[handler.name_id as usize];
-            handler_name_map.insert(CiString::from(handler_name.clone()), Rc::new(handler.clone()));
+            handler_name_map.insert(
+                CiString::from(handler_name.clone()),
+                Rc::new(handler.clone()),
+            );
             handler_names.push(handler_name.to_owned());
         }
 
@@ -481,10 +500,10 @@ impl CastLib {
             handler_names,
             properties: RefCell::new(properties),
         });
-        
+
         // Cache it with the offset key
         self.scripts.insert(cache_key, script.clone());
-        
+
         Some(script)
     }
 }
@@ -513,8 +532,7 @@ pub fn cast_member_ref(cast_lib: i32, cast_member: i32) -> CastMemberRef {
 
 impl CastMemberRef {
     pub fn is_valid(&self) -> bool {
-        self.cast_lib != INVALID_CAST_MEMBER_REF.cast_lib
-            && self.cast_member != INVALID_CAST_MEMBER_REF.cast_member
+        self.cast_lib > 0 && self.cast_member > 0
     }
 }
 

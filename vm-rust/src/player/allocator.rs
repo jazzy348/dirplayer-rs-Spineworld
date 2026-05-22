@@ -6,10 +6,10 @@ use log::{debug, warn};
 use crate::director::lingo::datum::Datum;
 
 use super::{
+    ScriptError,
     datum_ref::{DatumId, DatumRef},
     script::{ScriptInstance, ScriptInstanceId},
     script_ref::ScriptInstanceRef,
-    ScriptError,
 };
 
 /// Flag set during allocator reset to skip DatumRef::drop logic.
@@ -154,8 +154,7 @@ impl<T> Arena<T> {
         }
         let idx = id - 1;
         let chunk_idx = idx / ARENA_CHUNK_SIZE;
-        chunk_idx < self.chunks.len()
-            && self.chunks[chunk_idx][idx % ARENA_CHUNK_SIZE].is_some()
+        chunk_idx < self.chunks.len() && self.chunks[chunk_idx][idx % ARENA_CHUNK_SIZE].is_some()
     }
 
     pub fn len(&self) -> usize {
@@ -168,7 +167,9 @@ impl<T> Arena<T> {
             let chunk_idx = idx / ARENA_CHUNK_SIZE;
             let slot_idx = idx % ARENA_CHUNK_SIZE;
             if chunk_idx < self.chunks.len() {
-                self.chunks[chunk_idx][slot_idx].as_ref().map(|v| (idx + 1, v))
+                self.chunks[chunk_idx][slot_idx]
+                    .as_ref()
+                    .map(|v| (idx + 1, v))
             } else {
                 None
             }
@@ -299,7 +300,10 @@ impl DatumAllocator {
         if self.script_instance_count() >= MAX_SCRIPT_INSTANCE_ID as usize {
             panic!("Script instance limit reached");
         }
-        if !self.script_instances.contains(self.script_instance_counter as usize) {
+        if !self
+            .script_instances
+            .contains(self.script_instance_counter as usize)
+        {
             self.script_instance_counter
         } else if self.script_instance_counter + 1 < MAX_SCRIPT_INSTANCE_ID
             && !self
@@ -328,10 +332,13 @@ impl DatumAllocator {
     }
 
     pub fn datum_type_stats(&self) -> String {
-        let mut counts: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+        let mut counts: std::collections::HashMap<String, (usize, usize)> =
+            std::collections::HashMap::new();
         // Int-specific tracking
-        let mut int_rc_dist: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
-        let mut int_value_dist: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+        let mut int_rc_dist: std::collections::HashMap<u32, usize> =
+            std::collections::HashMap::new();
+        let mut int_value_dist: std::collections::HashMap<i32, usize> =
+            std::collections::HashMap::new();
         let mut int_samples: Vec<(usize, i32, u32)> = Vec::new(); // (id, value, rc)
 
         for (id, entry) in self.datums.iter() {
@@ -354,7 +361,10 @@ impl DatumAllocator {
         sorted.sort_by(|a, b| b.1.0.cmp(&a.1.0));
         let mut result = format!("Live datums: {}\n", self.datums.len());
         for (type_name, (count, total_rc)) in &sorted {
-            result.push_str(&format!("  {}: {} (total rc: {})\n", type_name, count, total_rc));
+            result.push_str(&format!(
+                "  {}: {} (total rc: {})\n",
+                type_name, count, total_rc
+            ));
         }
         result.push_str(&format!("Free list: {}\n", self.datums.free_list.len()));
 
@@ -375,9 +385,12 @@ impl DatumAllocator {
         }
 
         // Int alloc/dealloc counters
-        result.push_str(&format!("Int allocs: {}, deallocs: {}, delta: {}\n",
-            self.int_alloc_count, self.int_dealloc_count,
-            self.int_alloc_count as i64 - self.int_dealloc_count as i64));
+        result.push_str(&format!(
+            "Int allocs: {}, deallocs: {}, delta: {}\n",
+            self.int_alloc_count,
+            self.int_dealloc_count,
+            self.int_alloc_count as i64 - self.int_dealloc_count as i64
+        ));
 
         // Show new Int datums since snapshot (if set)
         if self.snapshot_max_id > 0 {
@@ -394,8 +407,10 @@ impl DatumAllocator {
                     }
                 }
             }
-            result.push_str(&format!("New Int datums since snapshot (id>{}): {}\n",
-                self.snapshot_max_id, new_ints));
+            result.push_str(&format!(
+                "New Int datums since snapshot (id>{}): {}\n",
+                self.snapshot_max_id, new_ints
+            ));
             result.push_str("New Int samples:\n");
             for (id, val, rc) in &new_int_samples {
                 result.push_str(&format!("  #{}: val={}, rc={}\n", id, val, rc));
@@ -415,10 +430,7 @@ impl DatumAllocator {
     /// the freed entry was holding, so the caller can run
     /// `bitmap_manager.decref_ephemeral` after returning — keeps the bitmap
     /// manager hop outside of the allocator's own borrow.
-    fn dealloc_datum(
-        &mut self,
-        id: DatumId,
-    ) -> Option<crate::player::bitmap::manager::BitmapRef> {
+    fn dealloc_datum(&mut self, id: DatumId) -> Option<crate::player::bitmap::manager::BitmapRef> {
         let mut bitmap_to_decref = None;
         if let Some(entry) = self.datums.get(id) {
             if unsafe { *entry.ref_count.get() } == u32::MAX {
@@ -607,19 +619,13 @@ impl ScriptInstanceAllocatorTrait for DatumAllocator {
             .script_instance
     }
 
-    fn get_script_instance_opt(
-        &self,
-        instance_ref: &ScriptInstanceRef,
-    ) -> Option<&ScriptInstance> {
+    fn get_script_instance_opt(&self, instance_ref: &ScriptInstanceRef) -> Option<&ScriptInstance> {
         self.script_instances
             .get(instance_ref.id() as usize)
             .map(|entry| &entry.script_instance)
     }
 
-    fn get_script_instance_mut(
-        &mut self,
-        instance_ref: &ScriptInstanceRef,
-    ) -> &mut ScriptInstance {
+    fn get_script_instance_mut(&mut self, instance_ref: &ScriptInstanceRef) -> &mut ScriptInstance {
         &mut self
             .script_instances
             .get_mut(instance_ref.id() as usize)
@@ -637,7 +643,9 @@ impl ResetableAllocator for DatumAllocator {
         // Remove entries individually to ensure proper Drop cleanup.
         // Datum Drop impls may reference other datums, so reverse order
         // helps ensure dependents are dropped before their dependencies.
-        unsafe { ALLOCATOR_RESETTING = true; }
+        unsafe {
+            ALLOCATOR_RESETTING = true;
+        }
 
         debug!("Removing all datums");
         self.datums.clear_individually_reverse();
@@ -647,7 +655,9 @@ impl ResetableAllocator for DatumAllocator {
 
         self.script_instance_counter = 1;
 
-        unsafe { ALLOCATOR_RESETTING = false; }
+        unsafe {
+            ALLOCATOR_RESETTING = false;
+        }
 
         // Re-create pools after clearing
         self.symbol_pool.clear();

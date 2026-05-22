@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use super::skeleton::{build_node_world_matrices, export_basis_transform};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct W3dMaterial {
@@ -51,8 +51,12 @@ impl Default for W3dTextureLayer {
             blend_src: 0,
             blend_const: 0.5,
             tex_mode: 0,
-            tex_transform: [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
-            wrap_transform: [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+            tex_transform: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            wrap_transform: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
             repeat_s: 1,
             repeat_t: 1,
         }
@@ -70,7 +74,9 @@ pub enum W3dShaderType {
 }
 
 impl Default for W3dShaderType {
-    fn default() -> Self { W3dShaderType::LitTexture }
+    fn default() -> Self {
+        W3dShaderType::LitTexture
+    }
 }
 
 /// W3dShader: Director shader properties.
@@ -92,8 +98,8 @@ pub struct W3dShader {
     /// When false (default), textured models use white (1,1,1) for lighting.
     pub use_diffuse_with_texture: bool,
     // NPR-specific fields
-    pub toon_steps: u32,      // ShaderPainter: number of quantization steps
-    pub outline_width: f32,   // ShaderInker: outline thickness
+    pub toon_steps: u32,         // ShaderPainter: number of quantization steps
+    pub outline_width: f32,      // ShaderInker: outline thickness
     pub outline_color: [f32; 4], // ShaderInker: outline color (RGBA)
 }
 
@@ -188,9 +194,7 @@ impl W3dMotionTrack {
         let t = if dt > 0.0 { (time - k0.time) / dt } else { 0.0 };
 
         let (rx, ry, rz, rw) = slerp(
-            k0.rot_x, k0.rot_y, k0.rot_z, k0.rot_w,
-            k1.rot_x, k1.rot_y, k1.rot_z, k1.rot_w,
-            t,
+            k0.rot_x, k0.rot_y, k0.rot_z, k0.rot_w, k1.rot_x, k1.rot_y, k1.rot_z, k1.rot_w, t,
         );
 
         W3dKeyframe {
@@ -210,8 +214,14 @@ impl W3dMotionTrack {
 }
 
 fn slerp(
-    ax: f32, ay: f32, az: f32, aw: f32,
-    mut bx: f32, mut by: f32, mut bz: f32, mut bw: f32,
+    ax: f32,
+    ay: f32,
+    az: f32,
+    aw: f32,
+    mut bx: f32,
+    mut by: f32,
+    mut bz: f32,
+    mut bw: f32,
     t: f32,
 ) -> (f32, f32, f32, f32) {
     let mut dot = ax * bx + ay * by + az * bz + aw * bw;
@@ -496,7 +506,10 @@ impl W3dScene {
                     let v0 = face[0] + vert_off;
                     let v1 = face[1] + vert_off;
                     let v2 = face[2] + vert_off;
-                    if (v0 as usize) < positions.len() && (v1 as usize) < positions.len() && (v2 as usize) < positions.len() {
+                    if (v0 as usize) < positions.len()
+                        && (v1 as usize) < positions.len()
+                        && (v2 as usize) < positions.len()
+                    {
                         faces.push([v0, v1, v2]);
                     }
                 }
@@ -504,7 +517,8 @@ impl W3dScene {
             }
 
             // Build combined face list for normal recalculation
-            let all_faces: Vec<(usize, [u32; 3])> = mesh_face_groups.iter()
+            let all_faces: Vec<(usize, [u32; 3])> = mesh_face_groups
+                .iter()
                 .flat_map(|(_, faces)| faces.iter().map(|f| (0usize, *f)))
                 .collect();
 
@@ -523,7 +537,10 @@ impl W3dScene {
                 if has_vcolors {
                     let c = &vertex_colors[i];
                     // Extended OBJ: v x y z r g b (supported by MeshLab, Blender, etc.)
-                    obj.push_str(&format!("v {:.6} {:.6} {:.6} {:.4} {:.4} {:.4}\n", px, py, pz, c[0], c[1], c[2]));
+                    obj.push_str(&format!(
+                        "v {:.6} {:.6} {:.6} {:.4} {:.4} {:.4}\n",
+                        px, py, pz, c[0], c[1], c[2]
+                    ));
                 } else {
                     obj.push_str(&format!("v {:.6} {:.6} {:.6}\n", px, py, pz));
                 }
@@ -560,7 +577,9 @@ impl W3dScene {
                 }
 
                 for face in faces {
-                    if face[0] >= pos_count || face[1] >= pos_count || face[2] >= pos_count { continue; }
+                    if face[0] >= pos_count || face[1] >= pos_count || face[2] >= pos_count {
+                        continue;
+                    }
                     let v0 = face[0] + total_verts + 1;
                     let v1 = face[1] + total_verts + 1;
                     let v2 = face[2] + total_verts + 1;
@@ -572,7 +591,10 @@ impl W3dScene {
                         let t1 = face[1] + total_texcoords + 1;
                         let t2 = face[2] + total_texcoords + 1;
                         // Reverse winding (v0,v2,v1) for correct OBJ CCW front faces
-                        obj.push_str(&format!("f {}/{}/{} {}/{}/{} {}/{}/{}\n", v0, t0, n0, v2, t2, n2, v1, t1, n1));
+                        obj.push_str(&format!(
+                            "f {}/{}/{} {}/{}/{} {}/{}/{}\n",
+                            v0, t0, n0, v2, t2, n2, v1, t1, n1
+                        ));
                     } else {
                         obj.push_str(&format!("f {}//{} {}//{} {}//{}\n", v0, n0, v2, n2, v1, n1));
                     }
@@ -594,7 +616,10 @@ impl W3dScene {
                 let (px, py, pz) = transform_point(&basis_transform, pos[0], pos[1], pos[2]);
                 if has_raw_vcolors {
                     let c = &mesh.vertex_colors[i];
-                    obj.push_str(&format!("v {:.6} {:.6} {:.6} {:.4} {:.4} {:.4}\n", px, py, pz, c[0], c[1], c[2]));
+                    obj.push_str(&format!(
+                        "v {:.6} {:.6} {:.6} {:.4} {:.4} {:.4}\n",
+                        px, py, pz, c[0], c[1], c[2]
+                    ));
                 } else {
                     obj.push_str(&format!("v {:.6} {:.6} {:.6}\n", px, py, pz));
                 }
@@ -632,7 +657,10 @@ impl W3dScene {
                     let t0 = face[0] + total_texcoords + 1;
                     let t1 = face[1] + total_texcoords + 1;
                     let t2 = face[2] + total_texcoords + 1;
-                    obj.push_str(&format!("f {}/{}/{} {}/{}/{} {}/{}/{}\n", v0, t0, n0, v1, t1, n1, v2, t2, n2));
+                    obj.push_str(&format!(
+                        "f {}/{}/{} {}/{}/{} {}/{}/{}\n",
+                        v0, t0, n0, v1, t1, n1, v2, t2, n2
+                    ));
                 } else if has_normals {
                     let n0 = face[0] + total_normals + 1;
                     let n1 = face[1] + total_normals + 1;
@@ -645,7 +673,9 @@ impl W3dScene {
 
             total_verts += mesh.positions.len() as u32;
             total_normals += mesh.normals.len() as u32;
-            if has_tc { total_texcoords += mesh.tex_coords.len() as u32; }
+            if has_tc {
+                total_texcoords += mesh.tex_coords.len() as u32;
+            }
         }
 
         obj
@@ -659,20 +689,42 @@ impl W3dScene {
         for mat in &self.materials {
             let safe_name = mat.name.replace(' ', "_");
             mtl.push_str(&format!("newmtl {}\n", safe_name));
-            mtl.push_str(&format!("Ka {:.4} {:.4} {:.4}\n", mat.ambient[0], mat.ambient[1], mat.ambient[2]));
-            mtl.push_str(&format!("Kd {:.4} {:.4} {:.4}\n", mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]));
-            mtl.push_str(&format!("Ks {:.4} {:.4} {:.4}\n", mat.specular[0], mat.specular[1], mat.specular[2]));
-            mtl.push_str(&format!("Ke {:.4} {:.4} {:.4}\n", mat.emissive[0], mat.emissive[1], mat.emissive[2]));
-            let ns = if mat.reflectivity > 0.0 { mat.reflectivity * 1000.0 } else { mat.shininess };
+            mtl.push_str(&format!(
+                "Ka {:.4} {:.4} {:.4}\n",
+                mat.ambient[0], mat.ambient[1], mat.ambient[2]
+            ));
+            mtl.push_str(&format!(
+                "Kd {:.4} {:.4} {:.4}\n",
+                mat.diffuse[0], mat.diffuse[1], mat.diffuse[2]
+            ));
+            mtl.push_str(&format!(
+                "Ks {:.4} {:.4} {:.4}\n",
+                mat.specular[0], mat.specular[1], mat.specular[2]
+            ));
+            mtl.push_str(&format!(
+                "Ke {:.4} {:.4} {:.4}\n",
+                mat.emissive[0], mat.emissive[1], mat.emissive[2]
+            ));
+            let ns = if mat.reflectivity > 0.0 {
+                mat.reflectivity * 1000.0
+            } else {
+                mat.shininess
+            };
             if ns > 0.0 {
                 mtl.push_str(&format!("Ns {:.4}\n", ns));
             }
             mtl.push_str(&format!("d {:.4}\n", mat.opacity));
 
             // Find texture maps from shaders
-            if let Some(shader) = self.shaders.iter().find(|s| s.material_name.eq_ignore_ascii_case(&mat.name)) {
+            if let Some(shader) = self
+                .shaders
+                .iter()
+                .find(|s| s.material_name.eq_ignore_ascii_case(&mat.name))
+            {
                 for layer in &shader.texture_layers {
-                    if layer.name.is_empty() { continue; }
+                    if layer.name.is_empty() {
+                        continue;
+                    }
                     let ext = self.get_texture_extension(&layer.name);
                     match layer.tex_mode {
                         0 | 5 => mtl.push_str(&format!("map_Kd {}.{}\n", layer.name, ext)),
@@ -694,7 +746,9 @@ impl W3dScene {
     pub fn export_textures(&self) -> Vec<(String, Vec<u8>)> {
         let mut result = Vec::new();
         for (name, data) in &self.texture_images {
-            if data.is_empty() { continue; }
+            if data.is_empty() {
+                continue;
+            }
             let ext = self.get_texture_extension(name);
             let filename = format!("{}.{}", name, ext);
 
@@ -720,8 +774,12 @@ impl W3dScene {
 
     fn get_texture_extension(&self, tex_name: &str) -> &str {
         if let Some(data) = self.texture_images.get(tex_name) {
-            if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 { return "jpg"; }
-            if data.len() >= 2 && data[0] == 0x89 && data[1] == 0x50 { return "png"; }
+            if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
+                return "jpg";
+            }
+            if data.len() >= 2 && data[0] == 0x89 && data[1] == 0x50 {
+                return "png";
+            }
         }
         "jpg"
     }
@@ -730,11 +788,23 @@ impl W3dScene {
     pub fn resolve_material_for_resource(&self, resource_name: &str) -> Option<String> {
         // Try model node shader → material chain
         for node in &self.nodes {
-            if node.node_type != W3dNodeType::Model { continue; }
-            let res = if !node.model_resource_name.is_empty() { &node.model_resource_name } else { &node.resource_name };
-            if res != resource_name { continue; }
+            if node.node_type != W3dNodeType::Model {
+                continue;
+            }
+            let res = if !node.model_resource_name.is_empty() {
+                &node.model_resource_name
+            } else {
+                &node.resource_name
+            };
+            if res != resource_name {
+                continue;
+            }
             if !node.shader_name.is_empty() {
-                if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(&node.shader_name)) {
+                if let Some(shader) = self
+                    .shaders
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(&node.shader_name))
+                {
                     if !shader.material_name.is_empty() {
                         return Some(shader.material_name.clone());
                     }
@@ -745,31 +815,51 @@ impl W3dScene {
         if let Some(res) = self.model_resources.get(resource_name) {
             for binding in &res.shader_bindings {
                 // Try binding name as shader name
-                if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(&binding.name)) {
+                if let Some(shader) = self
+                    .shaders
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(&binding.name))
+                {
                     if !shader.material_name.is_empty() {
                         return Some(shader.material_name.clone());
                     }
                 }
                 // Try binding name as direct material name
-                if self.materials.iter().any(|m| m.name.eq_ignore_ascii_case(&binding.name)) {
+                if self
+                    .materials
+                    .iter()
+                    .any(|m| m.name.eq_ignore_ascii_case(&binding.name))
+                {
                     return Some(binding.name.clone());
                 }
                 // Try mesh binding names
                 for mesh_binding in &binding.mesh_bindings {
-                    if mesh_binding.is_empty() { continue; }
-                    if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(mesh_binding)) {
+                    if mesh_binding.is_empty() {
+                        continue;
+                    }
+                    if let Some(shader) = self
+                        .shaders
+                        .iter()
+                        .find(|s| s.name.eq_ignore_ascii_case(mesh_binding))
+                    {
                         if !shader.material_name.is_empty() {
                             return Some(shader.material_name.clone());
                         }
                     }
-                    if self.materials.iter().any(|m| m.name.eq_ignore_ascii_case(mesh_binding)) {
+                    if self
+                        .materials
+                        .iter()
+                        .any(|m| m.name.eq_ignore_ascii_case(mesh_binding))
+                    {
                         return Some(mesh_binding.clone());
                     }
                 }
             }
         }
         // Fallback: if there's only one non-default material, use it
-        let non_default: Vec<_> = self.materials.iter()
+        let non_default: Vec<_> = self
+            .materials
+            .iter()
             .filter(|m| !m.name.contains("Default"))
             .collect();
         if non_default.len() == 1 {
@@ -784,20 +874,34 @@ impl W3dScene {
             for binding in &res.shader_bindings {
                 if mesh_idx < binding.mesh_bindings.len() {
                     let binding_name = &binding.mesh_bindings[mesh_idx];
-                    if binding_name.is_empty() { continue; }
+                    if binding_name.is_empty() {
+                        continue;
+                    }
                     // Try as shader name → material
-                    if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(binding_name)) {
+                    if let Some(shader) = self
+                        .shaders
+                        .iter()
+                        .find(|s| s.name.eq_ignore_ascii_case(binding_name))
+                    {
                         if !shader.material_name.is_empty() {
                             return Some(shader.material_name.clone());
                         }
                     }
                     // Try as direct material name
-                    if self.materials.iter().any(|m| m.name.eq_ignore_ascii_case(binding_name)) {
+                    if self
+                        .materials
+                        .iter()
+                        .any(|m| m.name.eq_ignore_ascii_case(binding_name))
+                    {
                         return Some(binding_name.clone());
                     }
                 }
                 // Try binding.name as shader for all meshes
-                if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(&binding.name)) {
+                if let Some(shader) = self
+                    .shaders
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(&binding.name))
+                {
                     if !shader.material_name.is_empty() {
                         return Some(shader.material_name.clone());
                     }
@@ -811,11 +915,23 @@ impl W3dScene {
     fn resolve_raw_mesh_material(&self, mesh_name: &str) -> Option<String> {
         // Try to find a model node that references this mesh
         for node in &self.nodes {
-            if node.node_type != W3dNodeType::Model { continue; }
-            let res = if !node.model_resource_name.is_empty() { &node.model_resource_name } else { &node.resource_name };
-            if res != mesh_name { continue; }
+            if node.node_type != W3dNodeType::Model {
+                continue;
+            }
+            let res = if !node.model_resource_name.is_empty() {
+                &node.model_resource_name
+            } else {
+                &node.resource_name
+            };
+            if res != mesh_name {
+                continue;
+            }
             if !node.shader_name.is_empty() {
-                if let Some(shader) = self.shaders.iter().find(|s| s.name.eq_ignore_ascii_case(&node.shader_name)) {
+                if let Some(shader) = self
+                    .shaders
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(&node.shader_name))
+                {
                     if !shader.material_name.is_empty() {
                         return Some(shader.material_name.clone());
                     }
@@ -835,9 +951,17 @@ impl W3dScene {
     fn find_transform_for_resource(&self, resource_name: &str) -> Option<[f32; 16]> {
         let world_transforms = build_node_world_matrices(&self.nodes);
         for node in &self.nodes {
-            if node.node_type != W3dNodeType::Model { continue; }
-            let res = if !node.model_resource_name.is_empty() { &node.model_resource_name } else { &node.resource_name };
-            if res != resource_name { continue; }
+            if node.node_type != W3dNodeType::Model {
+                continue;
+            }
+            let res = if !node.model_resource_name.is_empty() {
+                &node.model_resource_name
+            } else {
+                &node.resource_name
+            };
+            if res != resource_name {
+                continue;
+            }
             if let Some(world_transform) = world_transforms.get(&node.name) {
                 if !is_identity(world_transform) {
                     return Some(*world_transform);
@@ -851,7 +975,10 @@ impl W3dScene {
 /// Recalculate smooth normals from positions and faces.
 /// Area-weighted face normals accumulated per vertex, then normalized.
 /// Ported from C# CLODMeshDecoder.RecalculateSmoothNormals.
-fn recalculate_smooth_normals(positions: &[[f32; 3]], faces: &[(usize, [u32; 3])]) -> Vec<[f32; 3]> {
+fn recalculate_smooth_normals(
+    positions: &[[f32; 3]],
+    faces: &[(usize, [u32; 3])],
+) -> Vec<[f32; 3]> {
     let mut accum = vec![[0.0f32; 3]; positions.len()];
 
     for (_, face) in faces {
@@ -859,32 +986,55 @@ fn recalculate_smooth_normals(positions: &[[f32; 3]], faces: &[(usize, [u32; 3])
         let i1 = face[1] as usize;
         let i2 = face[2] as usize;
 
-        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() { continue; }
-        if i0 == i1 || i1 == i2 || i0 == i2 { continue; }
+        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+            continue;
+        }
+        if i0 == i1 || i1 == i2 || i0 == i2 {
+            continue;
+        }
 
         let p0 = positions[i0];
         let p1 = positions[i1];
         let p2 = positions[i2];
 
-        let e1x = p1[0] - p0[0]; let e1y = p1[1] - p0[1]; let e1z = p1[2] - p0[2];
-        let e2x = p2[0] - p0[0]; let e2y = p2[1] - p0[1]; let e2z = p2[2] - p0[2];
+        let e1x = p1[0] - p0[0];
+        let e1y = p1[1] - p0[1];
+        let e1z = p1[2] - p0[2];
+        let e2x = p2[0] - p0[0];
+        let e2y = p2[1] - p0[1];
+        let e2z = p2[2] - p0[2];
 
         // Cross product = face normal * 2*area (area-weighted)
         let nx = e1y * e2z - e1z * e2y;
         let ny = e1z * e2x - e1x * e2z;
         let nz = e1x * e2y - e1y * e2x;
 
-        if nx * nx + ny * ny + nz * nz < 1e-12 { continue; }
+        if nx * nx + ny * ny + nz * nz < 1e-12 {
+            continue;
+        }
 
-        accum[i0][0] += nx; accum[i0][1] += ny; accum[i0][2] += nz;
-        accum[i1][0] += nx; accum[i1][1] += ny; accum[i1][2] += nz;
-        accum[i2][0] += nx; accum[i2][1] += ny; accum[i2][2] += nz;
+        accum[i0][0] += nx;
+        accum[i0][1] += ny;
+        accum[i0][2] += nz;
+        accum[i1][0] += nx;
+        accum[i1][1] += ny;
+        accum[i1][2] += nz;
+        accum[i2][0] += nx;
+        accum[i2][1] += ny;
+        accum[i2][2] += nz;
     }
 
-    accum.iter().map(|n| {
-        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        if len > 1e-8 { [n[0] / len, n[1] / len, n[2] / len] } else { [0.0, 1.0, 0.0] }
-    }).collect()
+    accum
+        .iter()
+        .map(|n| {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if len > 1e-8 {
+                [n[0] / len, n[1] / len, n[2] / len]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
+        })
+        .collect()
 }
 
 fn transform_point(m: &[f32; 16], x: f32, y: f32, z: f32) -> (f32, f32, f32) {
@@ -900,11 +1050,17 @@ fn transform_normal(m: &[f32; 16], nx: f32, ny: f32, nz: f32) -> (f32, f32, f32)
     let oy = m[1] * nx + m[5] * ny + m[9] * nz;
     let oz = m[2] * nx + m[6] * ny + m[10] * nz;
     let len = (ox * ox + oy * oy + oz * oz).sqrt();
-    if len > 1e-8 { (ox / len, oy / len, oz / len) } else { (nx, ny, nz) }
+    if len > 1e-8 {
+        (ox / len, oy / len, oz / len)
+    } else {
+        (nx, ny, nz)
+    }
 }
 
 fn is_identity(m: &[f32; 16]) -> bool {
-    let id = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+    let id = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
     m.iter().zip(id.iter()).all(|(a, b)| (a - b).abs() < 1e-6)
 }
 
@@ -914,16 +1070,16 @@ fn encode_tga_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     let h = height as u16;
     // TGA header: 18 bytes
     let mut tga = Vec::with_capacity(18 + rgba.len());
-    tga.push(0);           // ID length
-    tga.push(0);           // Color map type (none)
-    tga.push(2);           // Image type (uncompressed true-color)
+    tga.push(0); // ID length
+    tga.push(0); // Color map type (none)
+    tga.push(2); // Image type (uncompressed true-color)
     tga.extend_from_slice(&[0, 0, 0, 0, 0]); // Color map spec (unused)
     tga.extend_from_slice(&[0, 0]); // X origin
     tga.extend_from_slice(&[0, 0]); // Y origin
     tga.extend_from_slice(&w.to_le_bytes()); // Width
     tga.extend_from_slice(&h.to_le_bytes()); // Height
-    tga.push(32);          // Bits per pixel (BGRA)
-    tga.push(0x28);        // Image descriptor: top-left origin + 8 alpha bits
+    tga.push(32); // Bits per pixel (BGRA)
+    tga.push(0x28); // Image descriptor: top-left origin + 8 alpha bits
 
     // Convert RGBA to BGRA (TGA native order)
     for pixel in rgba.chunks_exact(4) {

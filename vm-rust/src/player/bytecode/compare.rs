@@ -1,10 +1,11 @@
 use num::ToPrimitive;
 
 use crate::{
-    director::lingo::datum::{datum_bool, Datum},
+    director::lingo::datum::{Datum, datum_bool},
     player::{
+        HandlerExecutionResult, ScriptError,
         compare::{datum_equals, datum_greater_than, datum_less_than},
-        reserve_player_mut, HandlerExecutionResult, ScriptError,
+        reserve_player_mut,
     },
 };
 
@@ -15,12 +16,17 @@ pub struct CompareBytecodeHandler {}
 impl CompareBytecodeHandler {
     pub fn gt(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
-            let (left, right) = {
-                let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("gt: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("gt: stack underflow (left)".to_string()))?;
-                (left, right)
-            };
+            let (left, right) =
+                {
+                    let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
+                    let right = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("gt: stack underflow (right)".to_string())
+                    })?;
+                    let left = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("gt: stack underflow (left)".to_string())
+                    })?;
+                    (left, right)
+                };
             let right = player.get_datum(&right);
             let left = player.get_datum(&left);
 
@@ -35,12 +41,17 @@ impl CompareBytecodeHandler {
 
     pub fn lt(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
-            let (left, right) = {
-                let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("lt: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("lt: stack underflow (left)".to_string()))?;
-                (left, right)
-            };
+            let (left, right) =
+                {
+                    let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
+                    let right = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("lt: stack underflow (right)".to_string())
+                    })?;
+                    let left = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("lt: stack underflow (left)".to_string())
+                    })?;
+                    (left, right)
+                };
             let right = player.get_datum(&right);
             let left = player.get_datum(&left);
 
@@ -57,8 +68,13 @@ impl CompareBytecodeHandler {
         reserve_player_mut(|player| {
             let (left, right) = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("lt_eq: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("lt_eq: stack underflow (left)".to_string()))?;
+                let right = scope.stack.pop().ok_or_else(|| {
+                    ScriptError::new("lt_eq: stack underflow (right)".to_string())
+                })?;
+                let left = scope
+                    .stack
+                    .pop()
+                    .ok_or_else(|| ScriptError::new("lt_eq: stack underflow (left)".to_string()))?;
                 (left, right)
             };
             let right = player.get_datum(&right);
@@ -78,8 +94,13 @@ impl CompareBytecodeHandler {
         reserve_player_mut(|player| {
             let (left, right) = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("gt_eq: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("gt_eq: stack underflow (left)".to_string()))?;
+                let right = scope.stack.pop().ok_or_else(|| {
+                    ScriptError::new("gt_eq: stack underflow (right)".to_string())
+                })?;
+                let left = scope
+                    .stack
+                    .pop()
+                    .ok_or_else(|| ScriptError::new("gt_eq: stack underflow (left)".to_string()))?;
                 (left, right)
             };
             let right = player.get_datum(&right);
@@ -100,7 +121,10 @@ impl CompareBytecodeHandler {
         reserve_player_mut(|player| {
             let obj_id = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                scope.stack.pop().ok_or_else(|| ScriptError::new("not: stack underflow".to_string()))?
+                scope
+                    .stack
+                    .pop()
+                    .ok_or_else(|| ScriptError::new("not: stack underflow".to_string()))?
             };
             let obj = player.get_datum(&obj_id);
             let is_not = match obj {
@@ -120,8 +144,13 @@ impl CompareBytecodeHandler {
         reserve_player_mut(|player| {
             let (left, right) = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("nt_eq: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("nt_eq: stack underflow (left)".to_string()))?;
+                let right = scope.stack.pop().ok_or_else(|| {
+                    ScriptError::new("nt_eq: stack underflow (right)".to_string())
+                })?;
+                let left = scope
+                    .stack
+                    .pop()
+                    .ok_or_else(|| ScriptError::new("nt_eq: stack underflow (left)".to_string()))?;
                 (left, right)
             };
             let right = player.get_datum(&right);
@@ -138,12 +167,17 @@ impl CompareBytecodeHandler {
 
     pub fn and(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
-            let (left, right) = {
-                let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("and: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("and: stack underflow (left)".to_string()))?;
-                (left, right)
-            };
+            let (left, right) =
+                {
+                    let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
+                    let right = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("and: stack underflow (right)".to_string())
+                    })?;
+                    let left = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("and: stack underflow (left)".to_string())
+                    })?;
+                    (left, right)
+                };
             let right = player.get_datum(&right);
             let left = player.get_datum(&left);
 
@@ -159,12 +193,17 @@ impl CompareBytecodeHandler {
 
     pub fn or(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
         reserve_player_mut(|player| {
-            let (left, right) = {
-                let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("or: stack underflow (right)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("or: stack underflow (left)".to_string()))?;
-                (left, right)
-            };
+            let (left, right) =
+                {
+                    let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
+                    let right = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("or: stack underflow (right)".to_string())
+                    })?;
+                    let left = scope.stack.pop().ok_or_else(|| {
+                        ScriptError::new("or: stack underflow (left)".to_string())
+                    })?;
+                    (left, right)
+                };
             let right = player.get_datum(&right);
             let left = player.get_datum(&left);
 
@@ -181,8 +220,12 @@ impl CompareBytecodeHandler {
         reserve_player_mut(|player| {
             let (left, right) = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
-                let right = scope.stack.pop().ok_or_else(|| ScriptError::new("eq: stack underflow (right operand)".to_string()))?;
-                let left = scope.stack.pop().ok_or_else(|| ScriptError::new("eq: stack underflow (left operand)".to_string()))?;
+                let right = scope.stack.pop().ok_or_else(|| {
+                    ScriptError::new("eq: stack underflow (right operand)".to_string())
+                })?;
+                let left = scope.stack.pop().ok_or_else(|| {
+                    ScriptError::new("eq: stack underflow (left operand)".to_string())
+                })?;
                 (left, right)
             };
             let right = player.get_datum(&right);

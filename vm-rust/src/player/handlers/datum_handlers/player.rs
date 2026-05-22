@@ -1,11 +1,8 @@
+use super::super::types::TypeHandlers;
 use crate::{
     director::lingo::datum::Datum,
-    player::{
-        reserve_player_mut, reserve_player_ref, DatumRef,
-        ScriptError, ScriptErrorCode,
-    },
+    player::{DatumRef, ScriptError, ScriptErrorCode, reserve_player_mut, reserve_player_ref},
 };
-use super::super::types::TypeHandlers;
 
 pub struct PlayerDatumHandlers {}
 

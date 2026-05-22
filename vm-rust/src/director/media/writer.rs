@@ -1,7 +1,13 @@
-use binary_rw::{BinaryWriter, BinaryError, Endian};
+use binary_rw::{BinaryError, BinaryWriter, Endian};
 use num::ToPrimitive;
 
-use crate::{director::{enums::BitmapInfo, utils::FOURCC}, player::{bitmap::bitmap::{PaletteRef, compress_bitmap, encode_bitmap_data}, cast_member::Media}};
+use crate::{
+    director::{enums::BitmapInfo, utils::FOURCC},
+    player::{
+        bitmap::bitmap::{PaletteRef, compress_bitmap, encode_bitmap_data},
+        cast_member::Media,
+    },
+};
 
 fn map_err(e: BinaryError) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e))
@@ -10,16 +16,25 @@ fn map_err(e: BinaryError) -> std::io::Error {
 fn compute_pitch(width: u16, bit_depth: u8) -> u16 {
     // ceil(width * bit_depth / 8) rounded up to the next even number
     let row_bytes = ((width as u32 * bit_depth as u32) + 7) / 8;
-    if row_bytes % 2 != 0 { (row_bytes + 1) as u16 } else { row_bytes as u16 }
+    if row_bytes % 2 != 0 {
+        (row_bytes + 1) as u16
+    } else {
+        row_bytes as u16
+    }
 }
 
 pub trait MediaWriter {
-    fn write_media(&mut self, media: &Media, chunk_endian: Endian) -> Result<usize, std::io::Error>;
+    fn write_media(&mut self, media: &Media, chunk_endian: Endian)
+    -> Result<usize, std::io::Error>;
     fn write_bitmap_media_metadata(&mut self, info: &BitmapInfo) -> Result<usize, std::io::Error>;
 }
 
 impl MediaWriter for BinaryWriter<'_> {
-    fn write_media(&mut self, media: &Media, chunk_endian: Endian) -> Result<usize, std::io::Error> {
+    fn write_media(
+        &mut self,
+        media: &Media,
+        chunk_endian: Endian,
+    ) -> Result<usize, std::io::Error> {
         match media {
             Media::Bitmap { bitmap, reg_point } => {
                 let target_bit_depth = bitmap.original_bit_depth;
@@ -91,24 +106,26 @@ impl MediaWriter for BinaryWriter<'_> {
     }
 
     fn write_bitmap_media_metadata(&mut self, info: &BitmapInfo) -> Result<usize, std::io::Error> {
-        let mut written = self.write_u16(0x0200u16).map_err(map_err)?;       // _unknown_0: Constant 02 00
-        written += self.write_bytes(&[0u8; 14]).map_err(map_err)?;            // _unknown_1: All zeros
-        written += self.write_u16(0x0100u16).map_err(map_err)?;               // _unknown_2: Constant 01 00
-        written += self.write_bytes(&[0u8; 6]).map_err(map_err)?;             // _unknown_3: All zeros
-        written += self.write_u16(info.pitch).map_err(map_err)?;              // row_bytes (pitch)
-        written += self.write_i16(0i16).map_err(map_err)?;                    // rect_top
-        written += self.write_i16(0i16).map_err(map_err)?;                    // rect_left
-        written += self.write_i16(info.height as i16).map_err(map_err)?;      // rect_bottom
-        written += self.write_i16(info.width as i16).map_err(map_err)?;       // rect_right
-        written += self.write_bytes(&[0x01]).map_err(map_err)?;               // _unknown_4: Constant 0x01
-        written += self.write_bytes(&[0u8; 7]).map_err(map_err)?;             // _unknown_5: All zeros
-        written += self.write_i16(info.reg_y).map_err(map_err)?;              // reg_y
-        written += self.write_i16(info.reg_x).map_err(map_err)?;              // reg_x
-        written += self.write_i8(0xa0u8 as i8).map_err(map_err)?;            // _unknown_6: Constant 0xa0
-        written += self.write_u8(info.bit_depth).map_err(map_err)?;           // depth
-        written += self.write_i16(-1i16).map_err(map_err)?;                   // clut_cast_lib: -1 for builtin palettes
-        written += self.write_i16(info.palette_id + 1).map_err(map_err)?;     // palette stored as BuiltInPalette enum value + 1
-        written += self.write_bytes(&[0x01, 0x00, 0x00, 0x00]).map_err(map_err)?; // _unknown_9: 01 00 00 00
+        let mut written = self.write_u16(0x0200u16).map_err(map_err)?; // _unknown_0: Constant 02 00
+        written += self.write_bytes(&[0u8; 14]).map_err(map_err)?; // _unknown_1: All zeros
+        written += self.write_u16(0x0100u16).map_err(map_err)?; // _unknown_2: Constant 01 00
+        written += self.write_bytes(&[0u8; 6]).map_err(map_err)?; // _unknown_3: All zeros
+        written += self.write_u16(info.pitch).map_err(map_err)?; // row_bytes (pitch)
+        written += self.write_i16(0i16).map_err(map_err)?; // rect_top
+        written += self.write_i16(0i16).map_err(map_err)?; // rect_left
+        written += self.write_i16(info.height as i16).map_err(map_err)?; // rect_bottom
+        written += self.write_i16(info.width as i16).map_err(map_err)?; // rect_right
+        written += self.write_bytes(&[0x01]).map_err(map_err)?; // _unknown_4: Constant 0x01
+        written += self.write_bytes(&[0u8; 7]).map_err(map_err)?; // _unknown_5: All zeros
+        written += self.write_i16(info.reg_y).map_err(map_err)?; // reg_y
+        written += self.write_i16(info.reg_x).map_err(map_err)?; // reg_x
+        written += self.write_i8(0xa0u8 as i8).map_err(map_err)?; // _unknown_6: Constant 0xa0
+        written += self.write_u8(info.bit_depth).map_err(map_err)?; // depth
+        written += self.write_i16(-1i16).map_err(map_err)?; // clut_cast_lib: -1 for builtin palettes
+        written += self.write_i16(info.palette_id + 1).map_err(map_err)?; // palette stored as BuiltInPalette enum value + 1
+        written += self
+            .write_bytes(&[0x01, 0x00, 0x00, 0x00])
+            .map_err(map_err)?; // _unknown_9: 01 00 00 00
         Ok(written)
     }
 }

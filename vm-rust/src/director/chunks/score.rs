@@ -6,7 +6,6 @@ use crate::io::reader::DirectorExt;
 use crate::player::datum_ref::DatumRef;
 use crate::player::eval::eval_lingo_expr_static;
 
-
 #[allow(dead_code)]
 pub struct ScoreFrameDelta {
     offset: u32,
@@ -85,14 +84,21 @@ impl ScoreFrameChannelData {
     /// Horizontal flip flag (bit 5 of the offset-22 sprite flags byte).
     /// Set on pre-mirrored filmloop inner sprites (e.g. `rightwall` wall-item
     /// posters reuse the same bitmaps as `leftwall` and toggle this bit).
-    pub fn flip_h(&self) -> bool { (self.sprite_flags & 0x20) != 0 }
+    pub fn flip_h(&self) -> bool {
+        (self.sprite_flags & 0x20) != 0
+    }
 
     /// Vertical flip flag (bit 6 of the offset-22 sprite flags byte).
-    pub fn flip_v(&self) -> bool { (self.sprite_flags & 0x40) != 0 }
+    pub fn flip_v(&self) -> bool {
+        (self.sprite_flags & 0x40) != 0
+    }
 }
 
 impl ScoreFrameChannelData {
-    pub fn read_with_size(reader: &mut BinaryReader, sprite_record_size: u16) -> Result<ScoreFrameChannelData, String> {
+    pub fn read_with_size(
+        reader: &mut BinaryReader,
+        sprite_record_size: u16,
+    ) -> Result<ScoreFrameChannelData, String> {
         let start_pos = reader.pos;
         let sz = sprite_record_size as usize;
 
@@ -157,32 +163,40 @@ impl ScoreFrameChannelData {
         let mut reserved_32: u16 = 0;
 
         if sz >= 22 {
-            let color_code = reader.read_u8()
+            let color_code = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read color_code: {:?}", e))?;
             color_code_low4 = color_code & 0x0f;
-            color_flag = (color_code >> 4) & 0x03;  // bits 4-5 only (bits 6-7 are editable/moveable)
-            editable = (color_code & 0x40) != 0;  // bit 6
-            moveable = (color_code & 0x80) != 0;  // bit 7
-            blend_raw = reader.read_u8()
+            color_flag = (color_code >> 4) & 0x03; // bits 4-5 only (bits 6-7 are editable/moveable)
+            editable = (color_code & 0x40) != 0; // bit 6
+            moveable = (color_code & 0x80) != 0; // bit 7
+            blend_raw = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read blend: {:?}", e))?;
         }
 
         if sz >= 24 {
-            sprite_flags = reader.read_u8()
+            sprite_flags = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read sprite_flags: {:?}", e))?;
-            reserved_23 = reader.read_u8()
+            reserved_23 = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read reserved_23: {:?}", e))?;
         }
 
         // D8+ extended color fields
         if sz >= 28 {
-            fore_color_g = reader.read_u8()
+            fore_color_g = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read fore_color_g: {:?}", e))?;
-            back_color_g = reader.read_u8()
+            back_color_g = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read back_color_g: {:?}", e))?;
-            fore_color_b = reader.read_u8()
+            fore_color_b = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read fore_color_b: {:?}", e))?;
-            back_color_b = reader.read_u8()
+            back_color_b = reader
+                .read_u8()
                 .map_err(|e| format!("Failed to read back_color_b: {:?}", e))?;
         }
 
@@ -198,13 +212,17 @@ impl ScoreFrameChannelData {
         // matches Director (also confirms the C# PgWalkStyle parser's wider
         // field width).
         if sz >= 36 {
-            let rotation_raw = reader.read_u32()
-                .map_err(|e| format!("Failed to read rotation: {:?}", e))? as i32;
+            let rotation_raw = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read rotation: {:?}", e))?
+                as i32;
             if rotation_raw != 0 {
                 rotation_angle = rotation_raw as f64 / 100.0;
             }
-            let skew_raw = reader.read_u32()
-                .map_err(|e| format!("Failed to read skew: {:?}", e))? as i32;
+            let skew_raw = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read skew: {:?}", e))?
+                as i32;
             if skew_raw != 0 {
                 skew_angle = skew_raw as f64 / 100.0;
             }
@@ -261,43 +279,62 @@ impl ScoreFrameChannelData {
     ///   [21]:   blendAmount (u8)
     ///   [22]:   thickness (u8)
     ///   [23]:   unused
-    pub fn read_d5(reader: &mut BinaryReader, _sprite_record_size: u16) -> Result<ScoreFrameChannelData, String> {
-        let sprite_type = reader.read_u8()
-            .map_err(|e| format!("D5: spriteType: {:?}", e))?;          // byte 0
-        let ink_data = reader.read_u8()
-            .map_err(|e| format!("D5: inkData: {:?}", e))?;             // byte 1
+    pub fn read_d5(
+        reader: &mut BinaryReader,
+        _sprite_record_size: u16,
+    ) -> Result<ScoreFrameChannelData, String> {
+        let sprite_type = reader
+            .read_u8()
+            .map_err(|e| format!("D5: spriteType: {:?}", e))?; // byte 0
+        let ink_data = reader
+            .read_u8()
+            .map_err(|e| format!("D5: inkData: {:?}", e))?; // byte 1
         let ink_val = ink_data & 0x3f;
         let trails = (ink_data & 0x40) != 0;
-        let cast_lib = reader.read_u16()
-            .map_err(|e| format!("D5: castLib: {:?}", e))? as i16;      // bytes 2-3
-        let cast_member = reader.read_u16()
-            .map_err(|e| format!("D5: castId: {:?}", e))?;              // bytes 4-5
-        let script_cast_lib = reader.read_u16()
-            .map_err(|e| format!("D5: scriptCastLib: {:?}", e))?;       // bytes 6-7
-        let script_member = reader.read_u16()
-            .map_err(|e| format!("D5: scriptMember: {:?}", e))?;        // bytes 8-9
-        let fore_color = reader.read_u8()
-            .map_err(|e| format!("D5: foreColor: {:?}", e))?;           // byte 10
-        let back_color = reader.read_u8()
-            .map_err(|e| format!("D5: backColor: {:?}", e))?;           // byte 11
-        let pos_y = reader.read_u16()
-            .map_err(|e| format!("D5: posY: {:?}", e))? as i16;         // bytes 12-13
-        let pos_x = reader.read_u16()
-            .map_err(|e| format!("D5: posX: {:?}", e))? as i16;         // bytes 14-15
-        let height = reader.read_u16()
-            .map_err(|e| format!("D5: height: {:?}", e))?;              // bytes 16-17
-        let width = reader.read_u16()
-            .map_err(|e| format!("D5: width: {:?}", e))?;               // bytes 18-19
-        let colorcode = reader.read_u8()
-            .map_err(|e| format!("D5: colorcode: {:?}", e))?;           // byte 20
-        let editable = (colorcode & 0x40) != 0;  // bit 6
-        let moveable = (colorcode & 0x80) != 0;  // bit 7
-        let blend_raw = reader.read_u8()
-            .map_err(|e| format!("D5: blend: {:?}", e))?;               // byte 21
-        let _thickness = reader.read_u8()
-            .map_err(|e| format!("D5: thickness: {:?}", e))?;           // byte 22
-        let _unused = reader.read_u8()
-            .map_err(|e| format!("D5: unused: {:?}", e))?;              // byte 23
+        let cast_lib = reader
+            .read_u16()
+            .map_err(|e| format!("D5: castLib: {:?}", e))? as i16; // bytes 2-3
+        let cast_member = reader
+            .read_u16()
+            .map_err(|e| format!("D5: castId: {:?}", e))?; // bytes 4-5
+        let script_cast_lib = reader
+            .read_u16()
+            .map_err(|e| format!("D5: scriptCastLib: {:?}", e))?; // bytes 6-7
+        let script_member = reader
+            .read_u16()
+            .map_err(|e| format!("D5: scriptMember: {:?}", e))?; // bytes 8-9
+        let fore_color = reader
+            .read_u8()
+            .map_err(|e| format!("D5: foreColor: {:?}", e))?; // byte 10
+        let back_color = reader
+            .read_u8()
+            .map_err(|e| format!("D5: backColor: {:?}", e))?; // byte 11
+        let pos_y = reader
+            .read_u16()
+            .map_err(|e| format!("D5: posY: {:?}", e))? as i16; // bytes 12-13
+        let pos_x = reader
+            .read_u16()
+            .map_err(|e| format!("D5: posX: {:?}", e))? as i16; // bytes 14-15
+        let height = reader
+            .read_u16()
+            .map_err(|e| format!("D5: height: {:?}", e))?; // bytes 16-17
+        let width = reader
+            .read_u16()
+            .map_err(|e| format!("D5: width: {:?}", e))?; // bytes 18-19
+        let colorcode = reader
+            .read_u8()
+            .map_err(|e| format!("D5: colorcode: {:?}", e))?; // byte 20
+        let editable = (colorcode & 0x40) != 0; // bit 6
+        let moveable = (colorcode & 0x80) != 0; // bit 7
+        let blend_raw = reader
+            .read_u8()
+            .map_err(|e| format!("D5: blend: {:?}", e))?; // byte 21
+        let _thickness = reader
+            .read_u8()
+            .map_err(|e| format!("D5: thickness: {:?}", e))?; // byte 22
+        let _unused = reader
+            .read_u8()
+            .map_err(|e| format!("D5: unused: {:?}", e))?; // byte 23
 
         Ok(ScoreFrameChannelData {
             sprite_type,
@@ -393,22 +430,20 @@ impl SoundChannelData {
         let cast_member = reader
             .read_u8()
             .map_err(|e| format!("Failed to read cast_member: {:?}", e))?;
-        
-        Ok(SoundChannelData {
-            cast_member,
-        })
+
+        Ok(SoundChannelData { cast_member })
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TempoChannelData {
-    pub tempo: u8,            // Byte 6: tempo mode/value (D6+: 246=FPS, 247=delay, 248=wait click, etc.)
+    pub tempo: u8, // Byte 6: tempo mode/value (D6+: 246=FPS, 247=delay, 248=wait click, etc.)
     pub tempo_cue_point: u16, // Bytes 4-5: FPS value or delay (when tempo==246 or 247)
     pub sprite_list_idx: u32, // Bytes 0-3: index into sprite detail table (D6+)
-    pub color_tempo: u8,      // Byte 7
-    pub wait_flags: u16,      // Bytes 8-9
-    pub channel_flags: u16,   // Bytes 10-11
-    pub frame_data: u16,      // Bytes 18-19
+    pub color_tempo: u8, // Byte 7
+    pub wait_flags: u16, // Bytes 8-9
+    pub channel_flags: u16, // Bytes 10-11
+    pub frame_data: u16, // Bytes 18-19
 }
 
 impl TempoChannelData {
@@ -432,29 +467,29 @@ impl TempoChannelData {
         let color_tempo = reader
             .read_u8()
             .map_err(|e| format!("Failed to read color_tempo: {:?}", e))?;
-        
+
         // Bytes 8-9 - Wait flags
         let wait_flags = reader
             .read_u16()
             .map_err(|e| format!("Failed to read tempo wait_flags: {:?}", e))?;
-        
+
         // Bytes 10-11 - Channel flags
         let channel_flags = reader
             .read_u16()
             .map_err(|e| format!("Failed to read tempo channel_flags: {:?}", e))?;
-        
+
         // Skip bytes 12-17
         for i in 0..6 {
             reader
                 .read_u8()
                 .map_err(|e| format!("Failed to read tempo skip{}: {:?}", i + 4, e))?;
         }
-        
+
         // Bytes 18-19 - Frame-specific data
         let frame_data = reader
             .read_u16()
             .map_err(|e| format!("Failed to read tempo frame_data: {:?}", e))?;
-        
+
         Ok(TempoChannelData {
             tempo,
             tempo_cue_point,
@@ -465,7 +500,7 @@ impl TempoChannelData {
             frame_data,
         })
     }
-    
+
     pub fn is_default(&self) -> bool {
         // Check if this is a "no change" marker (0xFFFE in high 16 bits)
         (self.sprite_list_idx >> 16) == 0xFFFE
@@ -489,9 +524,13 @@ impl ScoreFrameData {
         while !reader.eof() {
             match reader.read_u16() {
                 Ok(length) => {
-                    if length == 0 { break; }
+                    if length == 0 {
+                        break;
+                    }
                     let skip = (length as usize).saturating_sub(2);
-                    if reader.pos + skip > reader.length { break; }
+                    if reader.pos + skip > reader.length {
+                        break;
+                    }
                     reader.jmp(reader.pos + skip);
                     actual_frame_count += 1;
                 }
@@ -503,7 +542,8 @@ impl ScoreFrameData {
         if header.frame_count == 0 || header.frame_count != actual_frame_count {
             log::debug!(
                 "ScoreFrameData: header frame_count={} but actual_frame_count={}, using actual",
-                header.frame_count, actual_frame_count
+                header.frame_count,
+                actual_frame_count
             );
             header.frame_count = actual_frame_count;
         }
@@ -571,8 +611,13 @@ impl ScoreFrameData {
                     let frame_offset = (frame_index as usize) * frame_size;
                     let end_offset = frame_offset + channel_offset + channel_size;
                     if end_offset > channel_data.len() {
-                        error!("Channel data copy out of bounds. Frame offset: {}, Channel offset: {}, Channel size: {}, Total len: {}",
-                            frame_offset, channel_offset, channel_size, channel_data.len());
+                        error!(
+                            "Channel data copy out of bounds. Frame offset: {}, Channel offset: {}, Channel size: {}, Total len: {}",
+                            frame_offset,
+                            channel_offset,
+                            channel_size,
+                            channel_data.len()
+                        );
                         return Err("Channel data copy out of bounds".to_string());
                     }
                     channel_data[frame_offset + channel_offset..end_offset]
@@ -589,7 +634,13 @@ impl ScoreFrameData {
         let main_channels_size: usize = if header.frames_version <= 7 { 48 } else { 0 };
         let is_d5 = main_channels_size > 0;
 
-        let (decompressed_data, frame_channel_data, sound_channel_data, tempo_channel_data, palette_channel_data) = {
+        let (
+            decompressed_data,
+            frame_channel_data,
+            sound_channel_data,
+            tempo_channel_data,
+            palette_channel_data,
+        ) = {
             let mut frame_channel_data = vec![];
             let mut sound_channel_data = vec![];
             let mut tempo_channel_data = vec![];
@@ -617,72 +668,93 @@ impl ScoreFrameData {
                     let action_member = channel_reader.read_u16().unwrap_or(0);
                     if action_member != 0 {
                         // Store frame script as channel 0
-                        frame_channel_data.push((frame_index, 0_u16, ScoreFrameChannelData {
-                            sprite_type: 0,
-                            ink: 0,
-                            fore_color: 0,
-                            back_color: 0,
-                            cast_lib: action_cast_lib,
-                            cast_member: action_member,
-                            sprite_list_idx_hi: 0,
-                            sprite_list_idx_lo: 0,
-                            pos_y: 0,
-                            pos_x: 0,
-                            height: 0,
-                            width: 0,
-                            color_flag: 0,
-                            fore_color_g: 0,
-                            back_color_g: 0,
-                            fore_color_b: 0,
-                            back_color_b: 0,
-                            blend: 0,
-                            rotation: 0.0,
-                            skew: 0.0,
-                            moveable: false,
-                            editable: false,
-                            trails: false,
-                            stretch: false,
-                            color_code_low4: 0,
-                            sprite_flags: 0,
-                            reserved_23: 0,
-                            reserved_28: 0,
-                            reserved_32: 0,
-                        }));
+                        frame_channel_data.push((
+                            frame_index,
+                            0_u16,
+                            ScoreFrameChannelData {
+                                sprite_type: 0,
+                                ink: 0,
+                                fore_color: 0,
+                                back_color: 0,
+                                cast_lib: action_cast_lib,
+                                cast_member: action_member,
+                                sprite_list_idx_hi: 0,
+                                sprite_list_idx_lo: 0,
+                                pos_y: 0,
+                                pos_x: 0,
+                                height: 0,
+                                width: 0,
+                                color_flag: 0,
+                                fore_color_g: 0,
+                                back_color_g: 0,
+                                fore_color_b: 0,
+                                back_color_b: 0,
+                                blend: 0,
+                                rotation: 0.0,
+                                skew: 0.0,
+                                moveable: false,
+                                editable: false,
+                                trails: false,
+                                stretch: false,
+                                color_code_low4: 0,
+                                sprite_flags: 0,
+                                reserved_23: 0,
+                                reserved_28: 0,
+                                reserved_32: 0,
+                            },
+                        ));
                     }
 
                     // Tempo at byte 21
                     channel_reader.jmp(frame_start + 21);
                     let tempo_val = channel_reader.read_u8().unwrap_or(0);
                     if tempo_val > 0 {
-                        tempo_channel_data.push((frame_index, TempoChannelData {
-                            tempo: tempo_val,
-                            tempo_cue_point: 0,
-                            sprite_list_idx: 0,
-                            color_tempo: 0,
-                            wait_flags: 0,
-                            channel_flags: 0,
-                            frame_data: 0,
-                        }));
+                        tempo_channel_data.push((
+                            frame_index,
+                            TempoChannelData {
+                                tempo: tempo_val,
+                                tempo_cue_point: 0,
+                                sprite_list_idx: 0,
+                                color_tempo: 0,
+                                wait_flags: 0,
+                                channel_flags: 0,
+                                frame_data: 0,
+                            },
+                        ));
                     }
 
                     // Sound 1: castLib at bytes 4-5, member at bytes 6-7
                     channel_reader.jmp(frame_start + 6);
                     let sound1_member = channel_reader.read_u16().unwrap_or(0);
                     if sound1_member != 0 {
-                        debug!("Sound 1 in frame {}: cast_member={}", frame_index, sound1_member);
-                        sound_channel_data.push((frame_index, 3, SoundChannelData {
-                            cast_member: sound1_member as u8,
-                        }));
+                        debug!(
+                            "Sound 1 in frame {}: cast_member={}",
+                            frame_index, sound1_member
+                        );
+                        sound_channel_data.push((
+                            frame_index,
+                            3,
+                            SoundChannelData {
+                                cast_member: sound1_member as u8,
+                            },
+                        ));
                     }
 
                     // Sound 2: castLib at bytes 8-9, member at bytes 10-11
                     channel_reader.jmp(frame_start + 10);
                     let sound2_member = channel_reader.read_u16().unwrap_or(0);
                     if sound2_member != 0 {
-                        debug!("Sound 2 in frame {}: cast_member={}", frame_index, sound2_member);
-                        sound_channel_data.push((frame_index, 4, SoundChannelData {
-                            cast_member: sound2_member as u8,
-                        }));
+                        debug!(
+                            "Sound 2 in frame {}: cast_member={}",
+                            frame_index, sound2_member
+                        );
+                        sound_channel_data.push((
+                            frame_index,
+                            4,
+                            SoundChannelData {
+                                cast_member: sound2_member as u8,
+                            },
+                        ));
                     }
 
                     // Palette: castLib at bytes 24-25, member at bytes 26-27
@@ -694,13 +766,19 @@ impl ScoreFrameData {
                     }
 
                     // Sprite channels start at byte 48 within the frame
-                    let num_sprites = (frame_size - main_channels_size) / (header.sprite_record_size as usize);
+                    let num_sprites =
+                        (frame_size - main_channels_size) / (header.sprite_record_size as usize);
                     for sprite_idx in 0..num_sprites {
                         let channel_index = (sprite_idx + 6) as u16;
-                        let pos = frame_start + main_channels_size + sprite_idx * (header.sprite_record_size as usize);
+                        let pos = frame_start
+                            + main_channels_size
+                            + sprite_idx * (header.sprite_record_size as usize);
 
                         channel_reader.jmp(pos);
-                        let data = ScoreFrameChannelData::read_d5(&mut channel_reader, header.sprite_record_size)?;
+                        let data = ScoreFrameChannelData::read_d5(
+                            &mut channel_reader,
+                            header.sprite_record_size,
+                        )?;
 
                         let has_sprite_data = data.cast_member != 0
                             || data.blend != 0
@@ -712,15 +790,25 @@ impl ScoreFrameData {
                             || data.sprite_type != 0;
 
                         if has_sprite_data {
-                            debug!("frame_index={frame_index} channel_index={channel_index} cast_member={} sprite_type={} ink={} pos_y={} pos_x={} height={} width={} blend={}",
-                                data.cast_member, data.sprite_type, data.ink, data.pos_y, data.pos_x, data.height, data.width, data.blend);
+                            debug!(
+                                "frame_index={frame_index} channel_index={channel_index} cast_member={} sprite_type={} ink={} pos_y={} pos_x={} height={} width={} blend={}",
+                                data.cast_member,
+                                data.sprite_type,
+                                data.ink,
+                                data.pos_y,
+                                data.pos_x,
+                                data.height,
+                                data.width,
+                                data.blend
+                            );
                             frame_channel_data.push((frame_index, channel_index, data));
                         }
                     }
                 } else {
                     // D6+: All channels use sprite_record_size bytes each
                     for channel_index in 0..header.num_channels {
-                        let pos = frame_start + (channel_index as usize) * (header.sprite_record_size as usize);
+                        let pos = frame_start
+                            + (channel_index as usize) * (header.sprite_record_size as usize);
                         channel_reader.jmp(pos);
 
                         if channel_index == 0 || channel_index == 2 {
@@ -736,21 +824,34 @@ impl ScoreFrameData {
                             // Channel 3 = Sound2, Channel 4 = Sound1
                             let sound_data = SoundChannelData::read(&mut channel_reader)?;
                             if sound_data.cast_member != 0 {
-                                debug!("Sound {} in frame {}: cast_member={}",
-                                    channel_index - 2, frame_index, sound_data.cast_member);
+                                debug!(
+                                    "Sound {} in frame {}: cast_member={}",
+                                    channel_index - 2,
+                                    frame_index,
+                                    sound_data.cast_member
+                                );
                                 sound_channel_data.push((frame_index, channel_index, sound_data));
                             }
                         } else if channel_index == 5 {
                             // Channel 5 = Palette: castLib at bytes 0-1, member at bytes 2-3
-                            let palette_cast_lib = channel_reader.read_i16()
+                            let palette_cast_lib = channel_reader
+                                .read_i16()
                                 .map_err(|e| format!("Failed to read palette castLib: {:?}", e))?;
-                            let palette_member = channel_reader.read_i16()
+                            let palette_member = channel_reader
+                                .read_i16()
                                 .map_err(|e| format!("Failed to read palette member: {:?}", e))?;
                             if palette_cast_lib != 0 || palette_member != 0 {
-                                palette_channel_data.push((frame_index, palette_cast_lib, palette_member));
+                                palette_channel_data.push((
+                                    frame_index,
+                                    palette_cast_lib,
+                                    palette_member,
+                                ));
                             }
                         } else {
-                            let data = ScoreFrameChannelData::read_with_size(&mut channel_reader, header.sprite_record_size)?;
+                            let data = ScoreFrameChannelData::read_with_size(
+                                &mut channel_reader,
+                                header.sprite_record_size,
+                            )?;
 
                             let has_sprite_data = data.cast_member != 0
                                 || data.rotation != 0.0
@@ -771,8 +872,20 @@ impl ScoreFrameData {
                                 || data.back_color_b != 0;
 
                             if has_sprite_data {
-                                debug!("frame_index={frame_index} channel_index={channel_index} cast_lib={} cast_member={} sprite_type={} ink={} fore_color={} back_color={} pos_y={} pos_x={} height={} width={} blend={}",
-                                    data.cast_lib, data.cast_member, data.sprite_type, data.ink, data.fore_color, data.back_color, data.pos_y, data.pos_x, data.height, data.width, data.blend);
+                                debug!(
+                                    "frame_index={frame_index} channel_index={channel_index} cast_lib={} cast_member={} sprite_type={} ink={} fore_color={} back_color={} pos_y={} pos_x={} height={} width={} blend={}",
+                                    data.cast_lib,
+                                    data.cast_member,
+                                    data.sprite_type,
+                                    data.ink,
+                                    data.fore_color,
+                                    data.back_color,
+                                    data.pos_y,
+                                    data.pos_x,
+                                    data.height,
+                                    data.width,
+                                    data.blend
+                                );
                                 frame_channel_data.push((frame_index, channel_index, data));
                             }
                         }
@@ -782,10 +895,20 @@ impl ScoreFrameData {
 
             log::debug!(
                 "🏁 Finished processing {} frames. Sprites: {}, Sounds: {}, Tempo changes: {}, Palette changes: {}",
-                header.frame_count, frame_channel_data.len(), sound_channel_data.len(), tempo_channel_data.len(), palette_channel_data.len()
+                header.frame_count,
+                frame_channel_data.len(),
+                sound_channel_data.len(),
+                tempo_channel_data.len(),
+                palette_channel_data.len()
             );
 
-            (decompressed_data, frame_channel_data, sound_channel_data, tempo_channel_data, palette_channel_data)
+            (
+                decompressed_data,
+                frame_channel_data,
+                sound_channel_data,
+                tempo_channel_data,
+                palette_channel_data,
+            )
         };
 
         Ok(ScoreFrameData {
@@ -837,7 +960,13 @@ impl ScoreFrameData {
 
         log::debug!(
             "ScoreFrameData::read_header: actual_length={}, unk1(frame1Offset)={}, frame_count={}, frames_version={}, sprite_record_size={}, num_channels={}, reader_len={}",
-            actual_length, unk1, frame_count, frames_version, sprite_record_size, num_channels, reader.length
+            actual_length,
+            unk1,
+            frame_count,
+            frames_version,
+            sprite_record_size,
+            num_channels,
+            reader.length
         );
 
         Ok(ScoreFrameDataHeader {
@@ -861,55 +990,60 @@ pub struct TweenInfo {
 impl TweenInfo {
     pub fn read(reader: &mut BinaryReader) -> Result<TweenInfo, String> {
         Ok(TweenInfo {
-            curvature: reader.read_u32()
+            curvature: reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read tween curvature: {:?}", e))?,
-            flags: reader.read_u32()
+            flags: reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read tween flags: {:?}", e))?,
-            ease_in: reader.read_u32()
+            ease_in: reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read tween ease_in: {:?}", e))?,
-            ease_out: reader.read_u32()
+            ease_out: reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read tween ease_out: {:?}", e))?,
-            padding: reader.read_u32()
+            padding: reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read tween padding: {:?}", e))?,
         })
     }
-       
+
     pub fn is_path_tweened(&self) -> bool {
-        (self.flags & 0x00000004) != 0  // Bit 2
+        (self.flags & 0x00000004) != 0 // Bit 2
     }
-    
+
     pub fn is_size_tweened(&self) -> bool {
-        (self.flags & 0x00000008) != 0  // Bit 3
+        (self.flags & 0x00000008) != 0 // Bit 3
     }
-    
+
     pub fn is_forecolor_tweened(&self) -> bool {
-        (self.flags & 0x00000010) != 0  // Bit 4
+        (self.flags & 0x00000010) != 0 // Bit 4
     }
-    
+
     pub fn is_backcolor_tweened(&self) -> bool {
-        (self.flags & 0x00000020) != 0  // Bit 5
+        (self.flags & 0x00000020) != 0 // Bit 5
     }
-    
+
     pub fn is_blend_tweened(&self) -> bool {
-        (self.flags & 0x00000040) != 0  // Bit 6
+        (self.flags & 0x00000040) != 0 // Bit 6
     }
-    
+
     pub fn is_rotation_tweened(&self) -> bool {
-        (self.flags & 0x00000080) != 0  // Bit 7
+        (self.flags & 0x00000080) != 0 // Bit 7
     }
-    
+
     pub fn is_skew_tweened(&self) -> bool {
-        (self.flags & 0x00000100) != 0  // Bit 8
+        (self.flags & 0x00000100) != 0 // Bit 8
     }
-       
+
     pub fn is_continuous(&self) -> bool {
         // Continuous at endpoints (for circular paths)
-        (self.flags & 0x00000002) != 0  // Bit 1
+        (self.flags & 0x00000002) != 0 // Bit 1
     }
-    
+
     pub fn is_smooth_speed(&self) -> bool {
         // Smooth vs Sharp speed changes
-        (self.flags & 0x00000400) != 0  // Bit 10
+        (self.flags & 0x00000400) != 0 // Bit 10
     }
 }
 
@@ -933,29 +1067,38 @@ pub struct FrameIntervalPrimary {
 
 impl FrameIntervalPrimary {
     pub fn read(reader: &mut BinaryReader) -> Result<FrameIntervalPrimary, String> {
-        let start_frame = reader.read_u32()
+        let start_frame = reader
+            .read_u32()
             .map_err(|e| format!("Failed to read start_frame: {:?}", e))?;
-        let end_frame = reader.read_u32()
+        let end_frame = reader
+            .read_u32()
             .map_err(|e| format!("Failed to read end_frame: {:?}", e))?;
-        let xtra_info = reader.read_u32()
+        let xtra_info = reader
+            .read_u32()
             .map_err(|e| format!("Failed to read xtra_info: {:?}", e))?;
-        let sprite_flags = reader.read_u32()
+        let sprite_flags = reader
+            .read_u32()
             .map_err(|e| format!("Failed to read sprite_flags: {:?}", e))?;
-        let channel_index = reader.read_u32()
+        let channel_index = reader
+            .read_u32()
             .map_err(|e| format!("Failed to read channel_index: {:?}", e))?;
-        
+
         // Read TweenInfo (20 bytes = 5 x u32)
         let tween_info = TweenInfo::read(reader)?;
-        
+
         // Debug logging
         if tween_info.flags != 0 {
             debug!(
                 "📊 Sprite Span: channel={} frames={}-{} tween_flags=0x{:08x} curvature={} ease_in={} ease_out={}",
-                channel_index, start_frame, end_frame, 
-                tween_info.flags, tween_info.curvature,
-                tween_info.ease_in, tween_info.ease_out
+                channel_index,
+                start_frame,
+                end_frame,
+                tween_info.flags,
+                tween_info.curvature,
+                tween_info.ease_in,
+                tween_info.ease_out
             );
-            
+
             debug!(
                 "   Properties: path={} size={} rotation={} skew={} blend={} fg={} bg={}",
                 tween_info.is_path_tweened(),
@@ -966,14 +1109,14 @@ impl FrameIntervalPrimary {
                 tween_info.is_forecolor_tweened(),
                 tween_info.is_backcolor_tweened()
             );
-            
+
             debug!(
                 "   Settings: smooth={} continuous={}",
                 tween_info.is_smooth_speed(),
                 tween_info.is_continuous()
             );
         }
-        
+
         // Trailing u32s (if any) are authored keyframe indices.
         let mut key_frames = Vec::new();
         while reader.pos + 4 <= reader.length {
@@ -1088,7 +1231,11 @@ pub struct ScoreChunk {
 
 impl ScoreChunk {
     #[allow(unused_variables)]
-    pub fn read(reader: &mut BinaryReader, dir_version: u16, after_burned: bool) -> Result<Self, String> {
+    pub fn read(
+        reader: &mut BinaryReader,
+        dir_version: u16,
+        after_burned: bool,
+    ) -> Result<Self, String> {
         // Use the same parsing logic for both afterburner and non-afterburner files.
         // The VWSC chunk format is the same regardless of container format.
         Self::read_standard(reader, dir_version)
@@ -1102,38 +1249,58 @@ impl ScoreChunk {
 
         if dir_version >= 600 {
             // D6+ format: sprite detail table + frame data
-            let frames_stream_size = reader.read_u32()
+            let frames_stream_size = reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read framesStreamSize: {:?}", e))?;
-            let ver = reader.read_u32()
+            let ver = reader
+                .read_u32()
                 .map_err(|e| format!("Failed to read ver: {:?}", e))?;
-            let list_start = reader.read_u32()
-                .map_err(|e| format!("Failed to read listStart: {:?}", e))? as usize;
+            let list_start = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read listStart: {:?}", e))?
+                as usize;
 
             reader.jmp(list_start);
-            let num_entries = reader.read_u32()
-                .map_err(|e| format!("Failed to read numEntries: {:?}", e))? as usize;
-            let list_size = reader.read_u32()
-                .map_err(|e| format!("Failed to read listSize: {:?}", e))? as usize;
-            let max_data_len = reader.read_u32()
-                .map_err(|e| format!("Failed to read maxDataLen: {:?}", e))? as usize;
+            let num_entries = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read numEntries: {:?}", e))?
+                as usize;
+            let list_size = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read listSize: {:?}", e))?
+                as usize;
+            let max_data_len = reader
+                .read_u32()
+                .map_err(|e| format!("Failed to read maxDataLen: {:?}", e))?
+                as usize;
 
             let index_start = list_start + 12; // After the 3 header u32s
             let frame_data_offset = index_start + list_size * 4; // After the offset table
 
             log::debug!(
                 "VWSC D6+: framesStreamSize={}, ver={}, listStart=0x{:x}",
-                frames_stream_size, ver, list_start
+                frames_stream_size,
+                ver,
+                list_start
             );
             log::debug!(
                 "VWSC D6+: numEntries={}, listSize={}, maxDataLen=0x{:x}, indexStart={}, frameDataOffset={}",
-                num_entries, list_size, max_data_len, index_start, frame_data_offset
+                num_entries,
+                list_size,
+                max_data_len,
+                index_start,
+                frame_data_offset
             );
 
             // Read raw offsets (numEntries of them, relative to frameDataOffset)
             let mut raw_offsets = Vec::with_capacity(num_entries);
             for _ in 0..num_entries {
-                raw_offsets.push(reader.read_u32()
-                    .map_err(|e| format!("Failed to read sprite detail offset: {:?}", e))? as usize);
+                raw_offsets.push(
+                    reader
+                        .read_u32()
+                        .map_err(|e| format!("Failed to read sprite detail offset: {:?}", e))?
+                        as usize,
+                );
             }
 
             // Extract entries using consecutive offset pairs.
@@ -1153,7 +1320,10 @@ impl ScoreChunk {
                 if entry_start > reader.length || entry_end > reader.length {
                     log::warn!(
                         "VWSC: Entry {} out of bounds: start={}, end={}, stream_len={}",
-                        i, entry_start, entry_end, reader.length
+                        i,
+                        entry_start,
+                        entry_end,
+                        reader.length
                     );
                     entries.push(Vec::new());
                     continue;
@@ -1162,9 +1332,12 @@ impl ScoreChunk {
                 reader.jmp(entry_start);
                 let len = entry_end.saturating_sub(entry_start);
                 if len > 0 {
-                    entries.push(reader.read_bytes(len)
-                        .map_err(|e| format!("Failed to read entry {}: {:?}", i, e))?
-                        .to_vec());
+                    entries.push(
+                        reader
+                            .read_bytes(len)
+                            .map_err(|e| format!("Failed to read entry {}: {:?}", i, e))?
+                            .to_vec(),
+                    );
                 } else {
                     entries.push(Vec::new());
                 }
@@ -1173,7 +1346,8 @@ impl ScoreChunk {
             let entry_sizes: Vec<usize> = entries.iter().take(10).map(|e| e.len()).collect();
             log::debug!(
                 "VWSC D6+: extracted {} entries, sizes: {:?}",
-                entries.len(), entry_sizes
+                entries.len(),
+                entry_sizes
             );
 
             // Entry[0] = frame data (the main score data with channel deltas)
@@ -1212,14 +1386,19 @@ impl ScoreChunk {
                 sprite_details: std::collections::HashMap::new(),
             })
         } else {
-            Err(format!("Unsupported Director version for VWSC: {}", dir_version))
+            Err(format!(
+                "Unsupported Director version for VWSC: {}",
+                dir_version
+            ))
         }
     }
 
     /// Parse sprite details directly from extracted VWSC entries.
     /// For spriteListIdx = N, entries[N] is the 44-byte sprite info,
     /// and entries[N+1] contains behaviors (8 bytes each: cast_lib u16, cast_member u16, initializer_idx u32).
-    fn parse_sprite_details_from_entries(entries: &[Vec<u8>]) -> std::collections::HashMap<u32, SpriteDetailInfo> {
+    fn parse_sprite_details_from_entries(
+        entries: &[Vec<u8>],
+    ) -> std::collections::HashMap<u32, SpriteDetailInfo> {
         let mut details = std::collections::HashMap::new();
         let mut behavior_count = 0;
 
@@ -1258,10 +1437,19 @@ impl ScoreChunk {
                 if cast_member > 0 && cast_member < 10000 {
                     let mut parameter = Vec::new();
                     // Parse initializer data from entries[initializer_idx]
-                    debug!("Behavior cast={}/{} initializer_idx={}", cast_lib, cast_member, initializer_idx);
+                    debug!(
+                        "Behavior cast={}/{} initializer_idx={}",
+                        cast_lib, cast_member, initializer_idx
+                    );
                     if initializer_idx > 0 && (initializer_idx as usize) < entries.len() {
-                        debug!("  Found initializer entry at index {}, size: {} bytes", initializer_idx, entries[initializer_idx as usize].len());
-                        if let Ok(proplist_string) = String::from_utf8(entries[initializer_idx as usize].clone()) {
+                        debug!(
+                            "  Found initializer entry at index {}, size: {} bytes",
+                            initializer_idx,
+                            entries[initializer_idx as usize].len()
+                        );
+                        if let Ok(proplist_string) =
+                            String::from_utf8(entries[initializer_idx as usize].clone())
+                        {
                             let clean = proplist_string.trim_end_matches('\0');
                             debug!("  Initializer string: {:?}", clean);
                             if clean.starts_with('[') {
@@ -1276,12 +1464,18 @@ impl ScoreChunk {
                                     Err(e) => {
                                         warn!(
                                             "[SCORE-DETAIL] Behavior {}/{}: parse FAILED: {} str={:?}",
-                                            cast_lib, cast_member, e.message, &clean[..clean.len().min(120)]
+                                            cast_lib,
+                                            cast_member,
+                                            e.message,
+                                            &clean[..clean.len().min(120)]
                                         );
                                     }
                                 }
                             } else {
-                                debug!("  ⚠️ Initializer string doesn't start with '[': {:?}", &clean[..clean.len().min(50)]);
+                                debug!(
+                                    "  ⚠️ Initializer string doesn't start with '[': {:?}",
+                                    &clean[..clean.len().min(50)]
+                                );
                             }
                         } else {
                             debug!("  ⚠️ Initializer entry is not valid UTF-8");
@@ -1289,22 +1483,39 @@ impl ScoreChunk {
                     } else if initializer_idx > 0 {
                         debug!(
                             "[SCORE-DETAIL] Behavior {}/{}: initializer_idx {} out of range (entries={})",
-                            cast_lib, cast_member, initializer_idx, entries.len()
+                            cast_lib,
+                            cast_member,
+                            initializer_idx,
+                            entries.len()
                         );
                     }
-                    info.behaviors.push(SpriteBehavior { cast_lib, cast_member, parameter });
+                    info.behaviors.push(SpriteBehavior {
+                        cast_lib,
+                        cast_member,
+                        parameter,
+                    });
                 }
             }
 
             if !info.behaviors.is_empty() {
                 behavior_count += info.behaviors.len();
                 if details.len() < 30 {
-                    let behavior_strs: Vec<String> = info.behaviors.iter()
-                        .map(|b| if b.cast_lib == 65535 { format!("(-1)/{}", b.cast_member) } else { format!("{}/{}", b.cast_lib, b.cast_member) })
+                    let behavior_strs: Vec<String> = info
+                        .behaviors
+                        .iter()
+                        .map(|b| {
+                            if b.cast_lib == 65535 {
+                                format!("(-1)/{}", b.cast_member)
+                            } else {
+                                format!("{}/{}", b.cast_lib, b.cast_member)
+                            }
+                        })
                         .collect();
                     log::debug!(
                         "sprite_details: spriteListIdx {} -> {} behaviors [{}]",
-                        idx, info.behaviors.len(), behavior_strs.join(", ")
+                        idx,
+                        info.behaviors.len(),
+                        behavior_strs.join(", ")
                     );
                 }
                 details.insert(idx as u32, info);
@@ -1314,7 +1525,8 @@ impl ScoreChunk {
         if !details.is_empty() {
             log::debug!(
                 "Parsed {} sprite details with {} total behaviors from entries",
-                details.len(), behavior_count
+                details.len(),
+                behavior_count
             );
         }
 
@@ -1337,14 +1549,20 @@ impl ScoreChunk {
     /// - Sprite info is at offset[N]
     /// - Behaviors are at offset[N+1]
     /// - Sprite name is at offset[N+2]
-    fn parse_sprite_details(entries: &Vec<Vec<u8>>) -> std::collections::HashMap<u32, SpriteDetailInfo> {
+    fn parse_sprite_details(
+        entries: &Vec<Vec<u8>>,
+    ) -> std::collections::HashMap<u32, SpriteDetailInfo> {
         let mut details = std::collections::HashMap::new();
 
         // Log entry count for diagnosis
         debug!(
             "parse_sprite_details: {} entries, entry0 size: {}",
             entries.len(),
-            if entries.is_empty() { 0 } else { entries[0].len() }
+            if entries.is_empty() {
+                0
+            } else {
+                entries[0].len()
+            }
         );
 
         // Entry[0] contains the frames stream with sprite detail offsets embedded
@@ -1433,7 +1651,13 @@ impl ScoreChunk {
 
         debug!(
             "📋 Sprite detail table: framesStreamSize={} version={} listStart={} numEntries={} listSize={} maxDataLen={} frameDataOffset={}",
-            frames_stream_size, version, list_start, num_entries, list_size, max_data_len, frame_data_offset
+            frames_stream_size,
+            version,
+            list_start,
+            num_entries,
+            list_size,
+            max_data_len,
+            frame_data_offset
         );
 
         // Read all offsets and convert to absolute positions
@@ -1445,9 +1669,7 @@ impl ScoreChunk {
                     absolute_offsets.push(abs_off);
                 }
                 Err(_) => {
-                    debug!(
-                        "⚠️ Failed to read offset {}/{}", i, num_entries
-                    );
+                    debug!("⚠️ Failed to read offset {}/{}", i, num_entries);
                     break;
                 }
             }
@@ -1456,18 +1678,22 @@ impl ScoreChunk {
         if absolute_offsets.len() != num_entries {
             debug!(
                 "⚠️ Only read {} of {} sprite detail offsets",
-                absolute_offsets.len(), num_entries
+                absolute_offsets.len(),
+                num_entries
             );
         }
 
         // Log first few absolute offsets for debugging
         if !absolute_offsets.is_empty() {
-            let first_few: Vec<String> = absolute_offsets.iter().take(10)
+            let first_few: Vec<String> = absolute_offsets
+                .iter()
+                .take(10)
                 .map(|&off| format!("{}", off))
                 .collect();
             debug!(
                 "   First {} absolute offsets: [{}]",
-                first_few.len(), first_few.join(", ")
+                first_few.len(),
+                first_few.join(", ")
             );
         }
 
@@ -1537,7 +1763,11 @@ impl ScoreChunk {
                 // cast_lib can be 65535 (-1 as u16) meaning "use parent cast lib"
                 // cast_member should be > 0 for a valid reference
                 if cast_member > 0 && cast_member < 10000 {
-                    info.behaviors.push(SpriteBehavior { cast_lib, cast_member, parameter: Vec::new() });
+                    info.behaviors.push(SpriteBehavior {
+                        cast_lib,
+                        cast_member,
+                        parameter: Vec::new(),
+                    });
                 }
             }
 
@@ -1545,7 +1775,9 @@ impl ScoreChunk {
                 behavior_count += info.behaviors.len();
                 // Log behaviors for debugging (limit to first 30 to avoid spam)
                 if details.len() < 30 {
-                    let behavior_strs: Vec<String> = info.behaviors.iter()
+                    let behavior_strs: Vec<String> = info
+                        .behaviors
+                        .iter()
                         .map(|b| {
                             if b.cast_lib == 65535 {
                                 format!("(-1)/{}", b.cast_member)
@@ -1556,9 +1788,11 @@ impl ScoreChunk {
                         .collect();
                     debug!(
                         "   sprite_list_idx {}: {} behaviors [{}] (stream at {}..{})",
-                        sprite_list_idx, info.behaviors.len(),
+                        sprite_list_idx,
+                        info.behaviors.len(),
                         behavior_strs.join(", "),
-                        behavior_start, behavior_end
+                        behavior_start,
+                        behavior_end
                     );
                 }
                 details.insert(sprite_list_idx as u32, info);
@@ -1568,7 +1802,8 @@ impl ScoreChunk {
         if !details.is_empty() {
             debug!(
                 "✅ Parsed {} sprite details with {} total behaviors from Entry[0]",
-                details.len(), behavior_count
+                details.len(),
+                behavior_count
             );
         } else if num_entries > 0 {
             debug!(
@@ -1595,7 +1830,8 @@ impl ScoreChunk {
             let sizes: Vec<usize> = entries.iter().map(|e| e.len()).collect();
             debug!(
                 "analyze_behavior_attachment_entries: {} entries, sizes: {:?}",
-                entries.len(), sizes
+                entries.len(),
+                sizes
             );
         }
 
@@ -1604,7 +1840,8 @@ impl ScoreChunk {
             let sizes: Vec<usize> = entries.iter().map(|e| e.len()).collect();
             debug!(
                 "📊 analyze_behavior_attachment_entries: {} entries, sizes: {:?}",
-                entries.len(), sizes
+                entries.len(),
+                sizes
             );
         }
 
@@ -1643,7 +1880,8 @@ impl ScoreChunk {
 
                         // Log primary entries for filmloop debugging
                         // Only log for main movie entries (high entry numbers, channels 55-100)
-                        let is_main_movie_digit_channel = i > 3500 && primary.channel_index >= 55 && primary.channel_index <= 100;
+                        let is_main_movie_digit_channel =
+                            i > 3500 && primary.channel_index >= 55 && primary.channel_index <= 100;
                         if is_main_movie_digit_channel {
                             debug!(
                                 "Primary entry {}: channel={} frames={}-{}",
@@ -1653,14 +1891,17 @@ impl ScoreChunk {
                             // Log the secondary entry sizes for debugging
                             if i + 1 < entries.len() {
                                 let sec_size = entries[i + 1].len();
-                                let sec_bytes: String = entries[i + 1].iter()
+                                let sec_bytes: String = entries[i + 1]
+                                    .iter()
                                     .take(32)
                                     .map(|b| format!("{:02x}", b))
                                     .collect::<Vec<_>>()
                                     .join(" ");
                                 debug!(
                                     "   Secondary entry {} size={} bytes: {}",
-                                    i + 1, sec_size, sec_bytes
+                                    i + 1,
+                                    sec_size,
+                                    sec_bytes
                                 );
                             }
                         }
@@ -1723,9 +1964,11 @@ impl ScoreChunk {
 
                                                     // Handle parameters
                                                     if secondary.initializer_index > 0
-                                                        && (secondary.initializer_index as usize) < entries.len()
+                                                        && (secondary.initializer_index as usize)
+                                                            < entries.len()
                                                     {
-                                                        let proplist_idx = secondary.initializer_index as usize;
+                                                        let proplist_idx =
+                                                            secondary.initializer_index as usize;
                                                         if let Ok(proplist_string) =
                                                             String::from_utf8(
                                                                 entries[proplist_idx].clone(),
@@ -1733,21 +1976,30 @@ impl ScoreChunk {
                                                         {
                                                             let clean = proplist_string
                                                                 .trim_end_matches('\0');
-                                                            debug!("parsed param string: {}", clean);
+                                                            debug!(
+                                                                "parsed param string: {}",
+                                                                clean
+                                                            );
                                                             if clean.starts_with('[') {
                                                                 // TODO: Replace `eval_lingo` with a parser
-                                                                match eval_lingo_expr_static(clean.to_owned()) {
+                                                                match eval_lingo_expr_static(
+                                                                    clean.to_owned(),
+                                                                ) {
                                                                     Ok(proplist) => {
                                                                         debug!(
                                                                             "[SCORE-PARAM] Behavior {}/{}: parsed proplist OK",
                                                                             cast_lib, cast_member
                                                                         );
-                                                                        secondary.parameter.push(proplist);
+                                                                        secondary
+                                                                            .parameter
+                                                                            .push(proplist);
                                                                     }
                                                                     Err(e) => {
                                                                         warn!(
                                                                             "[SCORE-PARAM] Behavior {}/{}: eval_lingo_expr_static FAILED: {}",
-                                                                            cast_lib, cast_member, e.message
+                                                                            cast_lib,
+                                                                            cast_member,
+                                                                            e.message
                                                                         );
                                                                     }
                                                                 }
@@ -1765,8 +2017,12 @@ impl ScoreChunk {
                                                     secondaries.push(secondary);
                                                     found_valid_behavior = true;
                                                 } else {
-                                                    warn!("    ⏭️ Skipping invalid behavior {}: cast={}/{}", 
-                                                        behavior_idx + 1, cast_lib, cast_member);
+                                                    warn!(
+                                                        "    ⏭️ Skipping invalid behavior {}: cast={}/{}",
+                                                        behavior_idx + 1,
+                                                        cast_lib,
+                                                        cast_member
+                                                    );
                                                 }
                                             }
                                         }
@@ -1798,13 +2054,11 @@ impl ScoreChunk {
                         // Log behaviors found
                         debug!(
                             "Channel {} has {} behaviors",
-                            primary.channel_index, secondaries.len()
+                            primary.channel_index,
+                            secondaries.len()
                         );
                         for sec in &secondaries {
-                            debug!(
-                                "   Behavior: cast {}/{}",
-                                sec.cast_lib, sec.cast_member
-                            );
+                            debug!("   Behavior: cast {}/{}", sec.cast_lib, sec.cast_member);
                         }
 
                         // Create a separate result entry for EACH secondary
@@ -1828,7 +2082,8 @@ impl ScoreChunk {
                             "⚠️ Skipping entry {} with unexpected size {} bytes (expected 40/44/48 for primary). First bytes: {}",
                             i,
                             entry_bytes.len(),
-                            entry_bytes.iter()
+                            entry_bytes
+                                .iter()
                                 .take(20)
                                 .map(|b| format!("{:02x}", b))
                                 .collect::<Vec<_>>()

@@ -1,5 +1,4 @@
 /// PFR1 Font Parser Data Types
-
 use std::collections::HashMap;
 
 // ========== Outline Command Types ==========
@@ -26,16 +25,48 @@ pub struct PfrCmd {
 
 impl PfrCmd {
     pub fn move_to(x: f32, y: f32) -> Self {
-        Self { cmd_type: PfrCmdType::MoveTo, x, y, x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+        Self {
+            cmd_type: PfrCmdType::MoveTo,
+            x,
+            y,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+        }
     }
     pub fn line_to(x: f32, y: f32) -> Self {
-        Self { cmd_type: PfrCmdType::LineTo, x, y, x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+        Self {
+            cmd_type: PfrCmdType::LineTo,
+            x,
+            y,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+        }
     }
     pub fn curve_to(x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) -> Self {
-        Self { cmd_type: PfrCmdType::CurveTo, x, y, x1, y1, x2, y2 }
+        Self {
+            cmd_type: PfrCmdType::CurveTo,
+            x,
+            y,
+            x1,
+            y1,
+            x2,
+            y2,
+        }
     }
     pub fn close() -> Self {
-        Self { cmd_type: PfrCmdType::Close, x: 0.0, y: 0.0, x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+        Self {
+            cmd_type: PfrCmdType::Close,
+            x: 0.0,
+            y: 0.0,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+        }
     }
 }
 
@@ -46,7 +77,9 @@ pub struct PfrContour {
 
 impl PfrContour {
     pub fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+        }
     }
 }
 
@@ -98,10 +131,14 @@ impl PfrStroke {
         let is_v = (x2 - x1).abs() < (y2 - y1).abs() * 0.1;
         Self {
             stroke_type: PfrStrokeType::Line,
-            start_x: x1, start_y: y1,
-            end_x: x2, end_y: y2,
-            control1_x: 0.0, control1_y: 0.0,
-            control2_x: 0.0, control2_y: 0.0,
+            start_x: x1,
+            start_y: y1,
+            end_x: x2,
+            end_y: y2,
+            control1_x: 0.0,
+            control1_y: 0.0,
+            control2_x: 0.0,
+            control2_y: 0.0,
             width,
             is_horizontal: is_h,
             is_vertical: is_v,

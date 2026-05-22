@@ -1,12 +1,14 @@
 /// PFR Header + Logical Font Directory Parser
-
 use super::bit_reader::PfrBitReader;
-use super::types::{PfrHeader, LogicalFontRecord};
+use super::types::{LogicalFontRecord, PfrHeader};
 
 /// Parse the PFR header from raw data
 pub fn parse_pfr_header(data: &[u8]) -> Result<PfrHeader, String> {
     if data.len() < 58 {
-        return Err(format!("PFR data too small for header ({} bytes, need >= 58)", data.len()));
+        return Err(format!(
+            "PFR data too small for header ({} bytes, need >= 58)",
+            data.len()
+        ));
     }
 
     let mut reader = PfrBitReader::new(data);
@@ -62,7 +64,10 @@ pub fn parse_pfr_header(data: &[u8]) -> Result<PfrHeader, String> {
 }
 
 /// Parse the logical font directory
-pub fn parse_logical_font_directory(data: &[u8], header: &PfrHeader) -> Result<Vec<LogicalFontRecord>, String> {
+pub fn parse_logical_font_directory(
+    data: &[u8],
+    header: &PfrHeader,
+) -> Result<Vec<LogicalFontRecord>, String> {
     let mut logical_fonts = Vec::new();
 
     if header.log_font_dir_offset == 0 || header.log_font_dir_size == 0 {
@@ -101,7 +106,8 @@ pub fn parse_logical_font_directory(data: &[u8], header: &PfrHeader) -> Result<V
                 } else {
                     reader.read_bits(8);
                 }
-                if line_join_type == 0 { // MITER_LINE_JOIN
+                if line_join_type == 0 {
+                    // MITER_LINE_JOIN
                     reader.read_bits(24);
                 }
             } else if bold_flag {

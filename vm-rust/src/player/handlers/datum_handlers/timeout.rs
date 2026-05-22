@@ -1,7 +1,7 @@
 use crate::{
     director::lingo::datum::Datum,
     player::{
-        reserve_player_mut, reserve_player_ref, timeout::Timeout, DatumRef, DirPlayer, ScriptError,
+        DatumRef, DirPlayer, ScriptError, reserve_player_mut, reserve_player_ref, timeout::Timeout,
     },
 };
 
@@ -34,7 +34,8 @@ impl TimeoutDatumHandlers {
                     Ok(DatumRef::Void)
                 }
                 _ => Err(ScriptError::new(format!(
-                    "Cannot setAt property {} on timeout", key
+                    "Cannot setAt property {} on timeout",
+                    key
                 ))),
             }
         })
@@ -94,7 +95,8 @@ impl TimeoutDatumHandlers {
                     // args[0] = name (already used), args[1] = period, args[2] = handler, args[3] = target
                     if args.len() < 4 {
                         return Err(ScriptError::new(
-                            "timeout.new() requires 4 arguments: name, period, handler, target".to_string(),
+                            "timeout.new() requires 4 arguments: name, period, handler, target"
+                                .to_string(),
                         ));
                     }
                     Ok((1, 2, 3))
@@ -104,7 +106,8 @@ impl TimeoutDatumHandlers {
                     // args[0] = period, args[1] = handler, args[2] = target
                     if args.len() < 3 {
                         return Err(ScriptError::new(
-                            "timeout(name).new() requires 3 arguments: period, handler, target".to_string(),
+                            "timeout(name).new() requires 3 arguments: period, handler, target"
+                                .to_string(),
                         ));
                     }
                     Ok((0, 1, 2))
@@ -170,19 +173,17 @@ impl TimeoutDatumHandlers {
 
         // Not a script-based timeout - create a traditional JavaScript timeout
         // This is for backward compatibility with non-script timeouts
-        let timeout_period = reserve_player_ref(|player| {
-            player.get_datum(&args[period_arg]).int_value()
-        })?;
+        let timeout_period =
+            reserve_player_ref(|player| player.get_datum(&args[period_arg]).int_value())?;
 
-        let timeout_handler = reserve_player_ref(|player| {
-            match player.get_datum(&args[handler_arg]) {
+        let timeout_handler =
+            reserve_player_ref(|player| match player.get_datum(&args[handler_arg]) {
                 Datum::String(s) => Ok(s.clone()),
                 Datum::Symbol(s) => Ok(s.clone()),
                 _ => Err(ScriptError::new(
                     "Timeout handler must be a string or symbol".to_string(),
                 )),
-            }
-        })?;
+            })?;
 
         let target_ref = args[target_arg].clone();
 
@@ -197,7 +198,7 @@ impl TimeoutDatumHandlers {
             };
             timeout.schedule();
             player.timeout_manager.add_timeout(timeout);
-            
+
             // Return a TimeoutInstance
             Ok(player.alloc_datum(Datum::TimeoutInstance {
                 name: timeout_name,
@@ -213,7 +214,10 @@ impl TimeoutDatumHandlers {
         reserve_player_ref(|player| {
             let timeout_datum = player.get_datum(datum);
             match timeout_datum {
-                Datum::TimeoutInstance { script_instance: Some(_), .. } => true,
+                Datum::TimeoutInstance {
+                    script_instance: Some(_),
+                    ..
+                } => true,
                 _ => false,
             }
         })
@@ -224,7 +228,10 @@ impl TimeoutDatumHandlers {
         let script_instance_ref = reserve_player_ref(|player| {
             let timeout_datum = player.get_datum(datum);
             match timeout_datum {
-                Datum::TimeoutInstance { script_instance: Some(si), .. } => Some(si.clone()),
+                Datum::TimeoutInstance {
+                    script_instance: Some(si),
+                    ..
+                } => Some(si.clone()),
                 _ => None,
             }
         });
@@ -232,12 +239,16 @@ impl TimeoutDatumHandlers {
         if let Some(script_instance_ref) = script_instance_ref {
             // Call the script's destroy() handler to remove it from actorList
             use super::script_instance::ScriptInstanceDatumHandlers;
-            if ScriptInstanceDatumHandlers::has_async_handler(&script_instance_ref, &"destroy".to_string())? {
+            if ScriptInstanceDatumHandlers::has_async_handler(
+                &script_instance_ref,
+                &"destroy".to_string(),
+            )? {
                 let _ = ScriptInstanceDatumHandlers::call_async(
                     &script_instance_ref,
                     &"destroy".to_string(),
                     &vec![],
-                ).await;
+                )
+                .await;
             }
         }
 
@@ -291,16 +302,14 @@ impl TimeoutDatumHandlers {
                     ))),
                 }
             }
-            Datum::TimeoutInstance { name, target, .. } => {
-                match prop {
-                    "name" => Ok(player.alloc_datum(Datum::String(name.to_owned()))),
-                    "target" => Ok(target.clone()),
-                    _ => Err(ScriptError::new(format!(
-                        "Cannot get timeout property {}",
-                        prop
-                    ))),
-                }
-            }
+            Datum::TimeoutInstance { name, target, .. } => match prop {
+                "name" => Ok(player.alloc_datum(Datum::String(name.to_owned()))),
+                "target" => Ok(target.clone()),
+                _ => Err(ScriptError::new(format!(
+                    "Cannot get timeout property {}",
+                    prop
+                ))),
+            },
             _ => Err(ScriptError::new(
                 "Cannot get prop of non-timeout".to_string(),
             )),
@@ -317,11 +326,13 @@ impl TimeoutDatumHandlers {
         let timeout_name = match timeout_datum {
             Datum::TimeoutRef(timeout_name) => timeout_name.clone(),
             Datum::TimeoutInstance { name, .. } => name.clone(),
-            _ => return Err(ScriptError::new(
-                "Cannot set prop of non-timeout".to_string(),
-            )),
+            _ => {
+                return Err(ScriptError::new(
+                    "Cannot set prop of non-timeout".to_string(),
+                ));
+            }
         };
-        
+
         let timeout = player.timeout_manager.get_timeout_mut(&timeout_name);
         match prop {
             "target" => {

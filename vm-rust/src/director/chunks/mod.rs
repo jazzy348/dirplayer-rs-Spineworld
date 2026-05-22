@@ -22,8 +22,8 @@ pub mod script_names;
 pub mod sound;
 pub mod text;
 pub mod thum;
-pub mod xmedia;
 pub mod w3d;
+pub mod xmedia;
 pub mod xmedia_styled_text;
 
 use std::collections::HashMap;
@@ -36,7 +36,7 @@ use score::FrameLabelsChunk;
 
 use self::media::MediaChunk;
 use self::score_order::SordChunk;
-use self::sound::{SoundChunk, SndHeaderChunk};
+use self::sound::{SndHeaderChunk, SoundChunk};
 use self::{
     bitmap::BitmapChunk, cast::CastChunk, cast_list::CastListChunk, cast_member::CastMemberChunk,
     lctx::ScriptContextChunk, palette::PaletteChunk, score::ScoreChunk, script::ScriptChunk,
@@ -46,7 +46,7 @@ use self::{cast_info::CastInfoChunk, effect::EffectChunk, thum::ThumChunk, xmedi
 use super::{
     guid::MoaID,
     rifx::RIFXReaderContext,
-    utils::{fourcc_to_string, FOURCC},
+    utils::{FOURCC, fourcc_to_string},
 };
 
 pub struct CastInfoChunkProps {}
@@ -121,11 +121,11 @@ impl Chunk {
 
     pub fn as_bytes(&self) -> Option<&Vec<u8>> {
         match self {
-            Self::Raw(data) => { Some(data) }
-            Self::SndSamples(data) => { Some(data) }
-            Self::Media(m) => { Some(&m.audio_data) }
-            Self::XMedia(x) => { Some(&x.raw_data) }
-            _ => { None }
+            Self::Raw(data) => Some(data),
+            Self::SndSamples(data) => Some(data),
+            Self::Media(m) => Some(&m.audio_data),
+            Self::XMedia(x) => Some(&x.raw_data),
+            _ => None,
         }
     }
 }
@@ -229,24 +229,35 @@ pub fn make_chunk(
             //res = CastListChunk(dir: this);
         }
         "VWSC" | "SCVW" => {
-            return Ok(Chunk::Score(
-                ScoreChunk::read(&mut chunk_reader, version, rifx.after_burned)?,
-            ))
+            return Ok(Chunk::Score(ScoreChunk::read(
+                &mut chunk_reader,
+                version,
+                rifx.after_burned,
+            )?));
         }
         "VWLB" => {
             return Ok(Chunk::FrameLabels(FrameLabelsChunk::from_reader(
                 &mut chunk_reader,
                 version,
-            )?))
+            )?));
         }
         "ediM" => return Ok(Chunk::Media(MediaChunk::from_reader(&mut chunk_reader)?)),
         "Sord" => {
             return Ok(Chunk::ScoreOrder(SordChunk::from_reader(
                 &mut chunk_reader,
-            )?))
+            )?));
         }
-        "snd " => return Ok(Chunk::Sound(SoundChunk::from_snd_chunk(&mut chunk_reader, version)?)),
-        "sndH" => return Ok(Chunk::SndHeader(SndHeaderChunk::from_reader(&mut chunk_reader)?)),
+        "snd " => {
+            return Ok(Chunk::Sound(SoundChunk::from_snd_chunk(
+                &mut chunk_reader,
+                version,
+            )?));
+        }
+        "sndH" => {
+            return Ok(Chunk::SndHeader(SndHeaderChunk::from_reader(
+                &mut chunk_reader,
+            )?));
+        }
         "sndS" => {
             // Sound samples chunk - just raw audio bytes
             log::debug!("sndS chunk: {} bytes of audio data", view.len());
@@ -257,13 +268,13 @@ pub fn make_chunk(
             return Ok(Chunk::Bitmap(BitmapChunk::read(
                 &mut chunk_reader,
                 version,
-            )?))
+            )?));
         }
         "XMED" => return Ok(Chunk::XMedia(XMediaChunk::from_reader(&mut chunk_reader)?)),
         "Cinf" => {
             return Ok(Chunk::CstInfo(CastInfoChunk::from_reader(
                 &mut chunk_reader,
-            )?))
+            )?));
         }
         "FXmp" => return Ok(Chunk::Effect(EffectChunk::from_reader(&mut chunk_reader)?)),
         "Thum" => return Ok(Chunk::Thum(ThumChunk::from_reader(&mut chunk_reader)?)),

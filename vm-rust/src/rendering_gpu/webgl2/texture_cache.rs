@@ -241,26 +241,8 @@ impl RenderedTextCacheKey {
         height: u32,
     ) -> Self {
         Self::new_with_styled_spans(
-            member_ref,
-            text,
-            None,
-            ink,
-            blend,
-            fg_color,
-            bg_color,
-            false,
-            0,
-            0,
-            false,
-            width,
-            height,
-            "left",
-            false,
-            "",
-            0,
-            None,
-            0,
-            0,
+            member_ref, text, None, ink, blend, fg_color, bg_color, false, 0, 0, false, width,
+            height, "left", false, "", 0, None, 0, 0,
         )
     }
 
@@ -314,7 +296,9 @@ impl RenderedTextCacheKey {
     pub fn new_with_styled_spans(
         member_ref: CastMemberRef,
         text: &str,
-        styled_spans: Option<&[crate::player::handlers::datum_handlers::cast_member::font::StyledSpan]>,
+        styled_spans: Option<
+            &[crate::player::handlers::datum_handlers::cast_member::font::StyledSpan],
+        >,
         ink: i32,
         blend: i32,
         fg_color: ColorRef,
@@ -362,7 +346,10 @@ impl RenderedTextCacheKey {
         // Hash alignment, word_wrap, and font settings
         let mut settings_hasher = DefaultHasher::new();
         font_name.hash(&mut settings_hasher);
-        let alignment_key = alignment.trim().trim_start_matches('#').to_ascii_lowercase();
+        let alignment_key = alignment
+            .trim()
+            .trim_start_matches('#')
+            .to_ascii_lowercase();
         alignment_key.hash(&mut settings_hasher);
         word_wrap.hash(&mut settings_hasher);
         font_name.hash(&mut settings_hasher);

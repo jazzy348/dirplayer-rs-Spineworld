@@ -1,12 +1,13 @@
-use std::collections::VecDeque;
 use crate::{
     director::lingo::datum::{Datum, DatumType},
     player::{
+        HandlerExecutionResult, ScriptError,
         datum_formatting::format_datum,
         datum_operations::{add_datums, divide_datums, multiply_datums, subtract_datums},
-        reserve_player_mut, HandlerExecutionResult, ScriptError,
+        reserve_player_mut,
     },
 };
+use std::collections::VecDeque;
 
 use super::handler_manager::BytecodeHandlerContext;
 
@@ -54,19 +55,11 @@ impl ArithmeticsBytecodeHandler {
     }
 
     fn safe_mod_int(left: i32, right: i32) -> i32 {
-        if right == 0 {
-            0
-        } else {
-            left % right
-        }
+        if right == 0 { 0 } else { left % right }
     }
 
     fn safe_mod_float(left: f64, right: f64) -> f64 {
-        if right == 0.0 {
-            0.0
-        } else {
-            left % right
-        }
+        if right == 0.0 { 0.0 } else { left % right }
     }
 
     pub fn mod_handler(
@@ -110,10 +103,17 @@ impl ArithmeticsBytecodeHandler {
                     for item in list {
                         let item_datum = player.get_datum(item);
                         let result_datum = match item_datum {
-              Datum::Int(n) => Datum::Int(Self::safe_mod_float(*n as f64, *right) as i32),
-              Datum::Float(n) => Datum::Int(Self::safe_mod_float(*n, *right) as i32),
-              _ => return Err(ScriptError::new(format!("Modulus operator in list only works with ints and floats. Given: {}", format_datum(item, player)))),
-            };
+                            Datum::Int(n) => {
+                                Datum::Int(Self::safe_mod_float(*n as f64, *right) as i32)
+                            }
+                            Datum::Float(n) => Datum::Int(Self::safe_mod_float(*n, *right) as i32),
+                            _ => {
+                                return Err(ScriptError::new(format!(
+                                    "Modulus operator in list only works with ints and floats. Given: {}",
+                                    format_datum(item, player)
+                                )));
+                            }
+                        };
                         new_list.push(result_datum);
                     }
                     let mut ref_list = VecDeque::new();
@@ -127,10 +127,17 @@ impl ArithmeticsBytecodeHandler {
                     for item in list {
                         let item_datum = player.get_datum(item);
                         let result_datum = match item_datum {
-              Datum::Int(n) => Datum::Int(Self::safe_mod_int(*n, *right)),
-              Datum::Float(n) => Datum::Int(Self::safe_mod_float(*n, *right as f64) as i32),
-              _ => return Err(ScriptError::new(format!("Modulus operator in list only works with ints and floats. Given: {}", format_datum(item, player)))),
-            };
+                            Datum::Int(n) => Datum::Int(Self::safe_mod_int(*n, *right)),
+                            Datum::Float(n) => {
+                                Datum::Int(Self::safe_mod_float(*n, *right as f64) as i32)
+                            }
+                            _ => {
+                                return Err(ScriptError::new(format!(
+                                    "Modulus operator in list only works with ints and floats. Given: {}",
+                                    format_datum(item, player)
+                                )));
+                            }
+                        };
                         new_list.push(result_datum);
                     }
                     let mut ref_list = VecDeque::new();
@@ -144,7 +151,7 @@ impl ArithmeticsBytecodeHandler {
                         "Modulus operator only works with ints and floats (given {} and {})",
                         left.type_str(),
                         right.type_str()
-                    )))
+                    )));
                 }
             };
             let result_id = player.alloc_datum(result);
@@ -192,16 +199,12 @@ impl ArithmeticsBytecodeHandler {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                 scope.stack.pop().unwrap()
             };
-            let value = player.get_datum(&value_id).clone(); 
+            let value = player.get_datum(&value_id).clone();
             let result_datum = match value {
                 Datum::Int(n) => Datum::Int(-n),
                 Datum::Float(n) => Datum::Float(-n),
-                Datum::Point(vals, flags) => {
-                    Datum::Point([-vals[0], -vals[1]], flags)
-                }
-                Datum::Vector(v) => {
-                    Datum::Vector([-v[0], -v[1], -v[2]])
-                }
+                Datum::Point(vals, flags) => Datum::Point([-vals[0], -vals[1]], flags),
+                Datum::Vector(v) => Datum::Vector([-v[0], -v[1], -v[2]]),
                 Datum::List(list_type, items, sorted) => {
                     let mut negated_items = VecDeque::with_capacity(items.len());
                     for item_ref in &items {
@@ -209,10 +212,12 @@ impl ArithmeticsBytecodeHandler {
                         let negated = match item {
                             Datum::Int(n) => player.alloc_datum(Datum::Int(-n)),
                             Datum::Float(n) => player.alloc_datum(Datum::Float(-n)),
-                            _ => return Err(ScriptError::new(format!(
-                                "Cannot negate list element of type: {}",
-                                item.type_str()
-                            ))),
+                            _ => {
+                                return Err(ScriptError::new(format!(
+                                    "Cannot negate list element of type: {}",
+                                    item.type_str()
+                                )));
+                            }
                         };
                         negated_items.push_back(negated);
                     }
@@ -223,7 +228,7 @@ impl ArithmeticsBytecodeHandler {
                     return Err(ScriptError::new(format!(
                         "Cannot inv non-numeric value: {}",
                         value.type_str()
-                    )))
+                    )));
                 }
             };
 

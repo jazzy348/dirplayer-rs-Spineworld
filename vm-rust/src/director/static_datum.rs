@@ -14,6 +14,7 @@ use crate::player::cast_member::Media;
 use crate::player::datum_ref::DatumRef;
 
 use crate::player::allocator::{DatumAllocator, DatumAllocatorTrait};
+use crate::player::DirPlayer;
 use crate::player::reserve_player_ref;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,15 +57,67 @@ impl From<&DatumRef> for StaticDatum {
                         .map(|(k, v)| (StaticDatum::from(k), StaticDatum::from(v)))
                         .collect(),
                 ),
-                Datum::Point(vals, _flags) => {
-                    StaticDatum::IntPoint(vals[0] as i32, vals[1] as i32)
+                Datum::Point(vals, _flags) => StaticDatum::IntPoint(vals[0] as i32, vals[1] as i32),
+                Datum::Rect(vals, _flags) => StaticDatum::IntRect(
+                    vals[0] as i32,
+                    vals[1] as i32,
+                    vals[2] as i32,
+                    vals[3] as i32,
+                ),
+                _ => {
+                    reserve_player_ref(|player| StaticDatum::from(player.allocator.get_datum(dref)))
                 }
-                Datum::Rect(vals, _flags) => {
-                    StaticDatum::IntRect(vals[0] as i32, vals[1] as i32, vals[2] as i32, vals[3] as i32)
-                }
-                _ => reserve_player_ref(|player| StaticDatum::from(player.allocator.get_datum(dref))),
             },
         }
+    }
+}
+
+pub fn static_datum_from_player(player: &DirPlayer, dref: &DatumRef) -> StaticDatum {
+    static_datum_from_runtime_datum(player, player.get_datum(dref))
+}
+
+fn static_datum_from_runtime_datum(player: &DirPlayer, datum: &Datum) -> StaticDatum {
+    match datum {
+        Datum::Int(i) => StaticDatum::Int(*i),
+        Datum::Float(f) => StaticDatum::Float(*f),
+        Datum::String(s) => StaticDatum::String(s.clone()),
+        Datum::Symbol(s) => StaticDatum::Symbol(s.clone()),
+        Datum::List(_, items, _) => StaticDatum::List(
+            items
+                .iter()
+                .map(|item| static_datum_from_player(player, item))
+                .collect(),
+        ),
+        Datum::PropList(pairs, _) => StaticDatum::PropList(
+            pairs
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        static_datum_from_player(player, key),
+                        static_datum_from_player(player, value),
+                    )
+                })
+                .collect(),
+        ),
+        Datum::Point(vals, _flags) => StaticDatum::IntPoint(vals[0] as i32, vals[1] as i32),
+        Datum::Rect(vals, _flags) => StaticDatum::IntRect(
+            vals[0] as i32,
+            vals[1] as i32,
+            vals[2] as i32,
+            vals[3] as i32,
+        ),
+        Datum::Media(media) => {
+            let mut stream = MemoryStream::new();
+            {
+                let mut writer = BinaryWriter::new(&mut stream, binary_rw::Endian::Big);
+                writer
+                    .write_media(media, binary_rw::Endian::Little)
+                    .unwrap();
+            }
+            let bytes: Vec<u8> = stream.into();
+            StaticDatum::Media(bytes)
+        }
+        _ => StaticDatum::Void,
     }
 }
 
@@ -84,17 +137,20 @@ impl From<&Datum> for StaticDatum {
                     .map(|(k, v)| (StaticDatum::from(k), StaticDatum::from(v)))
                     .collect(),
             ),
-            Datum::Point(vals, _flags) => {
-                StaticDatum::IntPoint(vals[0] as i32, vals[1] as i32)
-            }
-            Datum::Rect(vals, _flags) => {
-                StaticDatum::IntRect(vals[0] as i32, vals[1] as i32, vals[2] as i32, vals[3] as i32)
-            }
+            Datum::Point(vals, _flags) => StaticDatum::IntPoint(vals[0] as i32, vals[1] as i32),
+            Datum::Rect(vals, _flags) => StaticDatum::IntRect(
+                vals[0] as i32,
+                vals[1] as i32,
+                vals[2] as i32,
+                vals[3] as i32,
+            ),
             Datum::Media(media) => {
                 let mut stream = MemoryStream::new();
                 {
                     let mut writer = BinaryWriter::new(&mut stream, binary_rw::Endian::Big);
-                    writer.write_media(media, binary_rw::Endian::Little).unwrap();
+                    writer
+                        .write_media(media, binary_rw::Endian::Little)
+                        .unwrap();
                 }
                 let bytes: Vec<u8> = stream.into();
                 StaticDatum::Media(bytes)
@@ -169,19 +225,24 @@ pub fn static_datum_to_runtime(param: &StaticDatum, allocator: &mut DatumAllocat
                 .alloc_datum(Datum::PropList(datum_refs, false))
                 .unwrap()
         }
-        StaticDatum::IntPoint(x, y) => {
-            allocator.alloc_datum(Datum::Point([*x as f64, *y as f64], 0)).unwrap()
-        }
-        StaticDatum::IntRect(left, top, right, bottom) => {
-            allocator.alloc_datum(Datum::Rect([*left as f64, *top as f64, *right as f64, *bottom as f64], 0)).unwrap()
-        }
+        StaticDatum::IntPoint(x, y) => allocator
+            .alloc_datum(Datum::Point([*x as f64, *y as f64], 0))
+            .unwrap(),
+        StaticDatum::IntRect(left, top, right, bottom) => allocator
+            .alloc_datum(Datum::Rect(
+                [*left as f64, *top as f64, *right as f64, *bottom as f64],
+                0,
+            ))
+            .unwrap(),
         StaticDatum::Media(bytes) => {
             let mut reader = BinaryReader::from_u8(bytes);
             reader.set_endian(binary_reader::Endian::Big);
             match reader.read_media() {
                 Ok(media) => allocator.alloc_datum(Datum::Media(media)).unwrap(),
                 Err(e) => {
-                    web_sys::console::warn_1(&format!("Failed to parse media from StaticDatum: {}", e).into());
+                    web_sys::console::warn_1(
+                        &format!("Failed to parse media from StaticDatum: {}", e).into(),
+                    );
                     DatumRef::Void
                 }
             }

@@ -1,6 +1,9 @@
 use binary_reader::{BinaryReader, Endian};
 
-use crate::{director::{enums::BitmapInfo, utils::FOURCC}, player::{bitmap::bitmap::decompress_bitmap, cast_member::{Media}}};
+use crate::{
+    director::{enums::BitmapInfo, utils::FOURCC},
+    player::{bitmap::bitmap::decompress_bitmap, cast_member::Media},
+};
 
 pub trait MediaReader {
     fn read_media(&mut self) -> Result<Media, std::io::Error>;
@@ -19,15 +22,24 @@ impl MediaReader for BinaryReader {
                 } else if chunk_id == FOURCC("DTIB") {
                     Endian::Little
                 } else {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown media chunk ID: {}", chunk_id)));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Unknown media chunk ID: {}", chunk_id),
+                    ));
                 };
                 self.set_endian(endian);
                 let chunk_size = self.read_u32()? as usize;
                 let chunk_data = self.read_bytes(chunk_size)?.to_vec();
                 let decompressed = decompress_bitmap(&chunk_data, &metadata, 0, 0).unwrap();
-                Ok(Media::Bitmap { bitmap: decompressed, reg_point: (metadata.reg_y, metadata.reg_x) })
+                Ok(Media::Bitmap {
+                    bitmap: decompressed,
+                    reg_point: (metadata.reg_y, metadata.reg_x),
+                })
             }
-            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("Unknown media magic number: {}", magic))),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unknown media magic number: {}", magic),
+            )),
         }
     }
 

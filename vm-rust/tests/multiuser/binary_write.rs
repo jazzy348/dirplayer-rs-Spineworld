@@ -2,9 +2,7 @@ use binary_reader::BinaryReader;
 use vm_rust::director::static_datum::StaticDatum;
 use vm_rust::player::xtra::multiuser::blowfish::DEFAULT_CIPHER_KEY;
 use vm_rust::player::xtra::multiuser::{
-    MultiuserMessage,
-    blowfish::MUSBlowfish,
-    reader::MusReader,
+    MultiuserMessage, blowfish::MUSBlowfish, reader::MusReader,
 };
 
 #[test]
@@ -20,14 +18,19 @@ fn test_write_read_roundtrip_plain() {
 
     let bytes = msg.to_bytes(None);
     let mut reader = BinaryReader::from_u8(&bytes);
-    let read_msg = reader.read_mus_message(None).expect("Failed to read message");
+    let read_msg = reader
+        .read_mus_message(None)
+        .expect("Failed to read message");
 
     assert_eq!(read_msg.error_code, 0);
     assert_eq!(read_msg.time_stamp, 12345);
     assert_eq!(read_msg.subject, "Hello");
     assert_eq!(read_msg.sender_id, "user1");
     assert_eq!(read_msg.recipients, vec!["user2", "user3"]);
-    assert_eq!(read_msg.content, StaticDatum::String("test content".to_string()));
+    assert_eq!(
+        read_msg.content,
+        StaticDatum::String("test content".to_string())
+    );
 }
 
 #[test]
@@ -46,7 +49,9 @@ fn test_write_read_roundtrip_list_content() {
 
     let bytes = msg.to_bytes(None);
     let mut reader = BinaryReader::from_u8(&bytes);
-    let read_msg = reader.read_mus_message(None).expect("Failed to read message");
+    let read_msg = reader
+        .read_mus_message(None)
+        .expect("Failed to read message");
 
     assert_eq!(read_msg.subject, "Data");
     if let StaticDatum::List(items) = read_msg.content {
@@ -78,7 +83,9 @@ fn test_write_read_roundtrip_encrypted_logon() {
 
     let mut read_cipher = MUSBlowfish::new(DEFAULT_CIPHER_KEY);
     let mut reader = BinaryReader::from_u8(&bytes);
-    let read_msg = reader.read_mus_message(Some(&mut read_cipher)).expect("Failed to read message");
+    let read_msg = reader
+        .read_mus_message(Some(&mut read_cipher))
+        .expect("Failed to read message");
 
     assert_eq!(read_msg.subject, "Logon");
     assert_eq!(read_msg.sender_id, "user");
@@ -106,7 +113,9 @@ fn test_write_read_roundtrip_void_content() {
 
     let bytes = msg.to_bytes(None);
     let mut reader = BinaryReader::from_u8(&bytes);
-    let read_msg = reader.read_mus_message(None).expect("Failed to read message");
+    let read_msg = reader
+        .read_mus_message(None)
+        .expect("Failed to read message");
 
     assert_eq!(read_msg.error_code, -1);
     assert_eq!(read_msg.time_stamp, 999);
@@ -138,6 +147,14 @@ fn test_write_matches_known_logon_request() {
     let written_bytes = msg.to_bytes(Some(&mut cipher));
 
     // Verify the written bytes match the expected binary exactly
-    assert_eq!(written_bytes.len(), expected_data.len(), "Message length mismatch");
-    assert_eq!(written_bytes, expected_data.to_vec(), "Written bytes do not match expected binary");
+    assert_eq!(
+        written_bytes.len(),
+        expected_data.len(),
+        "Message length mismatch"
+    );
+    assert_eq!(
+        written_bytes,
+        expected_data.to_vec(),
+        "Written bytes do not match expected binary"
+    );
 }

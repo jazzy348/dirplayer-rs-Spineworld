@@ -3,6 +3,7 @@ use itertools::Itertools;
 use crate::{
     director::lingo::datum::{Datum, StringChunkExpr, StringChunkSource, StringChunkType},
     player::{
+        DatumRef, DirPlayer, ScriptError,
         cast_lib::CastMemberRef,
         cast_member::CastMemberType,
         handlers::datum_handlers::{
@@ -11,7 +12,6 @@ use crate::{
         },
         reserve_player_mut,
         sprite::ColorRef,
-        DatumRef, DirPlayer, ScriptError,
     },
 };
 
@@ -30,16 +30,28 @@ pub struct StringChunkUtils {}
 /// Out-of-range indices clamp to the string's byte length so the caller's
 /// "delete chars 100..200 of a 5-char string" still produces an empty
 /// range instead of panicking.
-pub(crate) fn char_range_to_byte_range(s: &str, char_start: usize, char_end: usize) -> (usize, usize) {
+pub(crate) fn char_range_to_byte_range(
+    s: &str,
+    char_start: usize,
+    char_end: usize,
+) -> (usize, usize) {
     if char_start >= char_end {
         // Caller already handles the "empty range" case for ranges that
         // collapse during clamping; return a valid empty slice at the
         // appropriate boundary so replace_range is still a no-op.
-        let bs = s.char_indices().nth(char_start).map(|(b, _)| b).unwrap_or(s.len());
+        let bs = s
+            .char_indices()
+            .nth(char_start)
+            .map(|(b, _)| b)
+            .unwrap_or(s.len());
         return (bs, bs);
     }
     let mut iter = s.char_indices();
-    let byte_start = iter.by_ref().nth(char_start).map(|(b, _)| b).unwrap_or(s.len());
+    let byte_start = iter
+        .by_ref()
+        .nth(char_start)
+        .map(|(b, _)| b)
+        .unwrap_or(s.len());
     // We've consumed `char_start + 1` items from iter. To advance to the
     // `char_end`th codepoint, step forward `char_end - char_start - 1` more.
     let extra = char_end - char_start - 1;
@@ -137,7 +149,7 @@ impl StringChunkUtils {
                     _ => {
                         return Err(ScriptError::new(
                             "Cannot set contents for non-text member".to_string(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -152,8 +164,10 @@ impl StringChunkUtils {
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 let mut new_string = string.to_owned();
-                let (start, end) =
-                    Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (start, end) = Self::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 // (start, end) are CHAR indices; replace_range wants BYTE
                 // indices. Convert via char_indices so `delete char 3 of
                 // "öäüß"` doesn't try to slice mid-codepoint.
@@ -162,9 +176,12 @@ impl StringChunkUtils {
                 Ok(new_string)
             }
             StringChunkType::Item => {
-                let chunk_list = 
-                    Self::resolve_chunk_list(string, chunk_expr.chunk_type.clone(), chunk_expr.item_delimiter)?;
-                let (start, end) = 
+                let chunk_list = Self::resolve_chunk_list(
+                    string,
+                    chunk_expr.chunk_type.clone(),
+                    chunk_expr.item_delimiter,
+                )?;
+                let (start, end) =
                     Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), chunk_list.len());
 
                 if chunk_list.len() == 0 {
@@ -175,11 +192,14 @@ impl StringChunkUtils {
                 new_chunks.drain(start..end);
                 let delimiter = chunk_expr.item_delimiter.to_string();
                 Ok(new_chunks.join(&delimiter))
-            },
+            }
             StringChunkType::Word => {
-                let chunk_list = 
-                    Self::resolve_chunk_list(string, chunk_expr.chunk_type.clone(), chunk_expr.item_delimiter)?;
-                let (start, end) = 
+                let chunk_list = Self::resolve_chunk_list(
+                    string,
+                    chunk_expr.chunk_type.clone(),
+                    chunk_expr.item_delimiter,
+                )?;
+                let (start, end) =
                     Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), chunk_list.len());
 
                 if chunk_list.len() == 0 {
@@ -189,11 +209,14 @@ impl StringChunkUtils {
                 let mut new_chunks = chunk_list;
                 new_chunks.drain(start..end);
                 Ok(new_chunks.join(" "))
-            },
+            }
             StringChunkType::Line => {
-                let chunk_list = 
-                    Self::resolve_chunk_list(string, chunk_expr.chunk_type.clone(), chunk_expr.item_delimiter)?;
-                let (start, end) = 
+                let chunk_list = Self::resolve_chunk_list(
+                    string,
+                    chunk_expr.chunk_type.clone(),
+                    chunk_expr.item_delimiter,
+                )?;
+                let (start, end) =
                     Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), chunk_list.len());
 
                 if chunk_list.len() == 0 {
@@ -203,7 +226,7 @@ impl StringChunkUtils {
                 let mut new_chunks = chunk_list;
                 new_chunks.drain(start..end);
                 Ok(new_chunks.join("\r\n"))
-            },
+            }
         }
     }
 
@@ -215,8 +238,10 @@ impl StringChunkUtils {
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 let mut new_string = string.to_owned();
-                let (start, end) =
-                    Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (start, end) = Self::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 let (byte_start, byte_end) = char_range_to_byte_range(string, start, end);
                 new_string.replace_range(byte_start..byte_end, replace_with);
                 Ok(new_string)
@@ -370,8 +395,10 @@ impl StringChunkUtils {
                 chunk_list[start..end].join(" ")
             }
             StringChunkType::Char => {
-                let (start, end) =
-                    Self::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (start, end) = Self::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 let chars = string.chars().skip(start).take(end - start).collect();
                 chars
             }
@@ -406,8 +433,10 @@ impl StringChunkUtils {
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 let mut new_string = string.to_owned();
-                let (start, end) =
-                    StringChunkUtils::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (start, end) = StringChunkUtils::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 let (byte_start, byte_end) = char_range_to_byte_range(string, start, end);
                 new_string.replace_range(byte_start..byte_end, replace_with);
                 Ok(new_string)
@@ -449,8 +478,10 @@ impl StringChunkUtils {
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 let mut new_string = string.to_owned();
-                let (start, _) =
-                    StringChunkUtils::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (start, _) = StringChunkUtils::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 new_string.insert_str(start, insert_value);
                 Ok(new_string)
             }
@@ -470,7 +501,7 @@ impl StringChunkUtils {
                 }
 
                 let mut new_chunks = chunk_list;
-                
+
                 // For "put before", prepend to the chunk at the start position
                 if start < new_chunks.len() {
                     new_chunks[start] = format!("{}{}", insert_value, new_chunks[start]);
@@ -500,8 +531,10 @@ impl StringChunkUtils {
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 let mut new_string = string.to_owned();
-                let (_, end) =
-                    StringChunkUtils::vm_range_to_host((chunk_expr.start, chunk_expr.end), string.chars().count());
+                let (_, end) = StringChunkUtils::vm_range_to_host(
+                    (chunk_expr.start, chunk_expr.end),
+                    string.chars().count(),
+                );
                 new_string.insert_str(end, insert_value);
                 Ok(new_string)
             }
@@ -521,7 +554,7 @@ impl StringChunkUtils {
                 }
 
                 let mut new_chunks = chunk_list;
-                
+
                 // For "put after", append to the last chunk in the range
                 // rather than inserting as a new chunk
                 if end > 0 && end <= new_chunks.len() {
@@ -568,7 +601,11 @@ impl StringChunkHandlers {
         Self::get_prop_inner(datum, args, true)
     }
 
-    fn get_prop_inner(datum: &DatumRef, args: &Vec<DatumRef>, as_ref: bool) -> Result<DatumRef, ScriptError> {
+    fn get_prop_inner(
+        datum: &DatumRef,
+        args: &Vec<DatumRef>,
+        as_ref: bool,
+    ) -> Result<DatumRef, ScriptError> {
         let datum = datum.clone();
         reserve_player_mut(|player| {
             let datum_val = player.get_datum(&datum);
@@ -587,8 +624,7 @@ impl StringChunkHandlers {
                 item_delimiter: player.movie.item_delimiter,
             };
 
-            let str_value =
-                StringChunkUtils::resolve_chunk_expr_string(&parent_str, &chunk_expr)?;
+            let str_value = StringChunkUtils::resolve_chunk_expr_string(&parent_str, &chunk_expr)?;
             if as_ref {
                 // Nested chunks must chain via `StringChunkSource::Datum` so the
                 // outer operation (e.g. `.line[n]`) is preserved. Using the outer
@@ -610,25 +646,24 @@ impl StringChunkHandlers {
 
     /// Resolve the character range (start inclusive, end exclusive) that
     /// `chunk_expr` selects from `text`. Used by styled-span chunk setters.
-    pub fn resolve_chunk_char_range(
-        text: &str,
-        chunk_expr: &StringChunkExpr,
-    ) -> (usize, usize) {
+    pub fn resolve_chunk_char_range(text: &str, chunk_expr: &StringChunkExpr) -> (usize, usize) {
         let total_chars = text.chars().count();
         match chunk_expr.chunk_type {
             StringChunkType::Char => {
                 StringChunkUtils::vm_range_to_host((chunk_expr.start, chunk_expr.end), total_chars)
             }
-            StringChunkType::Item => {
-                resolve_delimited_char_range_single(
-                    text,
-                    chunk_expr.item_delimiter,
-                    chunk_expr.start,
-                    chunk_expr.end,
-                )
+            StringChunkType::Item => resolve_delimited_char_range_single(
+                text,
+                chunk_expr.item_delimiter,
+                chunk_expr.start,
+                chunk_expr.end,
+            ),
+            StringChunkType::Word => {
+                resolve_word_char_range(text, chunk_expr.start, chunk_expr.end)
             }
-            StringChunkType::Word => resolve_word_char_range(text, chunk_expr.start, chunk_expr.end),
-            StringChunkType::Line => resolve_line_char_range(text, chunk_expr.start, chunk_expr.end),
+            StringChunkType::Line => {
+                resolve_line_char_range(text, chunk_expr.start, chunk_expr.end)
+            }
         }
     }
 
@@ -771,6 +806,47 @@ impl StringChunkHandlers {
         prop: &str,
         value_ref: &DatumRef,
     ) -> Result<(), ScriptError> {
+        if matches!(
+            prop.to_ascii_lowercase().as_str(),
+            "linespace" | "fixedlinespace" | "lineheight"
+        ) {
+            let new_val = player.get_datum(value_ref).float_value()?.round().max(0.0) as i32;
+            let Some((member_ref, char_start, _char_end)) =
+                Self::walk_chunk_to_member_range(player, datum_ref)
+            else {
+                return Ok(());
+            };
+            let Some(member) = player
+                .movie
+                .cast_manager
+                .find_member_by_ref_mut(&member_ref)
+            else {
+                return Ok(());
+            };
+            match &mut member.member_type {
+                CastMemberType::Text(text) => {
+                    let pos = char_start as u32;
+                    let active_idx = text
+                        .par_runs
+                        .iter()
+                        .take_while(|run| run.position <= pos)
+                        .last()
+                        .map(|run| run.par_info_index as usize);
+                    if let Some(par_info) = active_idx.and_then(|idx| text.par_infos.get_mut(idx)) {
+                        par_info.line_spacing = new_val;
+                    } else {
+                        text.fixed_line_space = new_val as u16;
+                    }
+                }
+                CastMemberType::Field(field) => {
+                    field.fixed_line_space = new_val as u16;
+                }
+                _ => {}
+            }
+            player.stage_dirty = true;
+            return Ok(());
+        }
+
         match prop {
             "font" | "fontStyle" | "color" => {
                 return Self::set_chunk_style_prop(player, datum_ref, prop, value_ref);
@@ -783,13 +859,19 @@ impl StringChunkHandlers {
                     loop {
                         match current_source {
                             StringChunkSource::Member(member_ref) => {
-                                if let Some(member) = player.movie.cast_manager.find_member_by_ref_mut(&member_ref) {
+                                if let Some(member) = player
+                                    .movie
+                                    .cast_manager
+                                    .find_member_by_ref_mut(&member_ref)
+                                {
                                     if let CastMemberType::Text(ref mut text) = member.member_type {
                                         text.font_size = new_val as u16;
                                         for span in text.html_styled_spans.iter_mut() {
                                             span.style.font_size = Some(new_val);
                                         }
-                                    } else if let CastMemberType::Field(ref mut field) = member.member_type {
+                                    } else if let CastMemberType::Field(ref mut field) =
+                                        member.member_type
+                                    {
                                         field.font_size = new_val as u16;
                                     }
                                 }
@@ -817,7 +899,11 @@ impl StringChunkHandlers {
                     loop {
                         match current_source {
                             StringChunkSource::Member(member_ref) => {
-                                if let Some(member) = player.movie.cast_manager.find_member_by_ref_mut(&member_ref) {
+                                if let Some(member) = player
+                                    .movie
+                                    .cast_manager
+                                    .find_member_by_ref_mut(&member_ref)
+                                {
                                     if let CastMemberType::Text(ref mut text) = member.member_type {
                                         text.char_spacing = new_val;
                                         for span in text.html_styled_spans.iter_mut() {
@@ -842,7 +928,7 @@ impl StringChunkHandlers {
             _ => {
                 return Err(ScriptError::new(format!(
                     "Cannot set property {prop} for string chunk datum"
-                )))
+                )));
             }
         }
         Ok(())
@@ -862,7 +948,9 @@ impl StringChunkHandlers {
         // Resolve the chunk range up-front (read-only borrows) before taking
         // the mutable borrow on the target member.
         let resolved = Self::walk_chunk_to_member_range(player, datum_ref);
-        let Some((member_ref, start, end)) = resolved else { return Ok(()); };
+        let Some((member_ref, start, end)) = resolved else {
+            return Ok(());
+        };
         if start >= end {
             return Ok(());
         }
@@ -870,7 +958,11 @@ impl StringChunkHandlers {
         // Build the style modifier from the incoming value.
         enum StyleChange {
             Font(String),
-            FontStyle { bold: bool, italic: bool, underline: bool },
+            FontStyle {
+                bold: bool,
+                italic: bool,
+                underline: bool,
+            },
             Color(u32),
         }
         let value_datum = player.get_datum(value_ref).clone();
@@ -908,14 +1000,16 @@ impl StringChunkHandlers {
                         _ => {}
                     }
                 }
-                StyleChange::FontStyle { bold, italic, underline }
+                StyleChange::FontStyle {
+                    bold,
+                    italic,
+                    underline,
+                }
             }
             "color" => {
                 let color_ref = value_datum.to_color_ref()?.to_owned();
                 let rgb = match color_ref {
-                    ColorRef::Rgb(r, g, b) => {
-                        ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-                    }
+                    ColorRef::Rgb(r, g, b) => ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
                     ColorRef::PaletteIndex(_) => {
                         // Resolve palette index to RGB using the system palette
                         // so styled-span color (which is a plain u32 RGB) ends
@@ -925,7 +1019,10 @@ impl StringChunkHandlers {
                             crate::player::bitmap::bitmap::get_system_default_palette(),
                         );
                         let (r, g, b) = crate::player::bitmap::bitmap::resolve_color_ref(
-                            &palettes, &color_ref, &bitmap_palette, 8,
+                            &palettes,
+                            &color_ref,
+                            &bitmap_palette,
+                            8,
                         );
                         ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
                     }
@@ -936,7 +1033,11 @@ impl StringChunkHandlers {
         };
 
         // Now mutate the target member.
-        let Some(member) = player.movie.cast_manager.find_member_by_ref_mut(&member_ref) else {
+        let Some(member) = player
+            .movie
+            .cast_manager
+            .find_member_by_ref_mut(&member_ref)
+        else {
             return Ok(());
         };
         let mem_name = member.name.clone();
@@ -944,8 +1045,16 @@ impl StringChunkHandlers {
             CastMemberType::Text(text) => {
                 let full_text = text.text.clone();
                 let default_style = HtmlStyle {
-                    font_face: if text.font.is_empty() { None } else { Some(text.font.clone()) },
-                    font_size: if text.font_size > 0 { Some(text.font_size as i32) } else { None },
+                    font_face: if text.font.is_empty() {
+                        None
+                    } else {
+                        Some(text.font.clone())
+                    },
+                    font_size: if text.font_size > 0 {
+                        Some(text.font_size as i32)
+                    } else {
+                        None
+                    },
                     bold: text.font_style.iter().any(|s| s == "bold"),
                     italic: text.font_style.iter().any(|s| s == "italic"),
                     underline: text.font_style.iter().any(|s| s == "underline"),
@@ -959,7 +1068,11 @@ impl StringChunkHandlers {
                     default_style,
                     |style| match &change {
                         StyleChange::Font(f) => style.font_face = Some(f.clone()),
-                        StyleChange::FontStyle { bold, italic, underline } => {
+                        StyleChange::FontStyle {
+                            bold,
+                            italic,
+                            underline,
+                        } => {
                             style.bold = *bold;
                             style.italic = *italic;
                             style.underline = *underline;
@@ -977,12 +1090,26 @@ impl StringChunkHandlers {
                 // styled runs.
                 match &change {
                     StyleChange::Font(f) => field.font = f.clone(),
-                    StyleChange::FontStyle { bold, italic, underline } => {
+                    StyleChange::FontStyle {
+                        bold,
+                        italic,
+                        underline,
+                    } => {
                         let mut parts: Vec<&str> = Vec::new();
-                        if *bold { parts.push("bold"); }
-                        if *italic { parts.push("italic"); }
-                        if *underline { parts.push("underline"); }
-                        field.font_style = if parts.is_empty() { "plain".to_string() } else { parts.join(",") };
+                        if *bold {
+                            parts.push("bold");
+                        }
+                        if *italic {
+                            parts.push("italic");
+                        }
+                        if *underline {
+                            parts.push("underline");
+                        }
+                        field.font_style = if parts.is_empty() {
+                            "plain".to_string()
+                        } else {
+                            parts.join(",")
+                        };
                     }
                     StyleChange::Color(rgb) => {
                         let r = ((*rgb >> 16) & 0xFF) as u8;

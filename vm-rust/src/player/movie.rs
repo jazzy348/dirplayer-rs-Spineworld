@@ -3,17 +3,20 @@ use std::collections::{HashMap, VecDeque};
 use chrono::Local;
 
 use crate::{
+    CastMemberRef,
     director::{
         file::DirectorFile,
-        lingo::datum::{datum_bool, Datum},
+        lingo::datum::{Datum, datum_bool},
     },
-    utils::PATH_SEPARATOR, reserve_player_ref, reserve_player_mut,
-    player::ColorRef, player::ScriptInstanceRef, CastMemberRef,
+    player::ColorRef,
+    player::ScriptInstanceRef,
+    reserve_player_mut, reserve_player_ref,
+    utils::PATH_SEPARATOR,
 };
 
 use super::{
-    allocator::DatumAllocator, bitmap::manager::BitmapManager, cast_manager::CastManager,
-    geometry::IntRect, net_manager::NetManager, score::Score, ScriptError, ScriptReceiver,
+    ScriptError, ScriptReceiver, allocator::DatumAllocator, bitmap::manager::BitmapManager,
+    cast_manager::CastManager, geometry::IntRect, net_manager::NetManager, score::Score,
 };
 
 pub struct Movie {
@@ -41,6 +44,7 @@ pub struct Movie {
     pub timeout_script: Option<ScriptReceiver>,
     pub allow_custom_caching: bool,
     pub trace_script: bool,
+    pub edit_shortcuts_enabled: bool,
     pub trace_log_file: String,
     pub debug_playback_enabled: bool,
     pub mouse_down: bool,
@@ -59,6 +63,7 @@ impl Movie {
         dir_cache: &mut HashMap<Box<str>, DirectorFile>,
     ) {
         self.dir_version = file.version;
+        self.edit_shortcuts_enabled = self.dir_version >= 800;
         // Determine stage color based on Director version and color mode
         let stage_color_ref = if self.dir_version < 700 {
             // Director 6 and below: always palette index
@@ -77,7 +82,7 @@ impl Movie {
                 ColorRef::PaletteIndex(file.config.d7_stage_color_r)
             }
         };
-        
+
         // Store as RGB tuple for backward compatibility (if needed elsewhere)
         self.stage_color = (
             file.config.d7_stage_color_r,
@@ -175,7 +180,10 @@ impl Movie {
             "mouseDown" => {
                 Ok(datum_bool(self.mouse_down))
             },
-            "traceScript" => Ok(datum_bool(self.trace_script)),
+            "trace" | "traceScript" => Ok(datum_bool(self.trace_script)),
+            "editShortCutsEnabled" | "editShortcutsEnabled" => {
+                Ok(datum_bool(self.edit_shortcuts_enabled))
+            },
             "activeWindow" => Ok(Datum::Stage),
             "rollOver" => {
                 reserve_player_ref(|player| {
@@ -287,8 +295,12 @@ impl Movie {
                     )),
                 }
             },
-            "traceScript" => {
+            "trace" | "traceScript" => {
                 self.trace_script = value.int_value()? != 0;
+                Ok(())
+            },
+            "editShortCutsEnabled" | "editShortcutsEnabled" => {
+                self.edit_shortcuts_enabled = value.int_value()? != 0;
                 Ok(())
             },
             "traceLogFile" => {
@@ -394,18 +406,19 @@ impl Movie {
             self.puppet_tempo
         } else {
             // Get tempo from current frame, or fall back to movie frame_rate
-            self.score.get_frame_tempo(self.current_frame)
+            self.score
+                .get_frame_tempo(self.current_frame)
                 .unwrap_or(self.frame_rate as u32)
         }
     }
-    
+
     /// Calculate frame delay in milliseconds based on tempo
     pub fn get_frame_delay_ms(&self) -> f64 {
         let tempo = self.get_effective_tempo();
         if tempo == 0 {
             return 1000.0 / 30.0; // Default to 30fps if tempo is 0
         }
-        
+
         // Director tempo: frames per second
         // So delay = 1000ms / tempo
         1000.0 / tempo as f64

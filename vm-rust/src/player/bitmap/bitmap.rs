@@ -18,10 +18,10 @@ use num::FromPrimitive;
 use super::{
     mask::BitmapMask,
     palette::{
-        GRAYSCALE_16_PALETTE, GRAYSCALE_4_PALETTE, GRAYSCALE_PALETTE, MAC_16_PALETTE,
-        METALLIC16_PALETTE, METALLIC_PALETTE, NTSC16_PALETTE, NTSC_PALETTE, PASTELS16_PALETTE,
-        PASTELS_PALETTE, RAINBOW16_PALETTE, RAINBOW_PALETTE, SYSTEM_MAC_PALETTE,
-        SYSTEM_WIN_PALETTE, VIVID16_PALETTE, VIVID_PALETTE, WEB_216_PALETTE, WIN_16_PALETTE,
+        GRAYSCALE_4_PALETTE, GRAYSCALE_16_PALETTE, GRAYSCALE_PALETTE, MAC_16_PALETTE,
+        METALLIC_PALETTE, METALLIC16_PALETTE, NTSC_PALETTE, NTSC16_PALETTE, PASTELS_PALETTE,
+        PASTELS16_PALETTE, RAINBOW_PALETTE, RAINBOW16_PALETTE, SYSTEM_MAC_PALETTE,
+        SYSTEM_WIN_PALETTE, VIVID_PALETTE, VIVID16_PALETTE, WEB_216_PALETTE, WIN_16_PALETTE,
     },
     palette_map::PaletteMap,
 };
@@ -47,7 +47,11 @@ impl PaletteRef {
                 Some(palette) => PaletteRef::BuiltIn(palette),
                 None => {
                     web_sys::console::warn_1(
-                        &format!("Unknown built-in palette ID: {}, defaulting to SystemWin", i).into()
+                        &format!(
+                            "Unknown built-in palette ID: {}, defaulting to SystemWin",
+                            i
+                        )
+                        .into(),
                     );
                     PaletteRef::BuiltIn(BuiltInPalette::SystemWin)
                 }
@@ -194,9 +198,9 @@ impl Bitmap {
 
 fn get_num_channels(bit_depth: u8) -> Result<u8, String> {
     match bit_depth {
-        1 | 2 | 4 | 8 => Ok(1),  // 8-bit and below: 1 byte per pixel
-        16 => Ok(2),              // 16-bit: 2 bytes per pixel
-        32 => Ok(4),              // 32-bit: 4 bytes per pixel
+        1 | 2 | 4 | 8 => Ok(1), // 8-bit and below: 1 byte per pixel
+        16 => Ok(2),            // 16-bit: 2 bytes per pixel
+        32 => Ok(4),            // 32-bit: 4 bytes per pixel
         _ => Err("Invalid bit depth".to_string()),
     }
 }
@@ -207,7 +211,7 @@ fn get_alignment_width(bit_depth: u8) -> Result<u16, String> {
         1 => Ok(16),
         4 | 32 => Ok(4),
         2 | 8 => Ok(2),
-        16 => Ok(1),  // 16-bit aligns like 8-bit (1 byte per pixel)
+        16 => Ok(1), // 16-bit aligns like 8-bit (1 byte per pixel)
         _ => Err("Invalid bit depth".to_string()),
     }
 }
@@ -399,7 +403,8 @@ fn decode_bitmap_16bit(
     if data.len() < expected_size {
         return Err(format!(
             "16-bit bitmap: insufficient data (got {}, expected {})",
-            data.len(), expected_size
+            data.len(),
+            expected_size
         ));
     }
 
@@ -430,7 +435,7 @@ fn decode_bitmap_16bit(
 
             // Convert 5-bit to 8-bit by shifting left and filling lower bits
             let dst = (y * width as usize + x) * 4;
-            result[dst]     = (r5 << 3) | (r5 >> 2);
+            result[dst] = (r5 << 3) | (r5 >> 2);
             result[dst + 1] = (g5 << 3) | (g5 >> 2);
             result[dst + 2] = (b5 << 3) | (b5 >> 2);
             result[dst + 3] = 255;
@@ -473,7 +478,10 @@ fn decode_generic_bitmap(
     }
 
     let bytes_per_pixel = bit_depth / 8;
-    let expected_size = scan_width as usize * scan_height as usize * num_channels as usize * bytes_per_pixel as usize;
+    let expected_size = scan_width as usize
+        * scan_height as usize
+        * num_channels as usize
+        * bytes_per_pixel as usize;
 
     if expected_size != data.len() {
         warn!(
@@ -854,13 +862,17 @@ pub fn decompress_bitmap(
 
     bitmap.use_alpha = info.use_alpha;
     bitmap.trim_white_space = info.trim_white_space;
-    
+
     Ok(bitmap)
 }
 
 /// Encode a Bitmap back to raw byte format (pre-RLE).
 /// This reverses the decoding done by decompress_bitmap.
-pub fn encode_bitmap_data(bitmap: &Bitmap, target_bit_depth: u8, pitch: u16) -> Result<Vec<u8>, String> {
+pub fn encode_bitmap_data(
+    bitmap: &Bitmap,
+    target_bit_depth: u8,
+    pitch: u16,
+) -> Result<Vec<u8>, String> {
     let scan_width = if pitch > 0 && target_bit_depth > 0 {
         (pitch as u32 * 8 / target_bit_depth as u32) as u16
     } else {
@@ -874,7 +886,10 @@ pub fn encode_bitmap_data(bitmap: &Bitmap, target_bit_depth: u8, pitch: u16) -> 
         8 => encode_bitmap_8bit(bitmap, scan_width),
         16 => encode_bitmap_16bit(bitmap, scan_width),
         32 => encode_bitmap_32bit(bitmap, scan_width),
-        _ => Err(format!("Unsupported target bit depth for encoding: {}", target_bit_depth)),
+        _ => Err(format!(
+            "Unsupported target bit depth for encoding: {}",
+            target_bit_depth
+        )),
     }
 }
 
@@ -1068,7 +1083,11 @@ pub fn compress_bitmap(data: &[u8]) -> Vec<u8> {
 }
 
 #[inline]
-fn lookup_builtin_palette(palette: &BuiltInPalette, color_index: u8, original_bit_depth: u8) -> Option<(u8, u8, u8)> {
+fn lookup_builtin_palette(
+    palette: &BuiltInPalette,
+    color_index: u8,
+    original_bit_depth: u8,
+) -> Option<(u8, u8, u8)> {
     match palette {
         BuiltInPalette::GrayScale => {
             // Uses 4-color palette for 2-bit images and 16-color palette for 4-bit images
@@ -1184,20 +1203,33 @@ pub fn resolve_color_ref(
                             member_ref.cast_lib as u32,
                             member_ref.cast_member as u32,
                         );
-                        palettes.get(slot_number as usize)
+                        palettes
+                            .get(slot_number as usize)
                             .or_else(|| palettes.find_by_member(member_ref.cast_member as u32))
                     };
                     if let Some(member) = palette_member {
-                        member.colors.get(idx as usize).copied()
+                        member
+                            .colors
+                            .get(idx as usize)
+                            .copied()
                             .unwrap_or_else(|| color_fallback(idx))
-                    } else if let Some(member) = palettes.find_by_cast_lib(member_ref.cast_lib as u32) {
+                    } else if let Some(member) =
+                        palettes.find_by_cast_lib(member_ref.cast_lib as u32)
+                    {
                         // Fallback: exact palette member not found (stale clutId from old numbering),
                         // use any palette in the same cast library
-                        member.colors.get(idx as usize).copied()
+                        member
+                            .colors
+                            .get(idx as usize)
+                            .copied()
                             .unwrap_or_else(|| color_fallback(idx))
                     } else {
-                        lookup_builtin_palette(&get_system_default_palette(), idx, original_bit_depth)
-                            .unwrap_or_else(|| color_fallback(idx))
+                        lookup_builtin_palette(
+                            &get_system_default_palette(),
+                            idx,
+                            original_bit_depth,
+                        )
+                        .unwrap_or_else(|| color_fallback(idx))
                     }
                 }
                 PaletteRef::Default => {
@@ -1260,7 +1292,9 @@ fn decompress_alpha_rle(data: &[u8], width: usize, height: usize) -> Vec<u8> {
             continue;
         } else {
             let count = (257 - control) as usize;
-            if pos >= data.len() { break; }
+            if pos >= data.len() {
+                break;
+            }
             let val = data[pos];
             pos += 1;
             for _ in 0..count {
@@ -1344,7 +1378,8 @@ fn decode_jpeg_bitd(data: &[u8], info: &BitmapInfo, cast_lib: u32) -> Result<Bit
                 rgba_data.push(chunk[0]);
                 rgba_data.push(chunk[1]);
                 rgba_data.push(chunk[2]);
-                let alpha = alpha_bytes.as_ref()
+                let alpha = alpha_bytes
+                    .as_ref()
                     .and_then(|ab| ab.get(i).copied())
                     .unwrap_or(255);
                 rgba_data.push(alpha);
@@ -1355,14 +1390,18 @@ fn decode_jpeg_bitd(data: &[u8], info: &BitmapInfo, cast_lib: u32) -> Result<Bit
                 rgba_data.push(gray);
                 rgba_data.push(gray);
                 rgba_data.push(gray);
-                let alpha = alpha_bytes.as_ref()
+                let alpha = alpha_bytes
+                    .as_ref()
                     .and_then(|ab| ab.get(i).copied())
                     .unwrap_or(255);
                 rgba_data.push(alpha);
             }
         }
         _ => {
-            return Err(format!("Unsupported JPEG color type in BITD: {:?}", color_type));
+            return Err(format!(
+                "Unsupported JPEG color type in BITD: {:?}",
+                color_type
+            ));
         }
     }
 
@@ -1381,7 +1420,11 @@ fn decode_jpeg_bitd(data: &[u8], info: &BitmapInfo, cast_lib: u32) -> Result<Bit
     })
 }
 
-pub fn decode_jpeg_bitmap(data: &[u8], info: &BitmapInfo, alfa_data: Option<&Vec<u8>>) -> Result<Bitmap, String> {
+pub fn decode_jpeg_bitmap(
+    data: &[u8],
+    info: &BitmapInfo,
+    alfa_data: Option<&Vec<u8>>,
+) -> Result<Bitmap, String> {
     use image::ImageDecoder;
     use std::io::Cursor;
 
@@ -1423,7 +1466,8 @@ pub fn decode_jpeg_bitmap(data: &[u8], info: &BitmapInfo, alfa_data: Option<&Vec
                 rgba.push(chunk[0]); // R
                 rgba.push(chunk[1]); // G
                 rgba.push(chunk[2]); // B
-                let alpha = alpha_bytes.as_ref()
+                let alpha = alpha_bytes
+                    .as_ref()
                     .and_then(|ab| ab.get(i).copied())
                     .unwrap_or(255);
                 rgba.push(alpha);
@@ -1436,7 +1480,8 @@ pub fn decode_jpeg_bitmap(data: &[u8], info: &BitmapInfo, alfa_data: Option<&Vec
                 rgba.push(gray);
                 rgba.push(gray);
                 rgba.push(gray);
-                let alpha = alpha_bytes.as_ref()
+                let alpha = alpha_bytes
+                    .as_ref()
                     .and_then(|ab| ab.get(i).copied())
                     .unwrap_or(255);
                 rgba.push(alpha);

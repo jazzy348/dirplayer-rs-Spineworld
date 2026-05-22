@@ -1,32 +1,32 @@
+pub mod bitstream;
+pub mod block_reader;
+pub mod block_types;
+pub mod clod_decoder;
+pub mod clod_types;
+pub mod gltf_export;
+pub mod parser;
+pub mod primitives;
+pub mod raycast;
+pub mod skeleton;
+pub mod subdivision;
 /// Shockwave 3D (W3D / IFX) file format parser.
 ///
 /// Parses the IFX container format used by Macromedia/Adobe Shockwave 3D,
 /// including CLOD (Continuous Level of Detail) compressed progressive meshes,
 /// materials, textures, shaders, scene graph nodes, lights, skeletons, and animations.
-
 pub mod types;
-pub mod block_types;
-pub mod block_reader;
-pub mod bitstream;
-pub mod clod_types;
-pub mod clod_decoder;
-pub mod primitives;
-pub mod parser;
-pub mod raycast;
-pub mod skeleton;
-pub mod gltf_export;
-pub mod subdivision;
 
 pub use types::W3dScene;
 
 /// Parse W3D data (IFX container) and return the scene.
 pub fn parse_w3d(data: &[u8]) -> Result<W3dScene, String> {
-    let actual_data = find_ifx_start(data)
-        .ok_or_else(|| format!(
+    let actual_data = find_ifx_start(data).ok_or_else(|| {
+        format!(
             "No IFX magic found in {} bytes (first bytes: {:02X?})",
             data.len(),
             &data[..data.len().min(16)]
-        ))?;
+        )
+    })?;
 
     let mut parser = parser::W3dFileParser::new(actual_data.to_vec());
     parser.parse()?;

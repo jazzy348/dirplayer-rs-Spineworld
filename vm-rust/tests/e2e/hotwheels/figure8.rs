@@ -1,5 +1,5 @@
 use vm_rust::browser_e2e_test;
-use vm_rust::player::testing_shared::{sprite, SnapshotContext, TestConfig, TestHarness};
+use vm_rust::player::testing_shared::{SnapshotContext, TestConfig, TestHarness, sprite};
 
 const CONFIG: &str = include_str!("../configs/hotwheels_figure8.toml");
 

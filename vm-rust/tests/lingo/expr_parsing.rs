@@ -1,4 +1,4 @@
-use vm_rust::player::eval::{parse_lingo_expr_ast_runtime, LingoExpr, Rule};
+use vm_rust::player::eval::{LingoExpr, Rule, parse_lingo_expr_ast_runtime};
 
 #[test]
 fn test_symbol() {

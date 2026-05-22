@@ -19,9 +19,9 @@ pub struct StxtFormattingRun {
     pub font_id: u16,
     pub style: u8,
     pub font_size: u16,
-    pub color_r: u16,  // QuickDraw 16-bit Red
-    pub color_g: u16,  // QuickDraw 16-bit Green
-    pub color_b: u16,  // QuickDraw 16-bit Blue
+    pub color_r: u16, // QuickDraw 16-bit Red
+    pub color_g: u16, // QuickDraw 16-bit Green
+    pub color_b: u16, // QuickDraw 16-bit Blue
 }
 
 impl TextChunk {

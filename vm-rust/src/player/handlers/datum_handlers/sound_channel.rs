@@ -218,12 +218,12 @@ impl SoundChannelDatumHandlers {
             "fadeto" => {
                 if args.len() < 2 {
                     return Err(ScriptError::new(
-                        "fadeTo requires ticks and volume arguments".to_string(),
+                        "fadeTo requires volume and duration arguments".to_string(),
                     ));
                 }
-                let ticks = player.get_datum(&args[0]).int_value()?;
-                let to_volume = player.get_datum(&args[1]).float_value()?;
-                Self::handle_fade_to(player, datum, ticks, to_volume)?;
+                let to_volume = player.get_datum(&args[0]).float_value()?;
+                let duration_ms = player.get_datum(&args[1]).int_value()?;
+                Self::handle_fade_to(player, datum, to_volume, duration_ms)?;
                 Ok(datum.clone())
             }
             "setplaylist" => {
@@ -272,15 +272,17 @@ impl SoundChannelDatumHandlers {
             "sampleCount" => Ok(Datum::Int(channel.sample_count.try_into().unwrap())),
             "channelCount" => Ok(Datum::Int(channel.channel_count.into())),
             "status" => Ok(Datum::Int(channel.status.clone() as i32)),
-            "member" => {
-                match &channel.member {
-                    Some(member_ref) => Ok(player.get_datum(member_ref).clone()),
-                    None => Ok(Datum::Void),
-                }
-            }
+            "member" => match &channel.member {
+                Some(member_ref) => Ok(player.get_datum(member_ref).clone()),
+                None => Ok(Datum::Void),
+            },
             "currentTime" => {
                 let ct = if channel.status == SoundStatus::Playing {
-                    let elapsed = channel.audio_context.as_ref().map_or(0.0, |ctx| ctx.current_time()) - channel.playback_start_context_time;
+                    let elapsed = channel
+                        .audio_context
+                        .as_ref()
+                        .map_or(0.0, |ctx| ctx.current_time())
+                        - channel.playback_start_context_time;
                     (channel.start_time + elapsed * 1000.0).min(channel.get_duration() as f64)
                 } else {
                     channel.elapsed_time
@@ -399,7 +401,7 @@ impl SoundChannelDatumHandlers {
             ch.playlist.clear();
             ch.current_segment_index = None;
             ch.stop_playback_nodes();
-            
+
             ch.loop_count = 1;
             ch.loops_remaining = 1;
         }
@@ -455,13 +457,6 @@ impl SoundChannelDatumHandlers {
     ) -> Result<(), ScriptError> {
         // Get the channel as Rc<RefCell<SoundChannel>> (do NOT borrow)
         let channel_rc = Self::get_sound_channel_mut(player, datum)?;
-
-        // Reset loop_count to play-once (1) so stale loopCount settings don't leak
-        {
-            let mut ch = channel_rc.borrow_mut();
-            ch.loop_count = 1;
-            ch.loops_remaining = 1;
-        }
 
         // Call the associated function with the Rc
         SoundChannel::play_file(Rc::clone(&channel_rc), member.clone());
@@ -544,11 +539,11 @@ impl SoundChannelDatumHandlers {
     fn handle_fade_to(
         player: &mut DirPlayer,
         datum: &DatumRef,
-        ticks: i32,
         to_volume: f64,
+        duration_ms: i32,
     ) -> Result<(), ScriptError> {
         let channel = Self::get_sound_channel_mut(player, datum)?;
-        channel.borrow_mut().fade_to(ticks, to_volume);
+        channel.borrow_mut().fade_to(to_volume, duration_ms);
         Ok(())
     }
 
@@ -570,7 +565,7 @@ impl SoundChannelDatumHandlers {
                 } else {
                     // Non-empty proplist is not valid for setPlayList
                     return Err(ScriptError::new(
-                        "setPlayList expects a list, not a non-empty proplist".to_string()
+                        "setPlayList expects a list, not a non-empty proplist".to_string(),
                     ));
                 }
             }
@@ -625,11 +620,19 @@ impl SoundChannelDatumHandlers {
 
                 // Validate and push
                 // Default loopCount to 1 when not provided (consistent with queue() and set_playlist())
-                let loop_count = loopcount_value.unwrap_or(1);
+                let loop_count = loopcount_value.unwrap_or_else(|| {
+                    member_value
+                        .as_ref()
+                        .and_then(|member| {
+                            SoundChannel::resolve_sound_member(player, member)
+                                .map(|sound| if sound.info.loop_enabled { 0 } else { 1 })
+                        })
+                        .unwrap_or(1)
+                });
 
                 match (member_value, loop_count) {
                     // ✅ valid member and positive loopCount
-                    (Some(_member_val), loop_count) if loop_count > 0 => {
+                    (Some(_member_val), loop_count) if loop_count >= 0 => {
                         // Store the original proplist ref (not the extracted member datum)
                         // to match queue() behavior - play_segment_for_member extracts #member from proplist
                         segments.push(SoundSegment {
@@ -688,7 +691,11 @@ impl SoundChannelDatumHandlers {
             }
         }
 
-        debug!("✅ Built {} valid playlist entries (playing={})", channel.playlist.len(), channel.status == SoundStatus::Playing);
+        debug!(
+            "✅ Built {} valid playlist entries (playing={})",
+            channel.playlist.len(),
+            channel.status == SoundStatus::Playing
+        );
         Ok(DatumRef::Void)
     }
 
@@ -800,11 +807,11 @@ impl SoundChannelDatumHandlers {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SoundStatus {
-    Idle = 0,      // No sounds are queued or playing
-    Loading = 1,   // A queued sound is being preloaded but not yet playing
-    Queued = 2,    // The sound channel has finished preloading but is not yet playing
-    Playing = 3,   // A sound is playing
-    Paused = 4,    // A sound is paused
+    Idle = 0,    // No sounds are queued or playing
+    Loading = 1, // A queued sound is being preloaded but not yet playing
+    Queued = 2,  // The sound channel has finished preloading but is not yet playing
+    Playing = 3, // A sound is playing
+    Paused = 4,  // A sound is paused
 }
 
 #[derive(Clone, Debug)]
@@ -1050,12 +1057,12 @@ impl SoundManager {
         self.channels.get(channel).cloned()
     }
 
-    pub fn update(&mut self, delta_time: f64, player: &mut DirPlayer) -> Result<(), ScriptError> {
+    pub fn update(&mut self, delta_time: f64) -> Result<(), ScriptError> {
         for channel in &self.channels {
             // debug: log that update tick is processing this channel
             debug!("[CH{}] update tick", channel.borrow().channel_num);
 
-            channel.borrow_mut().update(delta_time, player)?;
+            channel.borrow_mut().update(delta_time)?;
         }
         Ok(())
     }
@@ -1120,17 +1127,20 @@ pub struct SoundChannel {
     pub expected_sample_rate: Option<u32>,
     pub is_decoding: Rc<RefCell<bool>>,
     pub decode_generation: Rc<RefCell<u32>>, // Incremented each time a new decode starts
-    pub playback_start_context_time: f64, // AudioContext.currentTime when playback started
-
+    pub playback_start_context_time: f64,    // AudioContext.currentTime when playback started
 }
 
 impl SoundChannel {
     fn audio_context(&self) -> &AudioContext {
-        self.audio_context.as_ref().expect("AudioContext not available (non-wasm target?)")
+        self.audio_context
+            .as_ref()
+            .expect("AudioContext not available (non-wasm target?)")
     }
 
     pub fn context_time(&self) -> f64 {
-        self.audio_context.as_ref().map_or(0.0, |ctx| ctx.current_time())
+        self.audio_context
+            .as_ref()
+            .map_or(0.0, |ctx| ctx.current_time())
     }
 
     /// Find MP3 start with ROBUST validation (checks 3+ consecutive frames)
@@ -1138,27 +1148,32 @@ impl SoundChannel {
     fn find_mp3_start(data: &[u8]) -> Option<usize> {
         const MIN_FRAMES_TO_VALIDATE: usize = 3;
         const MIN_MP3_SIZE: usize = 512; // Reduced for small Director sound effects (was 4096)
-        
+
         // Skip if data is suspiciously small
         if data.len() < MIN_MP3_SIZE {
-            console::log_1(&format!(
-                "⚠️ Data too small for MP3 ({} bytes < {} min)",
-                data.len(), MIN_MP3_SIZE
-            ).into());
+            console::log_1(
+                &format!(
+                    "⚠️ Data too small for MP3 ({} bytes < {} min)",
+                    data.len(),
+                    MIN_MP3_SIZE
+                )
+                .into(),
+            );
             return None;
         }
-        
+
         for i in 0..data.len().saturating_sub(4) {
             if data[i] == 0xFF && (data[i + 1] & 0xE0) == 0xE0 {
                 // Calculate expected remaining data size
                 let remaining = data.len() - i;
-                
+
                 // If MP3 start is found too late in the data, it's likely a false positive
                 if remaining < MIN_MP3_SIZE {
                     continue;
                 }
-                
-                if let Some(valid) = Self::validate_mp3_sequence(&data[i..], MIN_FRAMES_TO_VALIDATE) {
+
+                if let Some(valid) = Self::validate_mp3_sequence(&data[i..], MIN_FRAMES_TO_VALIDATE)
+                {
                     if valid {
                         console::log_1(&format!(
                             "✅ Valid MP3 sequence found at offset {} ({} bytes remaining, validated {} frames)",
@@ -1176,42 +1191,54 @@ impl SoundChannel {
     fn validate_mp3_sequence(data: &[u8], min_frames: usize) -> Option<bool> {
         let mut offset = 0;
         let mut frames_found = 0;
-        
+
         while frames_found < min_frames && offset < data.len().saturating_sub(4) {
             if data[offset] != 0xFF || (data[offset + 1] & 0xE0) != 0xE0 {
                 return Some(false);
             }
-            
+
             let header = u32::from_be_bytes([
                 data[offset],
                 data[offset + 1],
-                if offset + 2 < data.len() { data[offset + 2] } else { 0 },
-                if offset + 3 < data.len() { data[offset + 3] } else { 0 },
+                if offset + 2 < data.len() {
+                    data[offset + 2]
+                } else {
+                    0
+                },
+                if offset + 3 < data.len() {
+                    data[offset + 3]
+                } else {
+                    0
+                },
             ]);
-            
+
             let version = (header >> 19) & 0x3;
             let layer = (header >> 17) & 0x3;
             let bitrate_index = (header >> 12) & 0xF;
             let sample_rate_index = (header >> 10) & 0x3;
-            
-            if version == 1 || layer == 0 || bitrate_index == 0xF || 
-            bitrate_index == 0 || sample_rate_index == 3 {
+
+            if version == 1
+                || layer == 0
+                || bitrate_index == 0xF
+                || bitrate_index == 0
+                || sample_rate_index == 3
+            {
                 return Some(false);
             }
-            
+
             let frame_size = Self::calculate_mp3_frame_size(header);
             if frame_size == 0 || frame_size > 4096 {
                 return Some(false);
             }
-            
+
             frames_found += 1;
             offset += frame_size;
-            
+
             if offset + 4 > data.len() {
                 break;
             }
         }
-        
+
         Some(frames_found >= min_frames || (frames_found > 0 && offset >= data.len() - 4))
     }
 
@@ -1221,9 +1248,15 @@ impl SoundChannel {
             // MPEG 2.5
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-                [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-                [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+                [
+                    0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+                ],
+                [
+                    0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+                ],
+                [
+                    0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0,
+                ],
             ],
             // Reserved
             [
@@ -1235,49 +1268,61 @@ impl SoundChannel {
             // MPEG 2
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-                [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
-                [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+                [
+                    0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+                ],
+                [
+                    0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+                ],
+                [
+                    0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0,
+                ],
             ],
             // MPEG 1
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
-                [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
-                [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],
+                [
+                    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
+                ],
+                [
+                    0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0,
+                ],
+                [
+                    0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0,
+                ],
             ],
         ];
-        
+
         const SAMPLE_RATES: [[u32; 4]; 4] = [
             [11025, 12000, 8000, 0],
             [0, 0, 0, 0],
             [22050, 24000, 16000, 0],
             [44100, 48000, 32000, 0],
         ];
-        
+
         let version = ((header >> 19) & 0x3) as usize;
         let layer = ((header >> 17) & 0x3) as usize;
         let bitrate_index = ((header >> 12) & 0xF) as usize;
         let sample_rate_index = ((header >> 10) & 0x3) as usize;
         let padding = (header >> 9) & 0x1;
-        
+
         if version >= 4 || layer >= 4 || bitrate_index >= 16 || sample_rate_index >= 4 {
             return 0;
         }
-        
+
         let bitrate = BITRATES[version][layer][bitrate_index];
         let sample_rate = SAMPLE_RATES[version][sample_rate_index];
-        
+
         if bitrate == 0 || sample_rate == 0 {
             return 0;
         }
-        
+
         let frame_size = if layer == 3 {
             ((12 * bitrate * 1000 / sample_rate) + padding) * 4
         } else {
             (144 * bitrate * 1000 / sample_rate) + padding
         };
-        
+
         frame_size as usize
     }
 
@@ -1452,7 +1497,9 @@ impl SoundChannel {
             };
             (
                 seg.member_ref.clone(),
-                ch.audio_context.clone().expect("Audio context not initialized"),
+                ch.audio_context
+                    .clone()
+                    .expect("Audio context not initialized"),
                 ch.channel_num,
                 ch.is_decoding.clone(),
             )
@@ -1507,7 +1554,10 @@ impl SoundChannel {
         let player = player_opt.ok_or_else(|| JsValue::from_str("Player not initialized"))?;
 
         // FIX: audio_context is an Arc, so we dereference it to get a reference (&AudioContext)
-        let audio_context = player.sound_manager.audio_context().expect("Audio context not initialized");
+        let audio_context = player
+            .sound_manager
+            .audio_context()
+            .expect("Audio context not initialized");
 
         // Load and create the buffer
         // FIX: Dereferencing Arc<AudioContext> to pass &AudioContext
@@ -1591,7 +1641,11 @@ impl SoundChannel {
         // Case 2: String member name lookup
         if let Ok(member_name) = datum.string_value() {
             // Find member by name
-            if let Some(member_ref) = player.movie.cast_manager.find_member_ref_by_name(&member_name) {
+            if let Some(member_ref) = player
+                .movie
+                .cast_manager
+                .find_member_ref_by_name(&member_name)
+            {
                 let cast_member = player.movie.cast_manager.find_member_by_ref(&member_ref)?;
                 match &cast_member.member_type {
                     CastMemberType::Sound(sound_member) => return Some(sound_member.clone()),
@@ -1664,7 +1718,10 @@ impl SoundChannel {
 
             if channel.loop_count == 0 || channel.loop_count > 1 {
                 channel.member = Some(member_ref.clone());
-                debug!("📦 Stored member_ref for looping (loop_count={})", channel.loop_count);
+                debug!(
+                    "📦 Stored member_ref for looping (loop_count={})",
+                    channel.loop_count
+                );
             }
 
             // Only set current_segment_index if it's not already set (first time playing from playlist)
@@ -1694,7 +1751,7 @@ impl SoundChannel {
     pub fn start_sound(self_rc: Rc<RefCell<Self>>, member_ref: DatumRef) {
         let (channel_num, audio_context, loop_count) = {
             let mut this = self_rc.borrow_mut();
-            
+
             if let Some(ref ctx) = this.audio_context {
                 let state = ctx.state();
                 debug!("🎵 AudioContext state: {:?}", state);
@@ -1723,8 +1780,12 @@ impl SoundChannel {
                 this.queued_members.push(member_ref.clone());
                 return;
             }
-            
-            (this.channel_num, this.audio_context.clone().unwrap(), this.loop_count)
+
+            (
+                this.channel_num,
+                this.audio_context.clone().unwrap(),
+                this.loop_count,
+            )
         };
 
         let player_opt = unsafe { crate::PLAYER_OPT.as_mut() };
@@ -1782,10 +1843,15 @@ impl SoundChannel {
                         ch.status = SoundStatus::Loading;
                     }
 
-                    if let Err(e) = Self::start_sound_mp3_async(self_rc_clone.clone(), mp3_data.clone()).await {
+                    if let Err(e) =
+                        Self::start_sound_mp3_async(self_rc_clone.clone(), mp3_data.clone()).await
+                    {
                         error!("❌ MP3 playback failed: {:?}", e);
-                        debug!("📊 MP3 data size: {} bytes, first bytes: {:02X?}", 
-                            mp3_data.len(), &mp3_data[0..32.min(mp3_data.len())]);
+                        debug!(
+                            "📊 MP3 data size: {} bytes, first bytes: {:02X?}",
+                            mp3_data.len(),
+                            &mp3_data[0..32.min(mp3_data.len())]
+                        );
                         {
                             let mut ch = self_rc_clone.borrow_mut();
                             ch.status = SoundStatus::Idle;
@@ -1854,16 +1920,15 @@ impl SoundChannel {
             // Spawn async resampling task
             let self_rc_clone = self_rc.clone();
             debug!("🚀 About to spawn MP3 decode task (start_sound #2)");
-            
+
             let my_generation = {
                 let mut ch = self_rc.borrow_mut();
                 *ch.decode_generation.borrow_mut() += 1;
                 let gen_ = *ch.decode_generation.borrow();
-                gen_  // Return the copied value
+                gen_ // Return the copied value
             };
-            
-            wasm_bindgen_futures::spawn_local(async move {
 
+            wasm_bindgen_futures::spawn_local(async move {
                 {
                     let mut ch = self_rc_clone.borrow_mut();
                     ch.status = SoundStatus::Loading;
@@ -1888,7 +1953,10 @@ impl SoundChannel {
                     let ch = self_rc_clone.borrow();
                     let current_gen = *ch.decode_generation.borrow();
                     if current_gen != my_generation {
-                        warn!("⚠️ Channel {} PCM decode was cancelled (gen {} != {}), not starting playback", channel_num, my_generation, current_gen);
+                        warn!(
+                            "⚠️ Channel {} PCM decode was cancelled (gen {} != {}), not starting playback",
+                            channel_num, my_generation, current_gen
+                        );
                         return;
                     }
                 }
@@ -1907,7 +1975,7 @@ impl SoundChannel {
                     }
                 };
                 source.set_buffer(Some(&resampled_buffer));
-                source.set_loop(loop_count == 0); 
+                source.set_loop(loop_count == 0);
 
                 // Create gain node
                 let gain = match ch.audio_context().create_gain() {
@@ -1951,19 +2019,23 @@ impl SoundChannel {
                     debug!("🔚 Channel {} sound ended", channel_num);
 
                     let mut ch = self_rc_clone2.borrow_mut();
-                    
+
                     // Only proceed if we were actually playing (not stopped early)
                     if ch.status != SoundStatus::Playing {
-                        warn!("⚠️ Channel {} was already stopped, ignoring ended event", channel_num);
+                        warn!(
+                            "⚠️ Channel {} was already stopped, ignoring ended event",
+                            channel_num
+                        );
                         return;
                     }
-                    
+
                     ch.status = SoundStatus::Idle;
                     ch.source_node = None;
                     ch.start_next_segment();
                 });
 
-                let _ = source.add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref());
+                let _ = source
+                    .add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref());
                 closure.forget();
 
                 // Start playback (ONLY ONCE)
@@ -2073,9 +2145,9 @@ impl SoundChannel {
             *ch.is_decoding.borrow_mut() = true;
             *ch.decode_generation.borrow_mut() += 1;
             let gen_ = *ch.decode_generation.borrow();
-            gen_  // Return the copied value
+            gen_ // Return the copied value
         };
-        
+
         debug!("🔢 Starting decode generation {}", my_generation);
 
         // Ensure flag is cleared on exit
@@ -2253,7 +2325,10 @@ impl SoundChannel {
             let ch = self_rc.borrow();
             let current_gen = *ch.decode_generation.borrow();
             if current_gen != my_generation {
-                warn!("⚠️ Channel {} decode was cancelled (gen {} != {}), not starting playback", channel_num, my_generation, current_gen);
+                warn!(
+                    "⚠️ Channel {} decode was cancelled (gen {} != {}), not starting playback",
+                    channel_num, my_generation, current_gen
+                );
                 return Ok(());
             }
         }
@@ -2275,18 +2350,21 @@ impl SoundChannel {
 
         let closure = Closure::<dyn FnMut()>::new(move || {
             debug!("🔚 Channel {} MP3 ended", channel_num);
-            
+
             let mut ch = self_rc_clone.borrow_mut();
             debug!("Setting status from {:?} to Idle", ch.status);
-            
+
             // Only proceed if we were actually playing (not stopped early)
             if ch.status != SoundStatus::Playing {
-                warn!("⚠️ Channel {} was already stopped, ignoring ended event", channel_num);
+                warn!(
+                    "⚠️ Channel {} was already stopped, ignoring ended event",
+                    channel_num
+                );
                 return;
             }
-            
+
             ch.status = SoundStatus::Idle;
-            ch.source_node = None;  // Clear the source node
+            ch.source_node = None; // Clear the source node
             ch.start_next_segment();
         });
 
@@ -2453,7 +2531,7 @@ impl SoundChannel {
             };
 
             source.set_buffer(Some(&buffer));
-            
+
             // Set up looping if needed
             let loop_count = this.loop_count;
             if loop_count == 0 {
@@ -2498,7 +2576,8 @@ impl SoundChannel {
             let closure = Closure::<dyn FnMut()>::new(move || {
                 SoundChannel::handle_end_of_sound(channel_index);
             });
-            source.add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref())
+            source
+                .add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref())
                 .unwrap_or_else(|e| {
                     warn!("⚠️ Failed to add ended listener: {:?}", e);
                 });
@@ -2846,14 +2925,29 @@ impl SoundChannel {
         ).into());
 
         // --- STEP 2: Detect actual format ---
-        // Check for MP3, but skip when data size matches expected raw PCM size.
-        let bytes_per_sample_est = if bits_per_sample > 0 { bits_per_sample as usize / 8 } else { 2 };
+        // Honor explicit PCM metadata. PCM sample data can contain byte
+        // sequences that look like valid MP3 headers, so MP3 probing is only
+        // appropriate for compressed or ambiguous metadata.
+        let codec_lower = codec.to_ascii_lowercase();
+        let codec_is_declared_pcm = codec_lower.contains("raw_pcm") || codec_lower.contains("pcm");
+        let codec_is_declared_mp3 = codec_lower.contains("mp3") || codec_lower.contains("mpeg");
+        let bytes_per_sample_est = if bits_per_sample > 0 {
+            bits_per_sample as usize / 8
+        } else {
+            2
+        };
         let expected_pcm_size = expected_samples
             .filter(|&s| s > 0)
             .map(|s| s as usize * channels as usize * bytes_per_sample_est);
-        let data_likely_pcm = expected_pcm_size
-            .map_or(false, |expected| data.len() >= expected * 4 / 5);
-        let is_mp3 = if data_likely_pcm { false } else { Self::find_mp3_start(data).is_some() };
+        let data_likely_pcm =
+            expected_pcm_size.map_or(false, |expected| data.len() >= expected * 4 / 5);
+        let is_mp3 = if codec_is_declared_mp3 {
+            Self::find_mp3_start(data).is_some()
+        } else if codec_is_declared_pcm || data_likely_pcm {
+            false
+        } else {
+            Self::find_mp3_start(data).is_some()
+        };
         let is_probably_adpcm = !is_mp3 && codec.contains("ima");
         // Only use byte-distribution heuristic when bits_per_sample is unknown (0).
         // When metadata explicitly says 16-bit, trust it — the heuristic can false-positive
@@ -2868,7 +2962,8 @@ impl SoundChannel {
                         .count()
                         > 50));
 
-        let (is_mp3, is_probably_adpcm, is_probably_8bit) = (is_mp3, is_probably_adpcm, is_probably_8bit);
+        let (is_mp3, is_probably_adpcm, is_probably_8bit) =
+            (is_mp3, is_probably_adpcm, is_probably_8bit);
 
         console::log_1(
             &format!(
@@ -3081,21 +3176,30 @@ impl SoundChannel {
             "=== load_director_audio_data ===\nTotal file size: {} bytes\nChannels: {}, Sample Rate: {} Hz, Bits: {}, Codec: '{}', Expected samples: {:?}",
             sound_bytes.len(), channels, sample_rate, bits_per_sample, codec, expected_samples
         ).into());
-        
-        // Check for MP3, but skip when data size matches expected raw PCM.
-        // sndH/sndS headers sometimes claim "raw_pcm" when data is actually MP3-compressed.
-        // We detect this by comparing data size to what raw PCM would need.
-        // If the data is close to expected PCM size, it IS PCM and MP3 patterns are false positives.
-        let bytes_per_sample_est = if bits_per_sample > 0 { bits_per_sample as usize / 8 } else { 2 };
+
+        // Check for MP3 when the metadata is compressed or when the declared
+        // PCM size does not fit the payload. Some Director casts label MP3
+        // payloads as raw_pcm while carrying the uncompressed sample count in
+        // the member metadata; in that case the byte stream is far smaller than
+        // PCM and begins with a short Director prefix followed by valid MPEG
+        // frames.
+        let codec_lower = codec.to_ascii_lowercase();
+        let codec_is_declared_mp3 = codec_lower.contains("mp3") || codec_lower.contains("mpeg");
+        let bytes_per_sample_est = if bits_per_sample > 0 {
+            bits_per_sample as usize / 8
+        } else {
+            2
+        };
         let expected_pcm_size = expected_samples
             .filter(|&s| s > 0)
             .map(|s| s as usize * channels as usize * bytes_per_sample_est);
-        let data_likely_pcm = expected_pcm_size
-            .map_or(false, |expected| sound_bytes.len() >= expected * 4 / 5);
-        let mp3_start = if data_likely_pcm {
-            None
-        } else {
+        let data_likely_pcm =
+            expected_pcm_size.map_or(false, |expected| sound_bytes.len() >= expected * 4 / 5);
+        let should_probe_mp3 = codec_is_declared_mp3 || !data_likely_pcm;
+        let mp3_start = if should_probe_mp3 {
             Self::find_mp3_start(sound_bytes)
+        } else {
+            None
         };
 
         if let Some(mp3_start) = mp3_start {
@@ -3114,9 +3218,12 @@ impl SoundChannel {
                 compressed_data: Some(mp3_data),
             });
         }
-        
+
         // No MP3 found - treat as PCM/ADPCM
-        debug!("📝 No MP3 detected - processing as PCM/ADPCM (codec='{}')", codec);
+        debug!(
+            "📝 No MP3 detected - processing as PCM/ADPCM (codec='{}')",
+            codec
+        );
         let wav_bytes = Self::load_director_sound_from_bytes(
             sound_bytes,
             channels,
@@ -3246,7 +3353,7 @@ impl SoundChannel {
         // Step 4: Create new source node
         let source = self.audio_context().create_buffer_source()?;
         source.set_buffer(Some(&audio_buffer));
- 
+
         // Create FRESH gain and pan nodes
         let gain = match self.audio_context().create_gain() {
             Ok(g) => g,
@@ -3314,7 +3421,7 @@ impl SoundChannel {
             // Try normal WAV parsing first
             match Self::load_wav(data) {
                 Ok(audio) if audio.sample_rate > 0 && !audio.samples.is_empty() => {
-                    return Ok(audio)
+                    return Ok(audio);
                 }
                 _ => {
                     warn!("⚠️ Invalid WAV header, wrapping as proper WAV");
@@ -3502,10 +3609,16 @@ impl SoundChannel {
         {
             count
         } else {
-            1
+            member_opt
+                .as_ref()
+                .and_then(|member| {
+                    SoundChannel::resolve_sound_member(player, member)
+                        .map(|sound| if sound.info.loop_enabled { 0 } else { 1 })
+                })
+                .unwrap_or(1)
         };
 
-        if loop_count <= 0 {
+        if loop_count < 0 {
             console::log_1(
                 &format!(
                     "⚠️ queue(): invalid loopCount={} — skipping entry",
@@ -3569,7 +3682,9 @@ impl SoundChannel {
                 {
                     count
                 } else {
-                    1
+                    SoundChannel::resolve_sound_member(player, &member_datum)
+                        .map(|sound| if sound.info.loop_enabled { 0 } else { 1 })
+                        .unwrap_or(1)
                 };
 
                 self.playlist_segments.push(SoundSegment {
@@ -3611,11 +3726,11 @@ impl SoundChannel {
     }
 
     pub fn fade_out(&mut self, ticks: i32) {
-        self.fade_to(ticks, 0.0);
+        self.fade_to(0.0, ticks);
     }
 
-    pub fn fade_to(&mut self, ticks: i32, to_volume: f64) {
-        let duration = ticks as f64 / 60.0;
+    pub fn fade_to(&mut self, to_volume: f64, duration_ms: i32) {
+        let duration = duration_ms.max(0) as f64 / 1000.0;
         self.is_fading = true;
         self.fade_start_volume = self.volume;
         self.fade_target_volume = to_volume;
@@ -3640,18 +3755,26 @@ impl SoundChannel {
         self.sample_count as f64 / self.sample_rate as f64
     }
 
-    pub fn update(&mut self, delta_time: f64, player: &mut DirPlayer) -> Result<(), ScriptError> {
+    pub fn update(&mut self, delta_time: f64) -> Result<(), ScriptError> {
         // Handle fading
         if self.is_fading {
-            self.fade_elapsed += delta_time;
-            if self.fade_elapsed >= self.fade_duration {
-                self.set_volume(self.fade_target_volume);
+            if self.fade_duration <= 0.0 {
+                self.set_volume(self.fade_target_volume)
+                    .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
                 self.is_fading = false;
             } else {
-                let t = self.fade_elapsed / self.fade_duration;
-                let new_volume =
-                    self.fade_start_volume + (self.fade_target_volume - self.fade_start_volume) * t;
-                self.set_volume(new_volume);
+                self.fade_elapsed += delta_time;
+                if self.fade_elapsed >= self.fade_duration {
+                    self.set_volume(self.fade_target_volume)
+                        .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
+                    self.is_fading = false;
+                } else {
+                    let t = self.fade_elapsed / self.fade_duration;
+                    let new_volume = self.fade_start_volume
+                        + (self.fade_target_volume - self.fade_start_volume) * t;
+                    self.set_volume(new_volume)
+                        .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
+                }
             }
         }
 
@@ -3684,7 +3807,7 @@ impl SoundChannel {
         // Set status to Idle FIRST, before stopping the source
         // This prevents the onended callback from calling start_next_segment
         self.status = SoundStatus::Idle;
-        
+
         if let Some(source) = self.source_node.take() {
             debug!("🛑 Stopping channel {}", self.channel_num);
             let _ = source.stop_with_when(0.0);
@@ -3699,7 +3822,7 @@ impl SoundChannel {
         self.source_node = None;
         self.gain_node = None;
         self.pan_node = None;
-        
+
         // Cancel any in-progress async decode by clearing the flag
         *self.is_decoding.borrow_mut() = false;
     }
@@ -3740,7 +3863,9 @@ impl SoundChannel {
         let num_frames = audio_data.samples.len() / audio_data.num_channels as usize;
 
         let buffer = self
-            .audio_context.as_ref().unwrap()
+            .audio_context
+            .as_ref()
+            .unwrap()
             .create_buffer(
                 audio_data.num_channels as u32,
                 num_frames as u32,
@@ -3759,13 +3884,17 @@ impl SoundChannel {
         }
 
         let source = self
-            .audio_context.as_ref().unwrap()
+            .audio_context
+            .as_ref()
+            .unwrap()
             .create_buffer_source()
             .map_err(|e| ScriptError::new(format!("Failed to create source: {:?}", e)))?;
         source.set_buffer(Some(&buffer));
 
         let gain = self
-            .audio_context.as_ref().unwrap()
+            .audio_context
+            .as_ref()
+            .unwrap()
             .create_gain()
             .map_err(|e| ScriptError::new(format!("Failed to create gain: {:?}", e)))?;
         gain.gain().set_value((self.volume / 255.0) as f32);
@@ -3796,7 +3925,8 @@ impl SoundChannel {
         let closure = Closure::<dyn FnMut()>::new(move || {
             SoundChannel::handle_end_of_sound(channel_index);
         });
-        source.add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref())
+        source
+            .add_event_listener_with_callback("ended", closure.as_ref().unchecked_ref())
             .map_err(|e| ScriptError::new(format!("Failed to add ended listener: {:?}", e)))?;
         closure.forget();
 
@@ -3899,7 +4029,10 @@ impl SoundChannel {
             .into(),
         );
 
-        let context = self.audio_context.clone().expect("AudioContext not available (non-wasm target?)");
+        let context = self
+            .audio_context
+            .clone()
+            .expect("AudioContext not available (non-wasm target?)");
 
         // Resume context if needed
         let state_val = Reflect::get(context.as_ref(), &"state".into())?;
@@ -4059,8 +4192,6 @@ impl SoundChannel {
     // This is the static entry point called by the AudioBufferSourceNode's 'onended' event.
     // It needs to safely retrieve the DirPlayer and the specific SoundChannel.
     pub fn handle_end_of_sound(channel_index: i32) {
-        
-
         let player_opt = unsafe { crate::PLAYER_OPT.as_mut() };
         if player_opt.is_none() {
             error!("❌ PLAYER_OPT is None in handle_end_of_sound");
@@ -4072,13 +4203,16 @@ impl SoundChannel {
 
         if let Some(channel_rc) = channel_opt {
             let mut ch = channel_rc.borrow_mut();
-            
+
             // Only proceed if we were actually playing (not stopped early)
             if ch.status != SoundStatus::Playing {
-                warn!("⚠️ Channel {} was already stopped, ignoring ended event", channel_index);
+                warn!(
+                    "⚠️ Channel {} was already stopped, ignoring ended event",
+                    channel_index
+                );
                 return;
             }
-            
+
             ch.status = SoundStatus::Idle;
             ch.source_node = None;
             ch.start_next_segment();
@@ -4111,10 +4245,11 @@ impl SoundChannel {
                 .into(),
             );
             let channel_num = self.channel_num;
-            
+
             spawn_local(async move {
                 if let Some(player) = unsafe { crate::PLAYER_OPT.as_mut() } {
-                    if let Some(channel_rc) = player.sound_manager.get_channel(channel_num as usize) {
+                    if let Some(channel_rc) = player.sound_manager.get_channel(channel_num as usize)
+                    {
                         SoundChannel::play_file(channel_rc, queued_ref);
                     }
                 }
@@ -4136,14 +4271,16 @@ impl SoundChannel {
             if self.loop_count == 0 {
                 // Loop forever
                 debug!("♾️ Looping forever (loop_count=0)");
-                
+
                 if let Some(ref member_ref) = self.member {
                     let member_ref_clone = member_ref.clone();
                     let channel_num = self.channel_num;
-                    
+
                     spawn_local(async move {
                         if let Some(player) = unsafe { crate::PLAYER_OPT.as_mut() } {
-                            if let Some(channel_rc) = player.sound_manager.get_channel(channel_num as usize) {
+                            if let Some(channel_rc) =
+                                player.sound_manager.get_channel(channel_num as usize)
+                            {
                                 SoundChannel::play_file(channel_rc, member_ref_clone);
                             }
                         }
@@ -4154,20 +4291,18 @@ impl SoundChannel {
                 // Still have loops remaining
                 self.loops_remaining -= 1;
                 console::log_1(
-                    &format!(
-                        "🔁 Looping: {} loops remaining",
-                        self.loops_remaining
-                    )
-                    .into(),
+                    &format!("🔁 Looping: {} loops remaining", self.loops_remaining).into(),
                 );
-                
+
                 if let Some(ref member_ref) = self.member {
                     let member_ref_clone = member_ref.clone();
                     let channel_num = self.channel_num;
-                    
+
                     spawn_local(async move {
                         if let Some(player) = unsafe { crate::PLAYER_OPT.as_mut() } {
-                            if let Some(channel_rc) = player.sound_manager.get_channel(channel_num as usize) {
+                            if let Some(channel_rc) =
+                                player.sound_manager.get_channel(channel_num as usize)
+                            {
                                 SoundChannel::play_file(channel_rc, member_ref_clone);
                             }
                         }
@@ -4175,7 +4310,7 @@ impl SoundChannel {
                     return;
                 }
             }
-            
+
             // No more loops - check if there's a playlist to start
             if !self.playlist_segments.is_empty() {
                 debug!("🎵 Found {} queued sounds", self.playlist_segments.len());
@@ -4197,7 +4332,7 @@ impl SoundChannel {
                 }
                 return;
             }
-            
+
             // No loops left and no playlist - stop
             debug!("⏸️ Playback complete, no loops left");
             self.status = SoundStatus::Idle;
@@ -4261,7 +4396,8 @@ impl SoundChannel {
         // Play next segment if available
         if index < self.playlist_segments.len() {
             self.current_segment_index = Some(index);
-            self.playlist_segments[index].loops_remaining = self.playlist_segments[index].loop_count;
+            self.playlist_segments[index].loops_remaining =
+                self.playlist_segments[index].loop_count;
             let member_ref = self.playlist_segments[index].member_ref.clone();
 
             debug!("⏭️ Playing next segment at index {}", index);
@@ -4272,7 +4408,8 @@ impl SoundChannel {
                 let channel_num = self.channel_num;
                 spawn_local(async move {
                     if let Some(player) = unsafe { crate::PLAYER_OPT.as_mut() } {
-                        if let Some(channel_rc) = player.sound_manager.get_channel(channel_num as usize)
+                        if let Some(channel_rc) =
+                            player.sound_manager.get_channel(channel_num as usize)
                         {
                             SoundChannel::play_file(channel_rc, member_ref);
                         }
@@ -4290,8 +4427,6 @@ impl SoundChannel {
     /// to create a new source node immediately, without going through the full
     /// decode/resample pipeline. Returns true if successful.
     fn replay_cached_buffer(&mut self) -> bool {
-        
-
         let ctx = match self.audio_context.as_ref() {
             Some(ctx) => ctx,
             None => return false,
@@ -4333,12 +4468,14 @@ impl SoundChannel {
         self.status = SoundStatus::Playing;
         self.playback_start_context_time = ctx.current_time();
 
-        debug!("⚡ Channel {} gapless replay from cached buffer", self.channel_num);
+        debug!(
+            "⚡ Channel {} gapless replay from cached buffer",
+            self.channel_num
+        );
         true
     }
 
     fn spawn_playback_async(&self) {
-        
         debug!("🚀 Spawning async playback task");
 
         // We need to get an Rc to self somehow

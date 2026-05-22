@@ -33,10 +33,12 @@ pub fn butterfly_subdivide(
     }
 
     // For each edge, compute a new midpoint vertex
-    let mut get_or_create_midpoint = |a: u32, b: u32,
-        new_pos: &mut Vec<[f32; 3]>, new_norm: &mut Vec<[f32; 3]>,
-        edge_map: &mut HashMap<(u32, u32), u32>| -> u32
-    {
+    let mut get_or_create_midpoint = |a: u32,
+                                      b: u32,
+                                      new_pos: &mut Vec<[f32; 3]>,
+                                      new_norm: &mut Vec<[f32; 3]>,
+                                      edge_map: &mut HashMap<(u32, u32), u32>|
+     -> u32 {
         let key = if a < b { (a, b) } else { (b, a) };
         if let Some(&idx) = edge_map.get(&key) {
             return idx;
@@ -69,19 +71,39 @@ pub fn butterfly_subdivide(
                     ]
                 } else {
                     // Fallback to simple midpoint
-                    [(pa[0]+pb[0])*0.5, (pa[1]+pb[1])*0.5, (pa[2]+pb[2])*0.5]
+                    [
+                        (pa[0] + pb[0]) * 0.5,
+                        (pa[1] + pb[1]) * 0.5,
+                        (pa[2] + pb[2]) * 0.5,
+                    ]
                 }
             } else {
                 // Boundary edge: simple midpoint
-                [(pa[0]+pb[0])*0.5, (pa[1]+pb[1])*0.5, (pa[2]+pb[2])*0.5]
+                [
+                    (pa[0] + pb[0]) * 0.5,
+                    (pa[1] + pb[1]) * 0.5,
+                    (pa[2] + pb[2]) * 0.5,
+                ]
             }
         } else {
-            [(pa[0]+pb[0])*0.5, (pa[1]+pb[1])*0.5, (pa[2]+pb[2])*0.5]
+            [
+                (pa[0] + pb[0]) * 0.5,
+                (pa[1] + pb[1]) * 0.5,
+                (pa[2] + pb[2]) * 0.5,
+            ]
         };
 
         // Interpolate normal
-        let na = if (a as usize) < normals.len() { normals[a as usize] } else { [0.0, 1.0, 0.0] };
-        let nb = if (b as usize) < normals.len() { normals[b as usize] } else { [0.0, 1.0, 0.0] };
+        let na = if (a as usize) < normals.len() {
+            normals[a as usize]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let nb = if (b as usize) < normals.len() {
+            normals[b as usize]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
         let mn = normalize_vec3([
             (na[0] + nb[0]) * 0.5,
             (na[1] + nb[1]) * 0.5,
@@ -101,9 +123,27 @@ pub fn butterfly_subdivide(
         let b = face[1];
         let c = face[2];
 
-        let ab = get_or_create_midpoint(a, b, &mut new_positions, &mut new_normals, &mut edge_midpoints);
-        let bc = get_or_create_midpoint(b, c, &mut new_positions, &mut new_normals, &mut edge_midpoints);
-        let ca = get_or_create_midpoint(c, a, &mut new_positions, &mut new_normals, &mut edge_midpoints);
+        let ab = get_or_create_midpoint(
+            a,
+            b,
+            &mut new_positions,
+            &mut new_normals,
+            &mut edge_midpoints,
+        );
+        let bc = get_or_create_midpoint(
+            b,
+            c,
+            &mut new_positions,
+            &mut new_normals,
+            &mut edge_midpoints,
+        );
+        let ca = get_or_create_midpoint(
+            c,
+            a,
+            &mut new_positions,
+            &mut new_normals,
+            &mut edge_midpoints,
+        );
 
         // Original triangle splits into 4:
         //       a
@@ -123,12 +163,18 @@ pub fn butterfly_subdivide(
 /// Find the vertex in a face that is NOT a or b.
 fn opposite_vertex(face: [u32; 3], a: u32, b: u32) -> Option<u32> {
     for &v in &face {
-        if v != a && v != b { return Some(v); }
+        if v != a && v != b {
+            return Some(v);
+        }
     }
     None
 }
 
 fn normalize_vec3(v: [f32; 3]) -> [f32; 3] {
-    let len = (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]).sqrt();
-    if len > 1e-8 { [v[0]/len, v[1]/len, v[2]/len] } else { [0.0, 1.0, 0.0] }
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if len > 1e-8 {
+        [v[0] / len, v[1] / len, v[2] / len]
+    } else {
+        [0.0, 1.0, 0.0]
+    }
 }

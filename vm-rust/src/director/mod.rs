@@ -4,7 +4,7 @@ pub mod enums;
 pub mod file;
 pub mod guid;
 pub mod lingo;
+pub mod media;
 pub mod rifx;
 pub mod static_datum;
 pub mod utils;
-pub mod media;

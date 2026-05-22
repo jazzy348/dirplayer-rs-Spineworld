@@ -9,10 +9,40 @@ declare global {
 let globalAudioContext: AudioContext | null = null;
 let audioBackend: WebAudioBackend | null = null;
 let isAudioInitialized = false;
+let areGestureListenersInstalled = false;
+
+const audioGestureEvents = ["pointerdown", "mousedown", "click", "keydown", "touchstart"];
+
+function removeGestureListeners(listener: EventListener): void {
+  for (const eventName of audioGestureEvents) {
+    document.removeEventListener(eventName, listener, true);
+  }
+  areGestureListenersInstalled = false;
+}
+
+export async function resumeAudioContext(): Promise<boolean> {
+  if (!globalAudioContext) {
+    return false;
+  }
+
+  try {
+    audioBackend?.resume_context();
+
+    if (globalAudioContext.state !== "running") {
+      console.log(`Resuming AudioContext from state: ${globalAudioContext.state}`);
+      await globalAudioContext.resume();
+    }
+
+    return globalAudioContext.state === "running";
+  } catch (err) {
+    console.error("Failed to resume AudioContext:", err);
+    return false;
+  }
+}
 
 /**
  * Initialize the global AudioContext.
- * This should be called on a user gesture (e.g., click) to comply with autoplay policy.
+ * Browsers keep it suspended until a user gesture resumes it.
  */
 export function initAudioContext(): AudioContext {
   if (!globalAudioContext) {
@@ -23,6 +53,8 @@ export function initAudioContext(): AudioContext {
       if (!globalAudioContext) throw new Error("AudioContext not initialized");
       return globalAudioContext;
     };
+
+    setupAudioOnUserGesture();
   }
   return globalAudioContext;
 }
@@ -34,26 +66,17 @@ export function initAudioContext(): AudioContext {
  */
 export function initAudioBackend(): boolean {
   if (isAudioInitialized) {
+    void resumeAudioContext();
     return true;
   }
 
   try {
-    // Ensure AudioContext exists
-    const context = initAudioContext();
-
-    // Create WebAudioBackend
+    initAudioContext();
     audioBackend = new WebAudioBackend();
-    console.log("🎵 WebAudioBackend created");
-
-    audioBackend.resume_context();
-
-    // Resume AudioContext if needed
-    if (context.state !== 'running') {
-      console.log(`🎶 Resuming AudioContext from state: ${context.state}`);
-      context.resume().catch(e => console.error("Failed to resume AudioContext:", e));
-    }
+    console.log("WebAudioBackend created");
 
     isAudioInitialized = true;
+    void resumeAudioContext();
     return true;
   } catch (err) {
     console.error("Failed to create WebAudioBackend:", err);
@@ -62,16 +85,33 @@ export function initAudioBackend(): boolean {
 }
 
 /**
- * Setup audio initialization on first user gesture.
- * This handles the autoplay policy requirement.
+ * Setup audio initialization on user gestures.
+ * This handles browser autoplay policy for contexts created during VM startup.
  */
 export function setupAudioOnUserGesture(): void {
-  const initAudio = async () => {
-    initAudioBackend();
-    document.removeEventListener("click", initAudio);
+  if (areGestureListenersInstalled) {
+    return;
+  }
+
+  const initAudio: EventListener = () => {
+    if (!initAudioBackend()) {
+      return;
+    }
+
+    void resumeAudioContext().then((isRunning) => {
+      if (isRunning) {
+        removeGestureListeners(initAudio);
+      }
+    });
   };
 
-  document.addEventListener("click", initAudio, { once: true });
+  areGestureListenersInstalled = true;
+  for (const eventName of audioGestureEvents) {
+    document.addEventListener(eventName, initAudio, {
+      capture: true,
+      passive: true,
+    });
+  }
 }
 
 /**

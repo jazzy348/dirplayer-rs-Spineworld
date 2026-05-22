@@ -1,9 +1,9 @@
-mod lego;
-mod sulake;
 mod coca_cola;
-mod hotwheels;
-mod nintendo;
 mod dirplayer_test_movies;
-mod misc;
-mod intel;
 mod havok_demo;
+mod hotwheels;
+mod intel;
+mod lego;
+mod misc;
+mod nintendo;
+mod sulake;

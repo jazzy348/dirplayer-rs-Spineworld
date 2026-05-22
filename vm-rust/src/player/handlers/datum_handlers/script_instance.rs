@@ -1,20 +1,20 @@
-use std::collections::VecDeque;
+use crate::player::script::script_get_prop_opt;
 use crate::{
-    director::lingo::datum::{datum_bool, Datum, DatumType},
+    director::lingo::datum::{Datum, DatumType, datum_bool},
     player::{
+        DatumRef, DirPlayer, ScriptError, ScriptErrorCode,
         allocator::ScriptInstanceAllocatorTrait,
         cast_lib::CastMemberRef,
         ci_string::{CiStr, CiString},
         handlers::types::TypeUtils,
         player_call_script_handler, player_handle_scope_return, reserve_player_mut,
         reserve_player_ref,
-        script::{script_get_prop, script_set_prop, Script, ScriptHandlerRef},
+        script::{Script, ScriptHandlerRef, script_get_prop, script_set_prop},
         script_ref::ScriptInstanceRef,
-        DatumRef, DirPlayer, ScriptError, ScriptErrorCode,
         virtual_scripts::VirtualScriptRegistry,
     },
 };
-use crate::player::script::script_get_prop_opt;
+use std::collections::VecDeque;
 
 pub struct ScriptInstanceDatumHandlers {}
 pub struct ScriptInstanceUtils {}
@@ -147,11 +147,13 @@ impl ScriptInstanceUtils {
                         let channel = player.movie.score.get_channel(*sprite_num);
                         // Search through the sprite's behavior instances for a handler
                         for instance_ref in &channel.sprite.script_instance_list {
-                            if let Ok(Some(handler)) = ScriptInstanceUtils::get_script_instance_handler(
-                                handler_name,
-                                instance_ref,
-                                player,
-                            ) {
+                            if let Ok(Some(handler)) =
+                                ScriptInstanceUtils::get_script_instance_handler(
+                                    handler_name,
+                                    instance_ref,
+                                    player,
+                                )
+                            {
                                 return Some((Some(instance_ref.clone()), handler));
                             }
                         }
@@ -175,7 +177,7 @@ impl ScriptInstanceUtils {
             _ => {
                 return Err(ScriptError::new(
                     "Cannot set ancestor on non-script instance".to_string(),
-                ))
+                ));
             }
         };
         match key {
@@ -197,7 +199,9 @@ impl ScriptInstanceUtils {
                     _ => {
                         let script_instance =
                             player.allocator.get_script_instance_mut(&self_instance_id);
-                        script_instance.properties.insert(CiString::from("ancestor"), value.clone());
+                        script_instance
+                            .properties
+                            .insert(CiString::from("ancestor"), value.clone());
                         Ok(())
                     }
                 }
@@ -259,7 +263,11 @@ impl ScriptInstanceDatumHandlers {
     pub fn has_async_handler(datum: &DatumRef, name: &str) -> Result<bool, ScriptError> {
         return reserve_player_ref(|player| {
             if let Datum::ScriptInstanceRef(instance_ref) = player.get_datum(datum) {
-                if crate::player::virtual_scripts::VirtualScriptRegistry::has_instance_handler(player, instance_ref, name) {
+                if crate::player::virtual_scripts::VirtualScriptRegistry::has_instance_handler(
+                    player,
+                    instance_ref,
+                    name,
+                ) {
                     return Ok(true);
                 }
             }
@@ -305,7 +313,12 @@ impl ScriptInstanceDatumHandlers {
         } else {
             // No handler found in script - check virtual handler first
             let virtual_result = reserve_player_mut(|player| {
-                crate::player::virtual_scripts::VirtualScriptRegistry::try_call_instance_handler(player, &instance_id, handler_name, args)
+                crate::player::virtual_scripts::VirtualScriptRegistry::try_call_instance_handler(
+                    player,
+                    &instance_id,
+                    handler_name,
+                    args,
+                )
             });
             match virtual_result {
                 Ok(Some(result)) => return Ok(result),
@@ -322,10 +335,10 @@ impl ScriptInstanceDatumHandlers {
 
             // Director system events should be silently ignored if not implemented
             match handler_name {
-                "exitFrame" | "enterFrame" | "prepareFrame" | "idle" | "stepFrame" |
-                "mouseDown" | "mouseUp" | "mouseEnter" | "mouseLeave" | "mouseWithin" |
-                "keyDown" | "keyUp" | "beginSprite" | "endSprite" | "prepareMovie" |
-                "startMovie" | "stopMovie" | "activate" | "deactivate" => {
+                "exitFrame" | "enterFrame" | "prepareFrame" | "idle" | "stepFrame"
+                | "mouseDown" | "mouseUp" | "mouseEnter" | "mouseLeave" | "mouseWithin"
+                | "keyDown" | "keyUp" | "beginSprite" | "endSprite" | "prepareMovie"
+                | "startMovie" | "stopMovie" | "activate" | "deactivate" => {
                     return Ok(DatumRef::Void);
                 }
                 _ => {}
@@ -342,11 +355,13 @@ impl ScriptInstanceDatumHandlers {
             });
             if let (Some(ancestor_ref), Some(ancestor_type)) = (ancestor_ref, ancestor_type) {
                 // Delegate to the appropriate handler based on ancestor type
-                use crate::director::lingo::datum::DatumType;
                 use super::timeout::TimeoutDatumHandlers;
+                use crate::director::lingo::datum::DatumType;
 
                 match ancestor_type {
-                    DatumType::TimeoutRef | DatumType::TimeoutInstance | DatumType::TimeoutFactory => {
+                    DatumType::TimeoutRef
+                    | DatumType::TimeoutInstance
+                    | DatumType::TimeoutFactory => {
                         // For timeouts, use the sync call handler which handles forget
                         // We avoid call_async to prevent async recursion issues
                         return TimeoutDatumHandlers::call(&ancestor_ref, handler_name, args);
@@ -404,7 +419,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot set property on non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
             script_set_prop(player, &instance_ref, &prop_name, &value_ref, false)
@@ -422,7 +437,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot get property on non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -443,7 +458,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot set property on non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -470,7 +485,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot count non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
             let prop_name = player.get_datum(&args[0]).string_value()?;
@@ -482,7 +497,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot count non-list property".to_string(),
-                    ))
+                    ));
                 }
             };
             Ok(player.alloc_datum(Datum::Int(count as i32)))
@@ -497,10 +512,11 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot get property on non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
-            let prop_value = script_get_prop_opt(player, &instance_ref, &prop_name).unwrap_or(DatumRef::Void);
+            let prop_value =
+                script_get_prop_opt(player, &instance_ref, &prop_name).unwrap_or(DatumRef::Void);
             Ok(prop_value)
         })
     }
@@ -512,7 +528,7 @@ impl ScriptInstanceDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "Cannot get handlers of non-script instance".to_string(),
-                    ))
+                    ));
                 }
             };
             let script_instance = player.allocator.get_script_instance(&script_instance_ref);
@@ -521,7 +537,11 @@ impl ScriptInstanceDatumHandlers {
                 .cast_manager
                 .get_script_by_ref(&script_instance.script);
             if script.is_none() {
-                return Ok(player.alloc_datum(Datum::List(DatumType::List, VecDeque::new(), false)));
+                return Ok(player.alloc_datum(Datum::List(
+                    DatumType::List,
+                    VecDeque::new(),
+                    false,
+                )));
             }
             let script = script.unwrap();
             let handler_names = script.handler_names.clone();
@@ -659,7 +679,8 @@ impl ScriptInstanceDatumHandlers {
 
                     if let Some(target_id) = target_id {
                         // Find and remove the instance from the list
-                        let new_items: VecDeque<DatumRef> = items.iter()
+                        let new_items: VecDeque<DatumRef> = items
+                            .iter()
                             .filter(|item| {
                                 match player.get_datum(item) {
                                     Datum::ScriptInstanceRef(item_ref) => **item_ref != target_id,

@@ -1,9 +1,9 @@
 use fxhash::FxHashMap;
 
 use super::{
+    DatumRef,
     cast_lib::{CastMemberRef, INVALID_CAST_MEMBER_REF},
     script_ref::ScriptInstanceRef,
-    DatumRef,
 };
 
 pub type ScopeRef = usize;

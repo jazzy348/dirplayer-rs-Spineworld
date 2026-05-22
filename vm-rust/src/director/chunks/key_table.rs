@@ -1,6 +1,5 @@
 use binary_reader::BinaryReader;
 
-
 #[derive(Clone)]
 pub struct KeyTableEntry {
     pub section_id: u32, // TODO i32?
@@ -49,7 +48,10 @@ impl KeyTableChunk {
                 let all_entries: Vec<KeyTableEntry> = (0..entry_count)
                     .map(|_| KeyTableEntry::from_reader(reader, dir_version).unwrap())
                     .collect();
-                all_entries.into_iter().filter(|e| e.section_id > 0).collect()
+                all_entries
+                    .into_iter()
+                    .filter(|e| e.section_id > 0)
+                    .collect()
             },
         });
     }

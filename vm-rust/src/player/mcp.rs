@@ -6,18 +6,23 @@ use std::rc::Rc;
 use fxhash::FxHashMap;
 use serde::Serialize;
 
-use crate::{director::{
-    enums::ScriptType,
-    file::get_variable_multiplier,
-    lingo::{decompiler::handler::decompile_handler, script::ScriptContext as LingoScriptContext},
-}, player::datum_formatting::format_concrete_datum_with_depth};
+use crate::{
+    director::{
+        enums::ScriptType,
+        file::get_variable_multiplier,
+        lingo::{
+            decompiler::handler::decompile_handler, script::ScriptContext as LingoScriptContext,
+        },
+    },
+    player::datum_formatting::format_concrete_datum_with_depth,
+};
 
 use super::{
+    DirPlayer,
     allocator::{DatumAllocatorTrait, ScriptInstanceAllocatorTrait},
     cast_lib::{CastLib, CastMemberRef},
     datum_ref::DatumId,
     script::Script,
-    DirPlayer,
 };
 
 // ============================================================================
@@ -137,12 +142,18 @@ pub struct McpExecutionState {
     pub is_playing: bool,
     pub is_paused: bool,
     pub current_frame: u32,
+    pub next_frame: Option<u32>,
     pub total_frames: usize,
     pub at_breakpoint: bool,
     pub movie_loaded: bool,
     pub movie_title: String,
     pub stage_width: u32,
     pub stage_height: u32,
+    pub is_in_frame_update: bool,
+    pub in_mouse_command: bool,
+    pub command_handler_yielding: bool,
+    pub has_player_frame_changed: bool,
+    pub has_frame_changed_in_go: bool,
 }
 
 #[derive(Serialize)]
@@ -242,7 +253,10 @@ pub struct McpEvalResult {
 /// Serialize result to JSON, with error fallback
 fn to_json<T: Serialize>(result: &T) -> String {
     serde_json::to_string_pretty(result).unwrap_or_else(|e| {
-        serde_json::to_string(&McpError { error: e.to_string() }).unwrap()
+        serde_json::to_string(&McpError {
+            error: e.to_string(),
+        })
+        .unwrap()
     })
 }
 
@@ -273,7 +287,11 @@ fn datum_to_mcp_value_compact(player: &DirPlayer, datum_ref: &super::DatumRef) -
     datum_to_mcp_value_with_options(player, datum_ref, true)
 }
 
-fn datum_to_mcp_value_with_options(player: &DirPlayer, datum_ref: &super::DatumRef, compact: bool) -> McpDatumValue {
+fn datum_to_mcp_value_with_options(
+    player: &DirPlayer,
+    datum_ref: &super::DatumRef,
+    compact: bool,
+) -> McpDatumValue {
     let datum = player.get_datum(datum_ref);
     let datum_id = match datum_ref {
         super::DatumRef::Void => None,
@@ -295,7 +313,11 @@ fn datum_to_mcp_value_with_options(player: &DirPlayer, datum_ref: &super::DatumR
 }
 
 /// Format datum in compact form for summaries
-fn format_datum_compact(datum: &crate::director::lingo::datum::Datum, player: &DirPlayer, datum_id: Option<usize>) -> String {
+fn format_datum_compact(
+    datum: &crate::director::lingo::datum::Datum,
+    player: &DirPlayer,
+    datum_id: Option<usize>,
+) -> String {
     use crate::director::lingo::datum::Datum;
 
     match datum {
@@ -313,7 +335,7 @@ fn format_datum_compact(datum: &crate::director::lingo::datum::Datum, player: &D
             } else {
                 format!("\"{}\"", s)
             }
-        },
+        }
         Datum::StringChunk(..) => {
             let s = datum.string_value().unwrap_or_default();
             if s.len() > COMPACT_VALUE_MAX_LEN - 2 {
@@ -321,36 +343,43 @@ fn format_datum_compact(datum: &crate::director::lingo::datum::Datum, player: &D
             } else {
                 format!("\"{}\"", s)
             }
-        },
+        }
 
         // Lists - show count only
         Datum::List(_, items, _) => {
             format!("<list:{}>", items.len())
-        },
+        }
 
         // PropLists - show count only
         Datum::PropList(entries, _) => {
             format!("<propList:{}>", entries.len())
-        },
+        }
 
         // Script instances - compact form with ID
         Datum::ScriptInstanceRef(instance_ref) => {
             let instance = player.allocator.get_script_instance(instance_ref);
-            if let Some(script) = player.movie.cast_manager.get_script_by_ref(&instance.script) {
+            if let Some(script) = player
+                .movie
+                .cast_manager
+                .get_script_by_ref(&instance.script)
+            {
                 format!("<{}:{}>", script.name, instance_ref)
             } else {
                 format!("<instance:{}>", instance_ref)
             }
-        },
+        }
 
         // Script refs
         Datum::ScriptRef(member_ref) => {
             if let Some(script) = player.movie.cast_manager.get_script_by_ref(member_ref) {
                 format!("<script:{}>", script.name)
             } else {
-                format!("<script:{},{}>", member_ref.cast_lib, member_ref.cast_member)
+                format!(
+                    "<script:{},{}>",
+                    member_ref.cast_lib, member_ref.cast_member
+                )
             }
-        },
+        }
 
         // For other types, use ID-based short form if available
         _ => {
@@ -472,14 +501,21 @@ pub fn mcp_list_scripts(
     to_json(&McpScriptList {
         scripts,
         total_count,
-        offset: if offset_val > 0 { Some(offset_val) } else { None },
+        offset: if offset_val > 0 {
+            Some(offset_val)
+        } else {
+            None
+        },
         limit,
     })
 }
 
 /// Get detailed information about a specific script
 pub fn mcp_get_script(player: &DirPlayer, cast_lib: i32, cast_member: i32) -> String {
-    let member_ref = CastMemberRef { cast_lib, cast_member };
+    let member_ref = CastMemberRef {
+        cast_lib,
+        cast_member,
+    };
 
     let ctx = match get_script_context(player, &member_ref) {
         Ok(c) => c,
@@ -514,7 +550,13 @@ pub fn mcp_get_script(player: &DirPlayer, cast_lib: i32, cast_member: i32) -> St
         name: ctx.script.name.clone(),
         script_type: script_type_str(&ctx.script.script_type).to_string(),
         handlers,
-        properties: ctx.script.properties.borrow().keys().map(|k| k.to_string()).collect(),
+        properties: ctx
+            .script
+            .properties
+            .borrow()
+            .keys()
+            .map(|k| k.to_string())
+            .collect(),
     })
 }
 
@@ -525,7 +567,10 @@ pub fn mcp_disassemble_handler(
     cast_member: i32,
     handler_name: &str,
 ) -> String {
-    let member_ref = CastMemberRef { cast_lib, cast_member };
+    let member_ref = CastMemberRef {
+        cast_lib,
+        cast_member,
+    };
 
     let ctx = match get_script_context(player, &member_ref) {
         Ok(c) => c,
@@ -560,7 +605,10 @@ pub fn mcp_decompile_handler(
     cast_member: i32,
     handler_name: &str,
 ) -> String {
-    let member_ref = CastMemberRef { cast_lib, cast_member };
+    let member_ref = CastMemberRef {
+        cast_lib,
+        cast_member,
+    };
 
     let ctx = match get_script_context(player, &member_ref) {
         Ok(c) => c,
@@ -609,7 +657,11 @@ pub fn mcp_decompile_handler(
 /// Parameters:
 /// - depth: Maximum number of scopes to return from the top (None = all)
 /// - include_locals: Whether to include local variables and arguments (default: false)
-pub fn mcp_get_call_stack(player: &DirPlayer, depth: Option<usize>, include_locals: bool) -> String {
+pub fn mcp_get_call_stack(
+    player: &DirPlayer,
+    depth: Option<usize>,
+    include_locals: bool,
+) -> String {
     // Filter out placeholder scopes (cast_lib == 0 && cast_member == 0)
     let valid_scopes: Vec<_> = player
         .scopes
@@ -651,25 +703,30 @@ pub fn mcp_get_call_stack(player: &DirPlayer, depth: Option<usize>, include_loca
                 handler_name: get_handler_name(lctx, scope.handler_name_id),
                 bytecode_index: scope.bytecode_index,
                 locals: if include_locals {
-                    Some(scope
-                        .locals
-                        .iter()
-                        .map(|(name_id, datum_ref)| {
-                            let name = lctx.and_then(|l| l.names.get(*name_id as usize))
-                                .cloned()
-                                .unwrap_or_else(|| format!("local_{}", name_id));
-                            (name, datum_to_mcp_value_compact(player, datum_ref))
-                        })
-                        .collect())
+                    Some(
+                        scope
+                            .locals
+                            .iter()
+                            .map(|(name_id, datum_ref)| {
+                                let name = lctx
+                                    .and_then(|l| l.names.get(*name_id as usize))
+                                    .cloned()
+                                    .unwrap_or_else(|| format!("local_{}", name_id));
+                                (name, datum_to_mcp_value_compact(player, datum_ref))
+                            })
+                            .collect(),
+                    )
                 } else {
                     None
                 },
                 args: if include_locals {
-                    Some(scope
-                        .args
-                        .iter()
-                        .map(|datum_ref| datum_to_mcp_value_compact(player, datum_ref))
-                        .collect())
+                    Some(
+                        scope
+                            .args
+                            .iter()
+                            .map(|datum_ref| datum_to_mcp_value_compact(player, datum_ref))
+                            .collect(),
+                    )
                 } else {
                     None
                 },
@@ -679,7 +736,11 @@ pub fn mcp_get_call_stack(player: &DirPlayer, depth: Option<usize>, include_loca
         .collect();
 
     to_json(&McpCallStack {
-        current_scope_index: if scopes.is_empty() { None } else { Some(scopes.len() - 1) },
+        current_scope_index: if scopes.is_empty() {
+            None
+        } else {
+            Some(scopes.len() - 1)
+        },
         scopes,
     })
 }
@@ -733,6 +794,7 @@ pub fn mcp_get_execution_state(player: &DirPlayer) -> String {
         is_playing: player.is_playing,
         is_paused: player.is_script_paused,
         current_frame: player.movie.current_frame,
+        next_frame: player.next_frame,
         total_frames: player
             .movie
             .score
@@ -746,6 +808,11 @@ pub fn mcp_get_execution_state(player: &DirPlayer) -> String {
         movie_title: player.title.clone(),
         stage_width: player.stage_size.0,
         stage_height: player.stage_size.1,
+        is_in_frame_update: player.is_in_frame_update,
+        in_mouse_command: player.in_mouse_command,
+        command_handler_yielding: player.command_handler_yielding,
+        has_player_frame_changed: player.has_player_frame_changed,
+        has_frame_changed_in_go: player.has_frame_changed_in_go,
     })
 }
 
@@ -792,7 +859,8 @@ pub fn mcp_get_locals(player: &DirPlayer, scope_index: Option<usize>) -> String 
             .locals
             .iter()
             .map(|(name_id, datum_ref)| {
-                let name = lctx.and_then(|l| l.names.get(*name_id as usize))
+                let name = lctx
+                    .and_then(|l| l.names.get(*name_id as usize))
                     .cloned()
                     .unwrap_or_else(|| format!("local_{}", name_id));
                 (name, datum_to_mcp_value(player, datum_ref))
@@ -803,7 +871,10 @@ pub fn mcp_get_locals(player: &DirPlayer, scope_index: Option<usize>) -> String 
             .iter()
             .enumerate()
             .map(|(i, datum_ref)| McpArgInfo {
-                name: arg_names.get(i).cloned().unwrap_or_else(|| format!("arg{}", i)),
+                name: arg_names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("arg{}", i)),
                 value: datum_to_mcp_value(player, datum_ref),
             })
             .collect(),
@@ -834,7 +905,10 @@ pub fn mcp_inspect_datum(player: &DirPlayer, datum_id: DatumId) -> String {
             entries
                 .iter()
                 .map(|(k, v)| {
-                    (format_concrete_datum_with_depth(player.get_datum(k), player, 0, 0), datum_to_mcp_value(player, v))
+                    (
+                        format_concrete_datum_with_depth(player.get_datum(k), player, 0, 0),
+                        datum_to_mcp_value(player, v),
+                    )
                 })
                 .collect(),
         ),
@@ -876,12 +950,14 @@ pub fn mcp_list_cast_members(player: &DirPlayer, cast_lib: Option<i32>) -> Strin
         .iter()
         .filter(|cast| cast_lib.map_or(true, |lib| cast.number as i32 == lib))
         .flat_map(|cast| {
-            cast.members.iter().map(move |(&member_num, member)| McpCastMemberInfo {
-                cast_lib: cast.number as i32,
-                cast_member: member_num as i32,
-                name: member.name.clone(),
-                member_type: member.member_type.type_string().to_string(),
-            })
+            cast.members
+                .iter()
+                .map(move |(&member_num, member)| McpCastMemberInfo {
+                    cast_lib: cast.number as i32,
+                    cast_member: member_num as i32,
+                    name: member.name.clone(),
+                    member_type: member.member_type.type_string().to_string(),
+                })
         })
         .collect();
 
@@ -890,7 +966,10 @@ pub fn mcp_list_cast_members(player: &DirPlayer, cast_lib: Option<i32>) -> Strin
 
 /// Inspect a cast member
 pub fn mcp_inspect_cast_member(player: &DirPlayer, cast_lib: i32, cast_member: i32) -> String {
-    let member_ref = CastMemberRef { cast_lib, cast_member };
+    let member_ref = CastMemberRef {
+        cast_lib,
+        cast_member,
+    };
 
     let cast = match player.movie.cast_manager.get_cast(cast_lib as u32) {
         Ok(c) => c,
@@ -899,7 +978,12 @@ pub fn mcp_inspect_cast_member(player: &DirPlayer, cast_lib: i32, cast_member: i
 
     let member = match cast.members.get(&(cast_member as u32)) {
         Some(m) => m,
-        None => return mcp_error(format!("Cast member {} not found in cast library {}", cast_member, cast_lib)),
+        None => {
+            return mcp_error(format!(
+                "Cast member {} not found in cast library {}",
+                cast_member, cast_lib
+            ));
+        }
     };
 
     // For script members, include script type and handlers
@@ -961,14 +1045,12 @@ pub fn mcp_format_eval_result(
                 error: None,
             })
         }
-        Err(err) => {
-            to_json(&McpEvalResult {
-                success: false,
-                result_type: None,
-                result_value: None,
-                datum_id: None,
-                error: Some(err.message),
-            })
-        }
+        Err(err) => to_json(&McpEvalResult {
+            success: false,
+            result_type: None,
+            result_value: None,
+            datum_id: None,
+            error: Some(err.message),
+        }),
     }
 }

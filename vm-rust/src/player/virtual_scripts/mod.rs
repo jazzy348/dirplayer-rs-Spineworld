@@ -1,5 +1,4 @@
 pub mod javascript_proxy;
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -11,7 +10,7 @@ use crate::director::enums::ScriptType;
 use crate::director::lingo::datum::Datum;
 
 use super::allocator::ScriptInstanceAllocatorTrait;
-use super::cast_lib::{cast_member_ref, CastMemberRef};
+use super::cast_lib::{CastMemberRef, cast_member_ref};
 use super::cast_member::{CastMember, CastMemberType, ScriptMember};
 use super::ci_string::CiString;
 use super::script::{Script, ScriptInstance};
@@ -161,9 +160,7 @@ impl VirtualScriptRegistry {
         script_member_ref: CastMemberRef,
         handler: Rc<dyn VirtualScriptHandler>,
     ) {
-        player
-            .virtual_scripts
-            .insert(script_member_ref, handler);
+        player.virtual_scripts.insert(script_member_ref, handler);
     }
 
     // -----------------------------------------------------------------------
@@ -202,11 +199,7 @@ impl VirtualScriptRegistry {
     // -----------------------------------------------------------------------
 
     /// Check if a virtual handler is registered for the given script and handler name.
-    pub fn has_script_handler(
-        player: &DirPlayer,
-        script_ref: &CastMemberRef,
-        name: &str,
-    ) -> bool {
+    pub fn has_script_handler(player: &DirPlayer, script_ref: &CastMemberRef, name: &str) -> bool {
         player
             .virtual_scripts
             .get(script_ref)

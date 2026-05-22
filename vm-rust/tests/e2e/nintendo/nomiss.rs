@@ -1,6 +1,6 @@
 use vm_rust::browser_e2e_test;
 use vm_rust::director::static_datum::StaticDatum;
-use vm_rust::player::testing_shared::{datum, sprite, SnapshotContext, TestConfig, TestHarness};
+use vm_rust::player::testing_shared::{SnapshotContext, TestConfig, TestHarness, datum, sprite};
 
 const CONFIG: &str = include_str!("../configs/nintendo_nomiss.toml");
 
@@ -16,7 +16,10 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
     snapshots.verify("start_game", player.snapshot_stage())?;
 
     // wait until showing game instructions
-    player.step_until(datum("_movie.frame").equals(StaticDatum::Int(3))).timeout(20.0).await?;
+    player
+        .step_until(datum("_movie.frame").equals(StaticDatum::Int(3)))
+        .timeout(20.0)
+        .await?;
 
     snapshots.verify("instructions", player.snapshot_stage())?;
 
@@ -30,14 +33,12 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
 
     player.step_frames(25).await;
 
-
     // # Round 1
 
     // click blue
     player.click_sprite(sprite().number(12)).await?;
 
     player.step_frames(75).await;
-
 
     // # Round 2
 
@@ -48,7 +49,6 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
     player.click_sprite(sprite().number(13)).await?;
 
     player.step_frames(100).await;
-
 
     // # Round 3
 
@@ -62,7 +62,6 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
     player.click_sprite(sprite().number(14)).await?;
 
     player.step_frames(125).await;
-
 
     // # Round 4
 
@@ -79,7 +78,6 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
     player.click_sprite(sprite().number(15)).await?;
 
     player.step_frames(150).await;
-
 
     // # Round 5
 
@@ -98,10 +96,12 @@ browser_e2e_test!(test_nintendo_nomiss_load, |player| async move {
     // click blue
     player.click_sprite(sprite().number(12)).await?;
 
-
     // # Match 1 finished
 
-    player.step_until(sprite().member("playAgain_button").visible(1.0)).timeout(30.0).await?;
+    player
+        .step_until(sprite().member("playAgain_button").visible(1.0))
+        .timeout(30.0)
+        .await?;
 
     snapshots.verify("match_result", player.snapshot_stage())?;
 

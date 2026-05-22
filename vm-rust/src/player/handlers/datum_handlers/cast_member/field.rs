@@ -1,12 +1,25 @@
 use std::collections::VecDeque;
-use itertools::Itertools;
 
 use crate::{
-    director::lingo::datum::{Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool},
+    director::lingo::datum::{
+        Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool,
+    },
     player::{
-        ColorRef, DatumRef, DirPlayer, ScriptError, bitmap::{bitmap::{Bitmap, BuiltInPalette, PaletteRef}, drawing::CopyPixelsParams}, cast_lib::CastMemberRef, cast_member::Media, font::{measure_text, measure_text_wrapped}, handlers::datum_handlers::{
-            cast_member_ref::borrow_member_mut, string::{string_get_lines, string_get_words}, string_chunk::StringChunkUtils
-        }
+        ColorRef, DatumRef, DirPlayer, ScriptError,
+        bitmap::{
+            bitmap::{Bitmap, BuiltInPalette, PaletteRef},
+            drawing::CopyPixelsParams,
+        },
+        cast_lib::CastMemberRef,
+        cast_member::Media,
+        font::{
+            director_line_pos_to_loc_v, director_loc_v_to_line_pos, measure_text,
+            measure_text_wrapped,
+        },
+        handlers::datum_handlers::{
+            cast_member_ref::borrow_member_mut,
+            string_chunk::StringChunkUtils,
+        },
     },
 };
 
@@ -89,6 +102,53 @@ impl FieldMemberHandlers {
                 member.set_text_preserving_caret(new_contents.trim_end_matches('\0').to_string());
                 Ok(DatumRef::Void)
             }
+            "locVToLinePos" | "locvtolinepos" => {
+                if args.len() != 1 {
+                    return Err(ScriptError::new(format!(
+                        "{handler_name} requires 1 argument"
+                    )));
+                }
+                let member_ref = player.get_datum(datum).to_member_ref()?;
+                let member = player
+                    .movie
+                    .cast_manager
+                    .find_member_by_ref(&member_ref)
+                    .unwrap();
+                let field = member.member_type.as_field().unwrap();
+                let loc_v = player.get_datum(&args[0]).int_value()?;
+                let line_pos = director_loc_v_to_line_pos(
+                    &field.text,
+                    loc_v,
+                    field.fixed_line_space,
+                    field.font_size,
+                    field.top_spacing,
+                    0,
+                );
+                Ok(player.alloc_datum(Datum::Int(line_pos)))
+            }
+            "linePosToLocV" | "linepostolocv" => {
+                if args.len() != 1 {
+                    return Err(ScriptError::new(format!(
+                        "{handler_name} requires 1 argument"
+                    )));
+                }
+                let member_ref = player.get_datum(datum).to_member_ref()?;
+                let member = player
+                    .movie
+                    .cast_manager
+                    .find_member_by_ref(&member_ref)
+                    .unwrap();
+                let field = member.member_type.as_field().unwrap();
+                let line_pos = player.get_datum(&args[0]).int_value()?;
+                let loc_v = director_line_pos_to_loc_v(
+                    line_pos,
+                    field.fixed_line_space,
+                    field.font_size,
+                    field.top_spacing,
+                    0,
+                );
+                Ok(player.alloc_datum(Datum::Int(loc_v)))
+            }
             _ => Err(ScriptError::new(format!(
                 "No handler {handler_name} for field member type"
             ))),
@@ -134,15 +194,28 @@ impl FieldMemberHandlers {
                     Ok(Datum::Int(field.text.lines().count().max(1) as i32))
                 }
             }
-            "line" => {
-                let lines = string_get_lines(&field.text);
-                let line_datums: VecDeque<_> = lines.into_iter().map(Datum::String).map(|d| player.alloc_datum(d)).collect();
-                Ok(Datum::List(DatumType::List, line_datums, false))
-            }
-            "word" => {
-                let words = string_get_words(&field.text);
-                let word_datums: VecDeque<_> = words.into_iter().map(Datum::String).map(|d| player.alloc_datum(d)).collect();
-                Ok(Datum::List(DatumType::List, word_datums, false))
+            "line" | "word" | "char" | "item" => {
+                let item_delimiter = player.movie.item_delimiter;
+                let chunk_type = StringChunkType::from(prop);
+                let field_text = field.text.clone();
+                let chunk_count =
+                    StringChunkUtils::resolve_chunk_count(&field_text, chunk_type.clone(), item_delimiter)?;
+                let mut chunk_datums = VecDeque::with_capacity(chunk_count);
+                for i in 1..=chunk_count {
+                    let chunk_expr = StringChunkExpr {
+                        chunk_type: chunk_type.clone(),
+                        start: i as i32,
+                        end: i as i32,
+                        item_delimiter,
+                    };
+                    let value = StringChunkUtils::resolve_chunk_expr_string(&field_text, &chunk_expr)?;
+                    chunk_datums.push_back(player.alloc_datum(Datum::StringChunk(
+                        StringChunkSource::Member(cast_member_ref.clone()),
+                        chunk_expr,
+                        value,
+                    )));
+                }
+                Ok(Datum::List(DatumType::List, chunk_datums, false))
             }
             "pageHeight" => {
                 // pageHeight = total height of the text content (including word wrap)
@@ -165,11 +238,21 @@ impl FieldMemberHandlers {
                 } else {
                     None
                 };
-                let font = font.or_else(|| player.font_manager.get_system_font())
+                let font = font
+                    .or_else(|| player.font_manager.get_system_font())
                     .ok_or_else(|| ScriptError::new("System font not available".to_string()))?;
 
                 let (_, measured_h) = if word_wrap && field_width > 0 {
-                    measure_text_wrapped(&text_clone, &font, field_width, true, fixed_line_space, top_spacing, 0, 0)
+                    measure_text_wrapped(
+                        &text_clone,
+                        &font,
+                        field_width,
+                        true,
+                        fixed_line_space,
+                        top_spacing,
+                        0,
+                        0,
+                    )
                 } else {
                     measure_text(&text_clone, &font, None, fixed_line_space, top_spacing, 0)
                 };
@@ -198,7 +281,10 @@ impl FieldMemberHandlers {
                 let top_spacing = field.top_spacing;
                 let alignment = field.alignment.clone();
                 let word_wrap = field.word_wrap;
-                let fore_color = field.fore_color.clone().unwrap_or(ColorRef::PaletteIndex(255));
+                let fore_color = field
+                    .fore_color
+                    .clone()
+                    .unwrap_or(ColorRef::PaletteIndex(255));
                 let field_width = field.width;
 
                 // Try to get custom font, fall back to system font
@@ -235,8 +321,14 @@ impl FieldMemberHandlers {
                 // the wrap-aware path.
                 let (measured_w, measured_h) = if word_wrap && field_width > 0 {
                     measure_text_wrapped(
-                        &text_clone, &font, field_width, true,
-                        fixed_line_space, top_spacing, 0, 0,
+                        &text_clone,
+                        &font,
+                        field_width,
+                        true,
+                        fixed_line_space,
+                        top_spacing,
+                        0,
+                        0,
                     )
                 } else {
                     measure_text(&text_clone, &font, None, fixed_line_space, top_spacing, 0)
@@ -245,7 +337,11 @@ impl FieldMemberHandlers {
                     // Clamp to authored field.width when set — a wrapped
                     // field's display width is the authored width, not the
                     // measured (which may be the longest unwrapped line).
-                    if word_wrap { field_width } else { field_width.max(measured_w) }
+                    if word_wrap {
+                        field_width
+                    } else {
+                        field_width.max(measured_w)
+                    }
                 } else {
                     measured_w
                 };
@@ -302,7 +398,8 @@ impl FieldMemberHandlers {
                             original_dst_rect: None,
                             bg_color_explicit: false,
                             fore_color_explicit: false,
-                            ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                            ink9_mask_bitmap: None,
+                            ink9_mask_offset: (0, 0),
                         };
 
                         bitmap.draw_text(
@@ -332,14 +429,18 @@ impl FieldMemberHandlers {
             "charCount" => {
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &field.text, StringChunkType::Char, delimiter,
+                    &field.text,
+                    StringChunkType::Char,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
             "wordCount" => {
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &field.text, StringChunkType::Word, delimiter,
+                    &field.text,
+                    StringChunkType::Word,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
@@ -347,7 +448,9 @@ impl FieldMemberHandlers {
                 // Director treats paragraphs as \r-delimited, same as lines.
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &field.text, StringChunkType::Line, delimiter,
+                    &field.text,
+                    StringChunkType::Line,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
@@ -355,11 +458,21 @@ impl FieldMemberHandlers {
             // Runtime selection state
             "selStart" => Ok(Datum::Int(field.sel_start)),
             "selEnd" => Ok(Datum::Int(field.sel_end)),
+            "selection" => {
+                let sel_start = field.sel_start;
+                let sel_end = field.sel_end;
+                let mut items = VecDeque::new();
+                items.push_back(player.alloc_datum(Datum::Int(sel_start)));
+                items.push_back(player.alloc_datum(Datum::Int(sel_end)));
+                Ok(Datum::List(DatumType::List, items, false))
+            }
             "selectedText" => {
                 let len = field.text.len() as i32;
                 let lo = field.sel_start.min(field.sel_end).clamp(0, len);
                 let hi = field.sel_start.max(field.sel_end).clamp(0, len);
-                Ok(Datum::String(field.text[lo as usize..hi as usize].to_string()))
+                Ok(Datum::String(
+                    field.text[lo as usize..hi as usize].to_string(),
+                ))
             }
             // Text rendering config
             "kerning" => Ok(datum_bool(field.kerning)),
@@ -429,7 +542,7 @@ impl FieldMemberHandlers {
                     field_data.rect_bottom = y2 as i16;
 
                     Ok(())
-                }
+                },
             ),
             "alignment" => borrow_member_mut(
                 member_ref,
@@ -574,7 +687,11 @@ impl FieldMemberHandlers {
                 member_ref,
                 |player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_field_mut().unwrap().box_drop_shadow = value? as u16;
+                    cast_member
+                        .member_type
+                        .as_field_mut()
+                        .unwrap()
+                        .box_drop_shadow = value? as u16;
                     Ok(())
                 },
             ),
@@ -607,7 +724,8 @@ impl FieldMemberHandlers {
                 |player| value.int_value(),
                 |cast_member, value| {
                     let v = value? as u8;
-                    cast_member.member_type.as_field_mut().unwrap().fore_color = Some(ColorRef::PaletteIndex(v));
+                    cast_member.member_type.as_field_mut().unwrap().fore_color =
+                        Some(ColorRef::PaletteIndex(v));
                     Ok(())
                 },
             ),
@@ -616,7 +734,8 @@ impl FieldMemberHandlers {
                 |player| value.int_value(),
                 |cast_member, value| {
                     let v = value? as u8;
-                    cast_member.member_type.as_field_mut().unwrap().back_color = Some(ColorRef::PaletteIndex(v));
+                    cast_member.member_type.as_field_mut().unwrap().back_color =
+                        Some(ColorRef::PaletteIndex(v));
                     Ok(())
                 },
             ),
@@ -627,7 +746,11 @@ impl FieldMemberHandlers {
                     let field = cast_member.member_type.as_field_mut().unwrap();
                     match value? {
                         Media::Field(new_field) => field.clone_from(&new_field),
-                        _ => return Err(ScriptError::new("Invalid media value for field".to_string())),
+                        _ => {
+                            return Err(ScriptError::new(
+                                "Invalid media value for field".to_string(),
+                            ));
+                        }
                     };
                     Ok(())
                 },
@@ -645,6 +768,28 @@ impl FieldMemberHandlers {
                 |_player| value.int_value(),
                 |cast_member, value| {
                     cast_member.member_type.as_field_mut().unwrap().sel_end = value?;
+                    Ok(())
+                },
+            ),
+            "selection" => borrow_member_mut(
+                member_ref,
+                |player| {
+                    let items = value.to_list()?;
+                    if items.len() < 2 {
+                        return Err(ScriptError::new(
+                            "selection requires a two-item list".to_string(),
+                        ));
+                    }
+                    let start = player.get_datum(&items[0]).int_value()?;
+                    let end = player.get_datum(&items[1]).int_value()?;
+                    Ok((start, end))
+                },
+                |cast_member, value| {
+                    let (start, end) = value?;
+                    let field = cast_member.member_type.as_field_mut().unwrap();
+                    field.sel_start = start;
+                    field.sel_end = end;
+                    field.sel_anchor = start;
                     Ok(())
                 },
             ),
@@ -677,7 +822,11 @@ impl FieldMemberHandlers {
                 member_ref,
                 |_player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_field_mut().unwrap().kerning_threshold = value? as u16;
+                    cast_member
+                        .member_type
+                        .as_field_mut()
+                        .unwrap()
+                        .kerning_threshold = value? as u16;
                     Ok(())
                 },
             ),
@@ -685,7 +834,11 @@ impl FieldMemberHandlers {
                 member_ref,
                 |_player| value.bool_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_field_mut().unwrap().use_hypertext_styles = value?;
+                    cast_member
+                        .member_type
+                        .as_field_mut()
+                        .unwrap()
+                        .use_hypertext_styles = value?;
                     Ok(())
                 },
             ),
@@ -693,7 +846,11 @@ impl FieldMemberHandlers {
                 member_ref,
                 |_player| value.string_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_field_mut().unwrap().anti_alias_type = value?;
+                    cast_member
+                        .member_type
+                        .as_field_mut()
+                        .unwrap()
+                        .anti_alias_type = value?;
                     Ok(())
                 },
             ),

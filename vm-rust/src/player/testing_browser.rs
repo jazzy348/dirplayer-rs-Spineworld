@@ -1,12 +1,10 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::player::testing_shared::{SnapshotOutput, SpriteQuery, TestHarness};
 use crate::player::{
-    commands::PlayerVMCommand,
-    reserve_player_mut, reserve_player_ref,
-    PLAYER_OPT,
+    PLAYER_OPT, commands::PlayerVMCommand, reserve_player_mut, reserve_player_ref,
 };
-use crate::player::testing_shared::{TestHarness, SnapshotOutput, SpriteQuery};
 
 /// Browser test harness that lets the real player runtime drive the frame loop.
 /// Instead of calling `run_single_frame` directly, we let `init_player()`'s
@@ -30,7 +28,10 @@ impl BrowserTestPlayer {
         // per-movie reset that discarded them would leave the new player
         // without the credentials/args the test configured.
         let preserved_external_params = unsafe {
-            PLAYER_OPT.as_ref().map(|p| p.external_params.clone()).unwrap_or_default()
+            PLAYER_OPT
+                .as_ref()
+                .map(|p| p.external_params.clone())
+                .unwrap_or_default()
         };
 
         // Stop the current movie and clear all timeouts before resetting.
@@ -53,7 +54,12 @@ impl BrowserTestPlayer {
             crate::player::PLAYER_GENERATION += 1;
         }
         for _ in 0..120 {
-            let depth = unsafe { PLAYER_OPT.as_ref().map(|p| p.handler_stack_depth).unwrap_or(0) };
+            let depth = unsafe {
+                PLAYER_OPT
+                    .as_ref()
+                    .map(|p| p.handler_stack_depth)
+                    .unwrap_or(0)
+            };
             if depth == 0 {
                 break;
             }
@@ -134,7 +140,8 @@ impl BrowserTestPlayer {
     /// Wait for the next animation frame.
     async fn next_frame() {
         let promise = js_sys::Promise::new(&mut |resolve, _| {
-            web_sys::window().unwrap()
+            web_sys::window()
+                .unwrap()
                 .request_animation_frame(&resolve)
                 .unwrap();
         });
@@ -144,7 +151,8 @@ impl BrowserTestPlayer {
     /// Sleep for the given number of milliseconds.
     async fn sleep_ms(ms: u32) {
         let promise = js_sys::Promise::new(&mut |resolve, _| {
-            web_sys::window().unwrap()
+            web_sys::window()
+                .unwrap()
                 .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms as i32)
                 .unwrap();
         });
@@ -155,7 +163,9 @@ impl BrowserTestPlayer {
     fn ensure_renderer() {
         use crate::rendering::RENDERER_LOCK;
         RENDERER_LOCK.with(|lock| {
-            if lock.borrow().is_some() { return; }
+            if lock.borrow().is_some() {
+                return;
+            }
             crate::rendering::player_create_canvas().unwrap();
         });
     }
@@ -212,7 +222,6 @@ impl TestHarness for BrowserTestPlayer {
         reserve_player_ref(|player| player.is_playing)
     }
 
-
     // Override input methods to dispatch through the command channel
     // so they're processed by the command loop at the right time,
     // avoiding concurrent access with the frame loop.
@@ -264,14 +273,18 @@ impl TestHarness for BrowserTestPlayer {
         Self::canvas_to_snapshot()
     }
 
-    async fn snapshot_sprite_isolated(&self, query: impl Into<SpriteQuery>) -> Result<SnapshotOutput, String> {
+    async fn snapshot_sprite_isolated(
+        &self,
+        query: impl Into<SpriteQuery>,
+    ) -> Result<SnapshotOutput, String> {
         use crate::rendering::with_renderer_mut;
         use crate::rendering_gpu::Renderer;
 
         Self::ensure_renderer();
 
         let query = query.into();
-        let sprite_num = self.find_sprite(&query)
+        let sprite_num = self
+            .find_sprite(&query)
             .ok_or_else(|| format!("No sprite with {} found", query))?;
         let (l, t, r, b) = self.sprite_rect(sprite_num).await?;
 
@@ -299,9 +312,12 @@ impl BrowserTestPlayer {
     /// Remove and return the first pending Lingo script error, if any.
     fn take_script_error() -> Option<String> {
         let window = web_sys::window()?;
-        let val = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("__scriptErrors")).ok()?;
+        let val = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("__scriptErrors"))
+            .ok()?;
         let arr: js_sys::Array = wasm_bindgen::JsCast::dyn_into(val).ok()?;
-        if arr.length() == 0 { return None; }
+        if arr.length() == 0 {
+            return None;
+        }
         arr.shift().as_string()
     }
 
@@ -314,10 +330,13 @@ impl BrowserTestPlayer {
             let renderer = lock.borrow();
             let renderer = renderer.as_ref().expect("Renderer should be initialized");
             let canvas = renderer.canvas();
-            canvas.to_data_url_with_type("image/png").expect("toDataURL failed")
+            canvas
+                .to_data_url_with_type("image/png")
+                .expect("toDataURL failed")
         });
 
-        let base64 = data_url.strip_prefix("data:image/png;base64,")
+        let base64 = data_url
+            .strip_prefix("data:image/png;base64,")
             .unwrap_or(&data_url)
             .to_string();
         SnapshotOutput::Base64Png(base64)

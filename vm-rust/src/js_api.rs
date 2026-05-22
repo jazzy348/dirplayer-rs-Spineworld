@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     director::{
-        chunks::{self, script::ScriptChunk, Chunk},
+        chunks::{self, Chunk, script::ScriptChunk},
         enums::ScriptType,
         file::{DirectorFile, get_variable_multiplier},
         lingo::{datum::Datum, decompiler, script::ScriptContext},
@@ -15,18 +15,21 @@ use crate::{
         utils::fourcc_to_string,
     },
     player::{
+        DirPlayer, PLAYER_OPT, ScriptError,
         allocator::ScriptInstanceAllocatorTrait,
         bitmap::bitmap::PaletteRef,
         cast_lib::CastMemberRef,
         cast_member::{CastMember, CastMemberType, ScriptMember},
-        datum_formatting::{format_concrete_datum, format_datum, format_float_with_precision, format_numeric_value},
+        datum_formatting::{
+            format_concrete_datum, format_datum, format_float_with_precision, format_numeric_value,
+        },
         datum_ref::{DatumId, DatumRef},
         handlers::datum_handlers::cast_member_ref::CastMemberRefHandlers,
-        score::get_channel_number_from_index,
         score::Score,
+        score::get_channel_number_from_index,
         script::ScriptInstanceId,
         script_ref::ScriptInstanceRef,
-        DirPlayer, ScriptError, PLAYER_OPT, sprite::{ColorRef, CursorRef},
+        sprite::{ColorRef, CursorRef},
     },
     rendering::RENDERER_LOCK,
 };
@@ -61,9 +64,12 @@ fn format_atom_summary(a: &crate::player::js_lingo::xdr::JsAtom) -> String {
         JsAtom::Function(f) => format!(
             "function {}({})",
             f.name.as_deref().unwrap_or("<anonymous>"),
-            f.bindings.iter()
+            f.bindings
+                .iter()
                 .filter(|b| b.kind == crate::player::js_lingo::xdr::JsBindingKind::Argument)
-                .map(|b| b.name.as_str()).collect::<Vec<_>>().join(", ")
+                .map(|b| b.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         JsAtom::Unsupported(t) => format!("<unsupported tag={}>", t),
     }
@@ -250,7 +256,13 @@ extern "C" {
     pub fn onDatumSnapshot(datum_id: DatumId, data: js_sys::Object);
     pub fn onScriptInstanceSnapshot(script_ref: ScriptInstanceId, data: js_sys::Object);
     pub fn onExternalEvent(event: &str);
-    pub fn onFlashMemberLoaded(cast_lib: i32, cast_member: i32, swf_data: &[u8], width: u32, height: u32);
+    pub fn onFlashMemberLoaded(
+        cast_lib: i32,
+        cast_member: i32,
+        swf_data: &[u8],
+        width: u32,
+        height: u32,
+    );
     pub fn onFlashMemberUnloaded(cast_lib: i32, cast_member: i32);
     pub fn onStageSizeChanged(width: u32, height: u32, center: bool);
 }
@@ -285,7 +297,13 @@ impl JsApi {
     pub fn dispatch_clear_timeouts() {
         onClearTimeouts();
     }
-    pub fn dispatch_flash_member_loaded(cast_lib: i32, cast_member: i32, swf_data: &[u8], width: u32, height: u32) {
+    pub fn dispatch_flash_member_loaded(
+        cast_lib: i32,
+        cast_member: i32,
+        swf_data: &[u8],
+        width: u32,
+        height: u32,
+    ) {
         onFlashMemberLoaded(cast_lib, cast_member, swf_data, width, height);
     }
     pub fn dispatch_flash_member_unloaded(cast_lib: i32, cast_member: i32) {
@@ -338,7 +356,10 @@ impl JsApi {
         let mut children_map: HashMap<u32, Vec<u32>> = HashMap::new();
         if let Some(kt) = dir_file.key_table.as_ref() {
             for entry in kt.entries.iter().take(kt.used_count as usize) {
-                children_map.entry(entry.cast_id).or_default().push(entry.section_id);
+                children_map
+                    .entry(entry.cast_id)
+                    .or_default()
+                    .push(entry.section_id);
             }
         }
         children_map
@@ -368,10 +389,10 @@ impl JsApi {
         let cast_def = if cast_lib.is_external {
             dir_file.casts.first()
         } else {
-            let cast_entry = dir_file.cast_entries.get((cast_number as usize).wrapping_sub(1));
-            cast_entry.and_then(|entry| {
-                dir_file.casts.iter().find(|cd| cd.id == entry.id)
-            })
+            let cast_entry = dir_file
+                .cast_entries
+                .get((cast_number as usize).wrapping_sub(1));
+            cast_entry.and_then(|entry| dir_file.casts.iter().find(|cd| cd.id == entry.id))
         };
 
         let cast_def = match cast_def {
@@ -385,7 +406,8 @@ impl JsApi {
         // Build owner_map (child → parent) from KeyTable
         let owner_map: HashMap<u32, u32> = key_table
             .map(|kt| {
-                kt.entries.iter()
+                kt.entries
+                    .iter()
                     .take(kt.used_count as usize)
                     .map(|e| (e.section_id, e.cast_id))
                     .collect()
@@ -485,7 +507,8 @@ impl JsApi {
         // Build owner_map from KeyTable
         let owner_map: HashMap<u32, u32> = key_table
             .map(|kt| {
-                kt.entries.iter()
+                kt.entries
+                    .iter()
                     .take(kt.used_count as usize)
                     .map(|e| (e.section_id, e.cast_id))
                     .collect()
@@ -531,7 +554,11 @@ impl JsApi {
         };
 
         let dir_file = dir_file?;
-        dir_file.chunk_container.cached_chunk_views.get(&chunk_id).cloned()
+        dir_file
+            .chunk_container
+            .cached_chunk_views
+            .get(&chunk_id)
+            .cloned()
     }
 
     fn chunk_to_js(chunk: &Chunk) -> js_sys::Object {
@@ -547,13 +574,22 @@ impl JsApi {
             }
             Chunk::CastMember(c) => {
                 map.str_set("type", &JsValue::from_str("CASt"));
-                map.str_set("member_type", &JsValue::from_str(&format!("{:?}", c.member_type)));
+                map.str_set(
+                    "member_type",
+                    &JsValue::from_str(&format!("{:?}", c.member_type)),
+                );
                 if let Some(info) = &c.member_info {
                     map.str_set("name", &JsValue::from_str(&ascii_safe(&info.name)));
                     if !info.script_src_text.is_empty() {
-                        map.str_set("script_src_text", &JsValue::from_str(&ascii_safe(&info.script_src_text)));
+                        map.str_set(
+                            "script_src_text",
+                            &JsValue::from_str(&ascii_safe(&info.script_src_text)),
+                        );
                     }
-                    map.str_set("script_id", &JsValue::from_f64(info.header.script_id as f64));
+                    map.str_set(
+                        "script_id",
+                        &JsValue::from_f64(info.header.script_id as f64),
+                    );
                     map.str_set("flags", &JsValue::from_f64(info.header.flags as f64));
                 }
                 // Serialize type-specific data
@@ -594,11 +630,17 @@ impl JsApi {
                 for entry in &c.entries {
                     let em = js_sys::Map::new();
                     em.str_set("name", &JsValue::from_str(&ascii_safe(&entry.name)));
-                    em.str_set("file_path", &JsValue::from_str(&ascii_safe(&entry.file_path)));
+                    em.str_set(
+                        "file_path",
+                        &JsValue::from_str(&ascii_safe(&entry.file_path)),
+                    );
                     em.str_set("id", &JsValue::from_f64(entry.id as f64));
                     em.str_set("min_member", &JsValue::from_f64(entry.min_member as f64));
                     em.str_set("max_member", &JsValue::from_f64(entry.max_member as f64));
-                    em.str_set("preload_settings", &JsValue::from_f64(entry.preload_settings as f64));
+                    em.str_set(
+                        "preload_settings",
+                        &JsValue::from_f64(entry.preload_settings as f64),
+                    );
                     entries.push(&em.to_js_object());
                 }
                 map.str_set("entries", &entries);
@@ -612,7 +654,10 @@ impl JsApi {
                     let em = js_sys::Map::new();
                     em.str_set("section_id", &JsValue::from_f64(entry.section_id as f64));
                     em.str_set("cast_id", &JsValue::from_f64(entry.cast_id as f64));
-                    em.str_set("fourcc", &JsValue::from_str(&fourcc_to_string(entry.fourcc)));
+                    em.str_set(
+                        "fourcc",
+                        &JsValue::from_str(&fourcc_to_string(entry.fourcc)),
+                    );
                     entries.push(&em.to_js_object());
                 }
                 map.str_set("entries", &entries);
@@ -620,7 +665,10 @@ impl JsApi {
             Chunk::ScriptContext(sc) => {
                 map.str_set("type", &JsValue::from_str("Lctx"));
                 map.str_set("entry_count", &JsValue::from_f64(sc.entry_count as f64));
-                map.str_set("lnam_section_id", &JsValue::from_f64(sc.lnam_section_id as f64));
+                map.str_set(
+                    "lnam_section_id",
+                    &JsValue::from_f64(sc.lnam_section_id as f64),
+                );
                 let entries = js_sys::Array::new();
                 for entry in &sc.section_map {
                     let em = js_sys::Map::new();
@@ -639,8 +687,14 @@ impl JsApi {
             }
             Chunk::Script(sc) => {
                 map.str_set("type", &JsValue::from_str("Lscr"));
-                map.str_set("handler_count", &JsValue::from_f64(sc.handlers.len() as f64));
-                map.str_set("literal_count", &JsValue::from_f64(sc.literals.len() as f64));
+                map.str_set(
+                    "handler_count",
+                    &JsValue::from_f64(sc.handlers.len() as f64),
+                );
+                map.str_set(
+                    "literal_count",
+                    &JsValue::from_f64(sc.literals.len() as f64),
+                );
                 let prop_ids = js_sys::Array::new();
                 for id in &sc.property_name_ids {
                     prop_ids.push(&JsValue::from_f64(*id as f64));
@@ -650,7 +704,10 @@ impl JsApi {
                 for handler in &sc.handlers {
                     let hm = js_sys::Map::new();
                     hm.str_set("name_id", &JsValue::from_f64(handler.name_id as f64));
-                    hm.str_set("bytecode_count", &JsValue::from_f64(handler.bytecode_array.len() as f64));
+                    hm.str_set(
+                        "bytecode_count",
+                        &JsValue::from_f64(handler.bytecode_array.len() as f64),
+                    );
                     let arg_ids = js_sys::Array::new();
                     for id in &handler.argument_name_ids {
                         arg_ids.push(&JsValue::from_f64(*id as f64));
@@ -701,7 +758,10 @@ impl JsApi {
             }
             Chunk::Config(c) => {
                 map.str_set("type", &JsValue::from_str("VWCF"));
-                map.str_set("director_version", &JsValue::from_f64(c.director_version as f64));
+                map.str_set(
+                    "director_version",
+                    &JsValue::from_f64(c.director_version as f64),
+                );
                 map.str_set("movie_top", &JsValue::from_f64(c.movie_top as f64));
                 map.str_set("movie_left", &JsValue::from_f64(c.movie_left as f64));
                 map.str_set("movie_bottom", &JsValue::from_f64(c.movie_bottom as f64));
@@ -720,7 +780,10 @@ impl JsApi {
                 let runs_arr = js_sys::Array::new();
                 for run in &runs {
                     let rm = js_sys::Map::new();
-                    rm.str_set("start_position", &JsValue::from_f64(run.start_position as f64));
+                    rm.str_set(
+                        "start_position",
+                        &JsValue::from_f64(run.start_position as f64),
+                    );
                     rm.str_set("font_id", &JsValue::from_f64(run.font_id as f64));
                     rm.str_set("font_size", &JsValue::from_f64(run.font_size as f64));
                     rm.str_set("style", &JsValue::from_f64(run.style as f64));
@@ -740,15 +803,24 @@ impl JsApi {
                 map.str_set("type", &JsValue::from_str("snd "));
                 map.str_set("channels", &JsValue::from_f64(s.channels() as f64));
                 map.str_set("sample_rate", &JsValue::from_f64(s.sample_rate() as f64));
-                map.str_set("bits_per_sample", &JsValue::from_f64(s.bits_per_sample() as f64));
+                map.str_set(
+                    "bits_per_sample",
+                    &JsValue::from_f64(s.bits_per_sample() as f64),
+                );
                 map.str_set("sample_count", &JsValue::from_f64(s.sample_count() as f64));
                 map.str_set("codec", &JsValue::from_str(&ascii_safe(&s.codec())));
                 map.str_set("data_size", &JsValue::from_f64(s.data().len() as f64));
             }
             Chunk::Score(sc) => {
                 map.str_set("type", &JsValue::from_str("VWSC"));
-                map.str_set("entry_count", &JsValue::from_f64(sc.header.entry_count as f64));
-                map.str_set("frame_interval_count", &JsValue::from_f64(sc.frame_intervals.len() as f64));
+                map.str_set(
+                    "entry_count",
+                    &JsValue::from_f64(sc.header.entry_count as f64),
+                );
+                map.str_set(
+                    "frame_interval_count",
+                    &JsValue::from_f64(sc.frame_intervals.len() as f64),
+                );
             }
             Chunk::FrameLabels(fl) => {
                 map.str_set("type", &JsValue::from_str("VWLB"));
@@ -772,21 +844,39 @@ impl JsApi {
                 if xm.is_pfr_font() {
                     map.str_set("content_type", &JsValue::from_str("PFR1 Font"));
                     if let Some(font) = xm.parse_pfr_font() {
-                        map.str_set("font_name", &JsValue::from_str(&ascii_safe(&font.font_name)));
-                        map.str_set("outline_glyph_count", &JsValue::from_f64(font.parsed.glyphs.len() as f64));
-                        map.str_set("bitmap_glyph_count", &JsValue::from_f64(font.parsed.bitmap_glyphs.len() as f64));
-                        map.str_set("target_em_px", &JsValue::from_f64(font.parsed.target_em_px as f64));
+                        map.str_set(
+                            "font_name",
+                            &JsValue::from_str(&ascii_safe(&font.font_name)),
+                        );
+                        map.str_set(
+                            "outline_glyph_count",
+                            &JsValue::from_f64(font.parsed.glyphs.len() as f64),
+                        );
+                        map.str_set(
+                            "bitmap_glyph_count",
+                            &JsValue::from_f64(font.parsed.bitmap_glyphs.len() as f64),
+                        );
+                        map.str_set(
+                            "target_em_px",
+                            &JsValue::from_f64(font.parsed.target_em_px as f64),
+                        );
                     }
                 } else if xm.is_styled_text() {
                     map.str_set("content_type", &JsValue::from_str("Styled Text"));
                     if let Some(st) = xm.parse_styled_text() {
                         map.str_set("text", &JsValue::from_str(&ascii_safe(&st.text)));
-                        map.str_set("alignment", &JsValue::from_str(&format!("{:?}", st.alignment)));
+                        map.str_set(
+                            "alignment",
+                            &JsValue::from_str(&format!("{:?}", st.alignment)),
+                        );
                         map.str_set("word_wrap", &JsValue::from_bool(st.word_wrap));
                         map.str_set("width", &JsValue::from_f64(st.width as f64));
                         map.str_set("height", &JsValue::from_f64(st.height as f64));
                         map.str_set("line_count", &JsValue::from_f64(st.line_count as f64));
-                        map.str_set("fixed_line_space", &JsValue::from_f64(st.fixed_line_space as f64));
+                        map.str_set(
+                            "fixed_line_space",
+                            &JsValue::from_f64(st.fixed_line_space as f64),
+                        );
                         let spans = js_sys::Array::new();
                         for span in &st.styled_spans {
                             let sm = js_sys::Map::new();
@@ -856,9 +946,12 @@ impl JsApi {
         };
 
         // Determine lctx_capital_x for this chunk's cast
-        let lctx_capital_x = dir_file.casts.iter().find(|cd| {
-            cd.lctx_child_section_ids.contains(&chunk_id)
-        }).map(|cd| cd.capital_x).unwrap_or(false);
+        let lctx_capital_x = dir_file
+            .casts
+            .iter()
+            .find(|cd| cd.lctx_child_section_ids.contains(&chunk_id))
+            .map(|cd| cd.capital_x)
+            .unwrap_or(false);
 
         let mut rifx = RIFXReaderContext {
             after_burned: dir_file.after_burned,
@@ -934,7 +1027,12 @@ impl JsApi {
                 .get_cast(member_ref.cast_lib as u32)
                 .unwrap();
             let member = cast.members.get(&(member_ref.cast_member as u32)).unwrap();
-            let member_map = Self::get_member_snapshot(member, member_ref.cast_lib as u32, cast.lctx.as_ref(), player);
+            let member_map = Self::get_member_snapshot(
+                member,
+                member_ref.cast_lib as u32,
+                cast.lctx.as_ref(),
+                player,
+            );
 
             onCastMemberChanged(member_ref.to_js().to_js_value(), member_map.to_js_object());
         });
@@ -1032,12 +1130,15 @@ impl JsApi {
         member_map.str_set("name", &safe_js_string(&member.name));
         member_map.str_set("type", &safe_js_string(&member.member_type.type_string()));
         if let CastMemberType::Script(script_data) = &member.member_type {
-            member_map.str_set("scriptType", &safe_js_string(match script_data.script_type {
-                ScriptType::Movie => "movie",
-                ScriptType::Parent => "parent",
-                ScriptType::Score => "score",
-                _ => "unknown",
-            }));
+            member_map.str_set(
+                "scriptType",
+                &safe_js_string(match script_data.script_type {
+                    ScriptType::Movie => "movie",
+                    ScriptType::Parent => "parent",
+                    ScriptType::Score => "score",
+                    _ => "unknown",
+                }),
+            );
         }
         return member_map;
     }
@@ -1059,7 +1160,10 @@ impl JsApi {
             }
             CastMemberType::Text(text_data) => {
                 member_map.str_set("text", &ascii_safe(&text_data.text).to_js_value());
-                member_map.str_set("htmlSource", &ascii_safe(&text_data.html_source).to_js_value());
+                member_map.str_set(
+                    "htmlSource",
+                    &ascii_safe(&text_data.html_source).to_js_value(),
+                );
                 member_map.str_set("alignment", &ascii_safe(&text_data.alignment).to_js_value());
                 member_map.str_set("boxType", &ascii_safe(&text_data.box_type).to_js_value());
                 member_map.str_set("wordWrap", &JsValue::from_bool(text_data.word_wrap));
@@ -1071,9 +1175,18 @@ impl JsApi {
                     font_style_array.push(&ascii_safe(style).to_js_value());
                 }
                 member_map.str_set("fontStyle", &font_style_array);
-                member_map.str_set("fixedLineSpace", &JsValue::from_f64(text_data.fixed_line_space as f64));
-                member_map.str_set("topSpacing", &JsValue::from_f64(text_data.top_spacing as f64));
-                member_map.str_set("bottomSpacing", &JsValue::from_f64(text_data.bottom_spacing as f64));
+                member_map.str_set(
+                    "fixedLineSpace",
+                    &JsValue::from_f64(text_data.fixed_line_space as f64),
+                );
+                member_map.str_set(
+                    "topSpacing",
+                    &JsValue::from_f64(text_data.top_spacing as f64),
+                );
+                member_map.str_set(
+                    "bottomSpacing",
+                    &JsValue::from_f64(text_data.bottom_spacing as f64),
+                );
                 member_map.str_set("width", &JsValue::from_f64(text_data.width as f64));
                 member_map.str_set("height", &JsValue::from_f64(text_data.height as f64));
                 // set spans array
@@ -1081,33 +1194,45 @@ impl JsApi {
                 for span in &text_data.html_styled_spans {
                     let span_map = js_sys::Map::new();
                     span_map.str_set("text", &ascii_safe(&span.text).to_js_value());
-                    span_map.str_set("fontFace", &ascii_safe(&span.style.font_face.clone().unwrap_or_default()).to_js_value());
-                    span_map.str_set("fontSize", &JsValue::from_f64(span.style.font_size.unwrap_or_default() as f64));
+                    span_map.str_set(
+                        "fontFace",
+                        &ascii_safe(&span.style.font_face.clone().unwrap_or_default())
+                            .to_js_value(),
+                    );
+                    span_map.str_set(
+                        "fontSize",
+                        &JsValue::from_f64(span.style.font_size.unwrap_or_default() as f64),
+                    );
                     span_map.str_set("bold", &JsValue::from_bool(span.style.bold));
                     span_map.str_set("italic", &JsValue::from_bool(span.style.italic));
                     span_map.str_set("underline", &JsValue::from_bool(span.style.underline));
-                    span_map.str_set("color", &JsValue::from_f64(span.style.color.unwrap_or_default() as f64));
+                    span_map.str_set(
+                        "color",
+                        &JsValue::from_f64(span.style.color.unwrap_or_default() as f64),
+                    );
                     spans_array.push(&span_map.to_js_object());
                 }
                 member_map.str_set("htmlStyledSpans", &spans_array);
-
             }
             CastMemberType::Script(script_data) => {
                 let lctx = lctx.unwrap();
                 let script = &lctx.scripts[&script_data.script_id];
 
                 // Get cast info for variable multiplier
-                let cast = player
-                    .movie
-                    .cast_manager
-                    .get_cast(cast_lib)
-                    .unwrap();
+                let cast = player.movie.cast_manager.get_cast(cast_lib).unwrap();
                 let capital_x = cast.capital_x;
                 let dir_version = cast.dir_version;
 
                 member_map.str_set(
                     "script",
-                    &Self::get_script_snapshot(&script_data, &script, &lctx, capital_x, dir_version).to_js_object(),
+                    &Self::get_script_snapshot(
+                        &script_data,
+                        &script,
+                        &lctx,
+                        capital_x,
+                        dir_version,
+                    )
+                    .to_js_object(),
                 );
             }
             CastMemberType::Bitmap(bitmap_data) => {
@@ -1140,8 +1265,14 @@ impl JsApi {
                     member_map.str_set("flashRectTop", &JsValue::from(info.flash_rect.1));
                     member_map.str_set("flashRectRight", &JsValue::from(info.flash_rect.2));
                     member_map.str_set("flashRectBottom", &JsValue::from(info.flash_rect.3));
-                    member_map.str_set("width", &JsValue::from(info.flash_rect.2 - info.flash_rect.0));
-                    member_map.str_set("height", &JsValue::from(info.flash_rect.3 - info.flash_rect.1));
+                    member_map.str_set(
+                        "width",
+                        &JsValue::from(info.flash_rect.2 - info.flash_rect.0),
+                    );
+                    member_map.str_set(
+                        "height",
+                        &JsValue::from(info.flash_rect.3 - info.flash_rect.1),
+                    );
                     member_map.str_set("directToStage", &JsValue::from_bool(info.direct_to_stage));
                     member_map.str_set("imageEnabled", &JsValue::from_bool(info.image_enabled));
                     member_map.str_set("soundEnabled", &JsValue::from_bool(info.sound_enabled));
@@ -1149,7 +1280,8 @@ impl JsApi {
                     member_map.str_set("loop", &JsValue::from_bool(info.loop_enabled));
                     member_map.str_set("isStatic", &JsValue::from_bool(info.is_static));
                     member_map.str_set("preload", &JsValue::from_bool(info.preload));
-                    member_map.str_set("centerRegPoint", &JsValue::from_bool(info.center_reg_point));
+                    member_map
+                        .str_set("centerRegPoint", &JsValue::from_bool(info.center_reg_point));
                     member_map.str_set("buttonsEnabled", &JsValue::from_bool(info.buttons_enabled));
                     member_map.str_set("actionsEnabled", &JsValue::from_bool(info.actions_enabled));
                     member_map.str_set("fixedRate", &JsValue::from(info.fixed_rate));
@@ -1161,47 +1293,70 @@ impl JsApi {
                     member_map.str_set("originV", &JsValue::from_f64(info.origin_v as f64));
                     member_map.str_set("viewH", &JsValue::from_f64(info.view_h as f64));
                     member_map.str_set("viewV", &JsValue::from_f64(info.view_v as f64));
-                    member_map.str_set("originMode", &safe_js_string(match info.origin_mode {
-                        crate::director::enums::FlashOriginMode::Center => "center",
-                        crate::director::enums::FlashOriginMode::TopLeft => "topLeft",
-                        crate::director::enums::FlashOriginMode::Point => "point",
-                    }));
-                    member_map.str_set("playbackMode", &safe_js_string(match info.playback_mode {
-                        crate::director::enums::FlashPlaybackMode::Normal => "normal",
-                        crate::director::enums::FlashPlaybackMode::Fixed => "fixed",
-                        crate::director::enums::FlashPlaybackMode::LockStep => "lockStep",
-                    }));
-                    member_map.str_set("scaleMode", &safe_js_string(match info.scale_mode {
-                        crate::director::enums::FlashScaleMode::ShowAll => "showAll",
-                        crate::director::enums::FlashScaleMode::NoScale => "noScale",
-                        crate::director::enums::FlashScaleMode::AutoSize => "autoSize",
-                        crate::director::enums::FlashScaleMode::ExactFit => "exactFit",
-                        crate::director::enums::FlashScaleMode::NoBorder => "noBorder",
-                    }));
-                    member_map.str_set("streamMode", &safe_js_string(match info.stream_mode {
-                        crate::director::enums::FlashStreamMode::Frame => "frame",
-                        crate::director::enums::FlashStreamMode::Idle => "idle",
-                        crate::director::enums::FlashStreamMode::Manual => "manual",
-                    }));
-                    member_map.str_set("quality", &safe_js_string(match info.quality {
-                        crate::director::enums::FlashQuality::AutoHigh => "autoHigh",
-                        crate::director::enums::FlashQuality::AutoMedium => "autoMedium",
-                        crate::director::enums::FlashQuality::AutoLow => "autoLow",
-                        crate::director::enums::FlashQuality::High => "high",
-                        crate::director::enums::FlashQuality::Medium => "medium",
-                        crate::director::enums::FlashQuality::Low => "low",
-                    }));
-                    member_map.str_set("eventPassMode", &safe_js_string(match info.event_pass_mode {
-                        crate::director::enums::FlashEventPassMode::PassAlways => "passAlways",
-                        crate::director::enums::FlashEventPassMode::PassButton => "passButton",
-                        crate::director::enums::FlashEventPassMode::PassNotButton => "passNotButton",
-                        crate::director::enums::FlashEventPassMode::PassNever => "passNever",
-                    }));
-                    member_map.str_set("clickMode", &safe_js_string(match info.click_mode {
-                        crate::director::enums::FlashClickMode::BoundingBox => "boundingBox",
-                        crate::director::enums::FlashClickMode::Opaque => "opaque",
-                        crate::director::enums::FlashClickMode::Object => "object",
-                    }));
+                    member_map.str_set(
+                        "originMode",
+                        &safe_js_string(match info.origin_mode {
+                            crate::director::enums::FlashOriginMode::Center => "center",
+                            crate::director::enums::FlashOriginMode::TopLeft => "topLeft",
+                            crate::director::enums::FlashOriginMode::Point => "point",
+                        }),
+                    );
+                    member_map.str_set(
+                        "playbackMode",
+                        &safe_js_string(match info.playback_mode {
+                            crate::director::enums::FlashPlaybackMode::Normal => "normal",
+                            crate::director::enums::FlashPlaybackMode::Fixed => "fixed",
+                            crate::director::enums::FlashPlaybackMode::LockStep => "lockStep",
+                        }),
+                    );
+                    member_map.str_set(
+                        "scaleMode",
+                        &safe_js_string(match info.scale_mode {
+                            crate::director::enums::FlashScaleMode::ShowAll => "showAll",
+                            crate::director::enums::FlashScaleMode::NoScale => "noScale",
+                            crate::director::enums::FlashScaleMode::AutoSize => "autoSize",
+                            crate::director::enums::FlashScaleMode::ExactFit => "exactFit",
+                            crate::director::enums::FlashScaleMode::NoBorder => "noBorder",
+                        }),
+                    );
+                    member_map.str_set(
+                        "streamMode",
+                        &safe_js_string(match info.stream_mode {
+                            crate::director::enums::FlashStreamMode::Frame => "frame",
+                            crate::director::enums::FlashStreamMode::Idle => "idle",
+                            crate::director::enums::FlashStreamMode::Manual => "manual",
+                        }),
+                    );
+                    member_map.str_set(
+                        "quality",
+                        &safe_js_string(match info.quality {
+                            crate::director::enums::FlashQuality::AutoHigh => "autoHigh",
+                            crate::director::enums::FlashQuality::AutoMedium => "autoMedium",
+                            crate::director::enums::FlashQuality::AutoLow => "autoLow",
+                            crate::director::enums::FlashQuality::High => "high",
+                            crate::director::enums::FlashQuality::Medium => "medium",
+                            crate::director::enums::FlashQuality::Low => "low",
+                        }),
+                    );
+                    member_map.str_set(
+                        "eventPassMode",
+                        &safe_js_string(match info.event_pass_mode {
+                            crate::director::enums::FlashEventPassMode::PassAlways => "passAlways",
+                            crate::director::enums::FlashEventPassMode::PassButton => "passButton",
+                            crate::director::enums::FlashEventPassMode::PassNotButton => {
+                                "passNotButton"
+                            }
+                            crate::director::enums::FlashEventPassMode::PassNever => "passNever",
+                        }),
+                    );
+                    member_map.str_set(
+                        "clickMode",
+                        &safe_js_string(match info.click_mode {
+                            crate::director::enums::FlashClickMode::BoundingBox => "boundingBox",
+                            crate::director::enums::FlashClickMode::Opaque => "opaque",
+                            crate::director::enums::FlashClickMode::Object => "object",
+                        }),
+                    );
                     member_map.str_set("sourceFileName", &safe_js_string(&info.source_file_name));
                     member_map.str_set("commonPlayer", &safe_js_string(&info.common_player));
                     member_map.str_set("bgColor", &JsValue::from(info.bg_color));
@@ -1224,7 +1379,10 @@ impl JsApi {
                 member_map.str_set("regY", &JsValue::from(info.reg_point.1));
                 member_map.str_set("dataSize", &JsValue::from(s3d_data.w3d_data.len() as u32));
                 member_map.str_set("directToStage", &JsValue::from_bool(info.direct_to_stage));
-                member_map.str_set("animationEnabled", &JsValue::from_bool(info.animation_enabled));
+                member_map.str_set(
+                    "animationEnabled",
+                    &JsValue::from_bool(info.animation_enabled),
+                );
                 member_map.str_set("preload", &JsValue::from_bool(info.preload));
                 member_map.str_set("loop", &JsValue::from_bool(info.loops));
                 member_map.str_set("duration", &JsValue::from(info.duration));
@@ -1250,12 +1408,21 @@ impl JsApi {
                     member_map.str_set("cameraRotation", &arr);
                 }
                 if let Some(bg) = info.bg_color {
-                    member_map.str_set("bgColor", &safe_js_string(&format!("rgb({},{},{})", bg.0, bg.1, bg.2)));
+                    member_map.str_set(
+                        "bgColor",
+                        &safe_js_string(&format!("rgb({},{},{})", bg.0, bg.1, bg.2)),
+                    );
                 }
                 if let Some(ambient) = info.ambient_color {
-                    member_map.str_set("ambientColor", &safe_js_string(&format!("rgb({},{},{})", ambient.0, ambient.1, ambient.2)));
+                    member_map.str_set(
+                        "ambientColor",
+                        &safe_js_string(&format!("rgb({},{},{})", ambient.0, ambient.1, ambient.2)),
+                    );
                 }
-                member_map.str_set("hasScene", &JsValue::from_bool(s3d_data.parsed_scene.is_some()));
+                member_map.str_set(
+                    "hasScene",
+                    &JsValue::from_bool(s3d_data.parsed_scene.is_some()),
+                );
             }
             _ => {}
         };
@@ -1289,12 +1456,12 @@ impl JsApi {
 
         // Build sprite spans from the raw channel data
         let sprite_spans = Self::create_sprite_spans_from_channels(score, player);
-        
+
         member_map.str_set(
             "spriteSpans",
             &js_sys::Array::from_iter(sprite_spans.iter().map(|span| span.to_js_value())),
         );
-        
+
         member_map.str_set(
             "channelInitData",
             &js_sys::Array::from_iter(score.channel_initialization_data.iter().map(
@@ -1315,7 +1482,8 @@ impl JsApi {
                     init_data_map.str_set("height", &init_data.height.to_js_value());
                     init_data_map.str_set("locH", &init_data.pos_x.to_js_value());
                     init_data_map.str_set("locV", &init_data.pos_y.to_js_value());
-                    init_data_map.str_set("spriteListIdx", &init_data.sprite_list_idx().to_js_value());
+                    init_data_map
+                        .str_set("spriteListIdx", &init_data.sprite_list_idx().to_js_value());
 
                     channel_map.str_set("initData", &init_data_map.to_js_object());
                     JsValue::from(channel_map.to_js_object())
@@ -1327,39 +1495,42 @@ impl JsApi {
     }
 
     // Create sprite spans by examining actual channel state across frames
-    fn create_sprite_spans_from_channels(score: &Score, _player: &DirPlayer) -> Vec<ScoreSpriteSpan> {
+    fn create_sprite_spans_from_channels(
+        score: &Score,
+        _player: &DirPlayer,
+    ) -> Vec<ScoreSpriteSpan> {
         use std::collections::HashMap;
-        
+
         let mut spans = Vec::new();
         let mut channel_data: HashMap<u16, Vec<(u32, u16, u16)>> = HashMap::new();
-        
+
         // Collect all frame data per channel from channel_initialization_data
         for (frame_index, channel_index, init_data) in &score.channel_initialization_data {
             let channel_num = get_channel_number_from_index(*channel_index as u32) as u16;
             let cast_lib = init_data.cast_lib;
             let cast_member = init_data.cast_member;
-            
+
             // Skip empty sprites
             if cast_lib == 0 && cast_member == 0 {
                 continue;
             }
-            
+
             channel_data
                 .entry(channel_num)
                 .or_insert_with(Vec::new)
                 .push((*frame_index, cast_lib, cast_member));
         }
-        
+
         // For each channel, create spans from consecutive frames
         for (channel_num, mut frames) in channel_data {
             // Sort by frame
             frames.sort_by_key(|(frame, _, _)| *frame);
-            
+
             let mut current_span: Option<ScoreSpriteSpan> = None;
-            
+
             for (frame, cast_lib, cast_member) in frames {
                 let member_ref = [cast_lib, cast_member];
-                
+
                 if let Some(ref mut span) = current_span {
                     // Check if this continues the current span
                     if span.member_ref == member_ref && span.end_frame + 1 == frame {
@@ -1385,16 +1556,16 @@ impl JsApi {
                     });
                 }
             }
-            
+
             // Don't forget the last span!
             if let Some(span) = current_span {
                 spans.push(span);
             }
         }
-        
+
         // Sort spans by channel, then start frame
         spans.sort_by_key(|s| (s.channel_number, s.start_frame));
-        
+
         spans
     }
 
@@ -1503,14 +1674,26 @@ impl JsApi {
                     (false, Some(n)) => format!("{}.{}", path_prefix, n),
                     (false, None) => format!("{}.(anonymous)", path_prefix),
                 };
-                let arg_names: Vec<String> = fa.bindings.iter()
+                let arg_names: Vec<String> = fa
+                    .bindings
+                    .iter()
                     .filter(|b| b.kind == crate::player::js_lingo::xdr::JsBindingKind::Argument)
                     .map(|b| b.name.clone())
                     .collect();
-                Self::push_one_js_handler_with_bindings(&fa.script, &handler_name, &arg_names, &fa.bindings, out);
+                Self::push_one_js_handler_with_bindings(
+                    &fa.script,
+                    &handler_name,
+                    &arg_names,
+                    &fa.bindings,
+                    out,
+                );
                 // Only drill into nested closures if this function actually
                 // declares some (i.e. its atom map contains JsAtom::Function).
-                let has_nested = fa.script.atoms.iter().any(|a| matches!(a, JsAtom::Function(_)));
+                let has_nested = fa
+                    .script
+                    .atoms
+                    .iter()
+                    .any(|a| matches!(a, JsAtom::Function(_)));
                 if has_nested {
                     Self::push_js_handlers(&fa.script, &handler_name, out);
                 }
@@ -1542,7 +1725,9 @@ impl JsApi {
         handler_map.str_set("name", &name.to_owned().to_js_value());
 
         let args_array = js_sys::Array::new();
-        for a in arg_names { args_array.push(&a.clone().to_js_value()); }
+        for a in arg_names {
+            args_array.push(&a.clone().to_js_value());
+        }
         handler_map.str_set("args", &args_array);
 
         let bytecode_array = js_sys::Array::new();
@@ -1581,21 +1766,31 @@ impl JsApi {
             let operand_str = match info.format {
                 JsOpFormat::Byte => String::new(),
                 JsOpFormat::Uint16 | JsOpFormat::Qarg | JsOpFormat::Qvar | JsOpFormat::Local => {
-                    read_u16_operand(ins.operand).map(|v| format!(" {}", v)).unwrap_or_default()
+                    read_u16_operand(ins.operand)
+                        .map(|v| format!(" {}", v))
+                        .unwrap_or_default()
                 }
                 JsOpFormat::Const => {
                     if let Ok(idx) = read_u16_operand(ins.operand) {
-                        let lbl = ir.atoms.get(idx as usize).map(format_atom_summary).unwrap_or_else(|| "<oob>".into());
+                        let lbl = ir
+                            .atoms
+                            .get(idx as usize)
+                            .map(format_atom_summary)
+                            .unwrap_or_else(|| "<oob>".into());
                         format!(" #{} ; {}", idx, lbl)
-                    } else { String::new() }
+                    } else {
+                        String::new()
+                    }
                 }
-                JsOpFormat::Jump => {
-                    read_i16_operand(ins.operand).map(|d| format!(" {:+} ; -> {}", d, ins.offset as i32 + d as i32)).unwrap_or_default()
+                JsOpFormat::Jump => read_i16_operand(ins.operand)
+                    .map(|d| format!(" {:+} ; -> {}", d, ins.offset as i32 + d as i32))
+                    .unwrap_or_default(),
+                JsOpFormat::Object => read_u16_operand(ins.operand)
+                    .map(|v| format!(" obj#{}", v))
+                    .unwrap_or_default(),
+                JsOpFormat::Tableswitch | JsOpFormat::Lookupswitch => {
+                    format!(" <{} bytes>", ins.operand.len())
                 }
-                JsOpFormat::Object => {
-                    read_u16_operand(ins.operand).map(|v| format!(" obj#{}", v)).unwrap_or_default()
-                }
-                JsOpFormat::Tableswitch | JsOpFormat::Lookupswitch => format!(" <{} bytes>", ins.operand.len()),
             };
             let text = format!("{:>4}: {:<14}{}", ins.offset, info.mnemonic, operand_str);
             let map = js_sys::Map::new();
@@ -1615,7 +1810,12 @@ impl JsApi {
         handler_map.str_set("lingo", &lingo_array);
         let mapping_obj = js_sys::Object::new();
         for (bc, ln) in &decomp_bc_to_line {
-            js_sys::Reflect::set(&mapping_obj, &JsValue::from(*bc as u32), &JsValue::from(*ln as u32)).ok();
+            js_sys::Reflect::set(
+                &mapping_obj,
+                &JsValue::from(*bc as u32),
+                &JsValue::from(*ln as u32),
+            )
+            .ok();
         }
         handler_map.str_set("bytecodeToLine", &mapping_obj);
         out.push(&handler_map.to_js_object());
@@ -1676,7 +1876,9 @@ impl JsApi {
                 bytecode_map.str_set("pos", &JsValue::from(bytecode.pos));
                 bytecode_map.str_set(
                     "text",
-                    &bytecode.to_bytecode_text(lctx, &handler, multiplier).to_js_value(),
+                    &bytecode
+                        .to_bytecode_text(lctx, &handler, multiplier)
+                        .to_js_value(),
                 );
 
                 bytecode_array.push(&bytecode_map.to_js_object());
@@ -1691,7 +1893,8 @@ impl JsApi {
             handler_map.str_set("bytecode", &bytecode_array);
 
             // Decompile handler to Lingo source
-            let decompiled = decompiler::decompile_handler(handler, chunk, lctx, dir_version, multiplier);
+            let decompiled =
+                decompiler::decompile_handler(handler, chunk, lctx, dir_version, multiplier);
 
             // Add lingo lines
             let lingo_array = js_sys::Array::new();
@@ -1727,7 +1930,8 @@ impl JsApi {
                     &mapping_obj,
                     &JsValue::from(bc_idx as u32),
                     &JsValue::from(line_idx as u32),
-                ).ok();
+                )
+                .ok();
             }
             handler_map.str_set("bytecodeToLine", &mapping_obj);
 
@@ -1767,7 +1971,8 @@ impl JsApi {
                             .locals
                             .iter()
                             .map(|(name_id, v)| {
-                                let name = names.get(*name_id as usize)
+                                let name = names
+                                    .get(*name_id as usize)
                                     .cloned()
                                     .unwrap_or_else(|| format!("local_{}", name_id));
                                 (name, v.clone())
@@ -1797,7 +2002,9 @@ impl JsApi {
     }
 
     pub fn dispatch_script_error(player: &DirPlayer, err: &ScriptError) {
-        let is_paused = player.current_breakpoint.as_ref()
+        let is_paused = player
+            .current_breakpoint
+            .as_ref()
             .map(|bp| bp.error.is_some())
             .unwrap_or(false);
 
@@ -1900,18 +2107,56 @@ impl JsApi {
     pub fn dispatch_breakpoint_list_changed() {}
     pub fn dispatch_script_error_cleared() {}
     pub fn dispatch_external_event(_: &str) {}
-    pub fn get_cast_chunk_list_for(_: &DirPlayer, _: u32) -> js_sys::Object { unimplemented!() }
-    pub fn get_movie_top_level_chunks(_: &DirPlayer) -> js_sys::Object { unimplemented!() }
-    pub fn get_chunk_bytes(_: &DirPlayer, _: u32, _: u32) -> Option<Vec<u8>> { unimplemented!() }
-    pub fn get_parsed_chunk(_: &DirPlayer, _: u32, _: u32) -> js_sys::Object { unimplemented!() }
-    pub fn get_mini_member_snapshot(_: &CastMember) -> js_sys::Map { unimplemented!() }
-    pub fn get_member_snapshot(_: &CastMember, _: u32, _: Option<&ScriptContext>, _: &DirPlayer) -> js_sys::Map { unimplemented!() }
-    pub fn get_score_snapshot(_: &DirPlayer, _: &Score) -> js_sys::Map { unimplemented!() }
-    pub fn get_channel_snapshot(_: &DirPlayer, _: &i16) -> js_sys::Map { unimplemented!() }
-    fn get_channel_display_name(_: &i16, _: &DirPlayer) -> Option<String> { unimplemented!() }
-    pub fn get_script_snapshot(_: &ScriptMember, _: &ScriptChunk, _: &ScriptContext, _: bool, _: u16) -> js_sys::Map { unimplemented!() }
-    fn collect_cast_descendants(_: u32, _: &HashMap<u32, Vec<u32>>) -> std::collections::HashSet<u32> { unimplemented!() }
-    fn build_children_map(_: &DirectorFile) -> HashMap<u32, Vec<u32>> { unimplemented!() }
+    pub fn get_cast_chunk_list_for(_: &DirPlayer, _: u32) -> js_sys::Object {
+        unimplemented!()
+    }
+    pub fn get_movie_top_level_chunks(_: &DirPlayer) -> js_sys::Object {
+        unimplemented!()
+    }
+    pub fn get_chunk_bytes(_: &DirPlayer, _: u32, _: u32) -> Option<Vec<u8>> {
+        unimplemented!()
+    }
+    pub fn get_parsed_chunk(_: &DirPlayer, _: u32, _: u32) -> js_sys::Object {
+        unimplemented!()
+    }
+    pub fn get_mini_member_snapshot(_: &CastMember) -> js_sys::Map {
+        unimplemented!()
+    }
+    pub fn get_member_snapshot(
+        _: &CastMember,
+        _: u32,
+        _: Option<&ScriptContext>,
+        _: &DirPlayer,
+    ) -> js_sys::Map {
+        unimplemented!()
+    }
+    pub fn get_score_snapshot(_: &DirPlayer, _: &Score) -> js_sys::Map {
+        unimplemented!()
+    }
+    pub fn get_channel_snapshot(_: &DirPlayer, _: &i16) -> js_sys::Map {
+        unimplemented!()
+    }
+    fn get_channel_display_name(_: &i16, _: &DirPlayer) -> Option<String> {
+        unimplemented!()
+    }
+    pub fn get_script_snapshot(
+        _: &ScriptMember,
+        _: &ScriptChunk,
+        _: &ScriptContext,
+        _: bool,
+        _: u16,
+    ) -> js_sys::Map {
+        unimplemented!()
+    }
+    fn collect_cast_descendants(
+        _: u32,
+        _: &HashMap<u32, Vec<u32>>,
+    ) -> std::collections::HashSet<u32> {
+        unimplemented!()
+    }
+    fn build_children_map(_: &DirectorFile) -> HashMap<u32, Vec<u32>> {
+        unimplemented!()
+    }
 }
 
 pub trait JsSerializable {
@@ -1981,7 +2226,10 @@ fn concrete_datum_to_js_bridge(datum: &Datum, player: &DirPlayer, depth: u8) -> 
         Datum::Float(val) => {
             map.str_set("type", &safe_js_string("number"));
             map.str_set("numericValue", &JsValue::from_f64(*val as f64));
-            map.str_set("value", &safe_js_string(&format_float_with_precision(*val, player)));
+            map.str_set(
+                "value",
+                &safe_js_string(&format_float_with_precision(*val, player)),
+            );
         }
         Datum::Void => {
             map.str_set("type", &safe_js_string("void"));
@@ -2041,15 +2289,40 @@ fn concrete_datum_to_js_bridge(datum: &Datum, player: &DirPlayer, depth: u8) -> 
             map.str_set("type", &safe_js_string("Rect"));
             map.str_set("left", &concrete_datum_to_js_bridge(&x1, player, depth + 1));
             map.str_set("top", &concrete_datum_to_js_bridge(&y1, player, depth + 1));
-            map.str_set("right", &concrete_datum_to_js_bridge(&x2, player, depth + 1));
-            map.str_set("bottom", &concrete_datum_to_js_bridge(&y2, player, depth + 1));
-            map.str_set("value", &safe_js_string(&format!(
-                "rect({}, {}, {}, {})",
-                if Datum::inline_is_float(*flags, 0) { format!("{:.4}", vals[0]) } else { format!("{}", vals[0] as i32) },
-                if Datum::inline_is_float(*flags, 1) { format!("{:.4}", vals[1]) } else { format!("{}", vals[1] as i32) },
-                if Datum::inline_is_float(*flags, 2) { format!("{:.4}", vals[2]) } else { format!("{}", vals[2] as i32) },
-                if Datum::inline_is_float(*flags, 3) { format!("{:.4}", vals[3]) } else { format!("{}", vals[3] as i32) },
-            )));
+            map.str_set(
+                "right",
+                &concrete_datum_to_js_bridge(&x2, player, depth + 1),
+            );
+            map.str_set(
+                "bottom",
+                &concrete_datum_to_js_bridge(&y2, player, depth + 1),
+            );
+            map.str_set(
+                "value",
+                &safe_js_string(&format!(
+                    "rect({}, {}, {}, {})",
+                    if Datum::inline_is_float(*flags, 0) {
+                        format!("{:.4}", vals[0])
+                    } else {
+                        format!("{}", vals[0] as i32)
+                    },
+                    if Datum::inline_is_float(*flags, 1) {
+                        format!("{:.4}", vals[1])
+                    } else {
+                        format!("{}", vals[1] as i32)
+                    },
+                    if Datum::inline_is_float(*flags, 2) {
+                        format!("{:.4}", vals[2])
+                    } else {
+                        format!("{}", vals[2] as i32)
+                    },
+                    if Datum::inline_is_float(*flags, 3) {
+                        format!("{:.4}", vals[3])
+                    } else {
+                        format!("{}", vals[3] as i32)
+                    },
+                )),
+            );
         }
         Datum::Point(vals, flags) => {
             let x = Datum::inline_component_to_datum(vals[0], Datum::inline_is_float(*flags, 0));
@@ -2058,11 +2331,22 @@ fn concrete_datum_to_js_bridge(datum: &Datum, player: &DirPlayer, depth: u8) -> 
             map.str_set("type", &safe_js_string("Point"));
             map.str_set("x", &concrete_datum_to_js_bridge(&x, player, depth + 1));
             map.str_set("y", &concrete_datum_to_js_bridge(&y, player, depth + 1));
-            map.str_set("value", &safe_js_string(&format!(
-                "point({}, {})",
-                if Datum::inline_is_float(*flags, 0) { format!("{:.4}", vals[0]) } else { format!("{}", vals[0] as i32) },
-                if Datum::inline_is_float(*flags, 1) { format!("{:.4}", vals[1]) } else { format!("{}", vals[1] as i32) },
-            )));
+            map.str_set(
+                "value",
+                &safe_js_string(&format!(
+                    "point({}, {})",
+                    if Datum::inline_is_float(*flags, 0) {
+                        format!("{:.4}", vals[0])
+                    } else {
+                        format!("{}", vals[0] as i32)
+                    },
+                    if Datum::inline_is_float(*flags, 1) {
+                        format!("{:.4}", vals[1])
+                    } else {
+                        format!("{}", vals[1] as i32)
+                    },
+                )),
+            );
         }
         Datum::CursorRef(cursor_ref) => {
             map.str_set("type", &safe_js_string("cursorRef"));
@@ -2137,6 +2421,9 @@ fn concrete_datum_to_js_bridge(datum: &Datum, player: &DirPlayer, depth: u8) -> 
         Datum::MouseRef => {
             map.str_set("type", &safe_js_string("mouseRef"));
         }
+        Datum::GlobalRef => {
+            map.str_set("type", &safe_js_string("globalRef"));
+        }
         Datum::SoundRef(sound_id) => {
             map.str_set("type", &safe_js_string("sound"));
             map.str_set("id", &JsValue::from(*sound_id));
@@ -2177,14 +2464,20 @@ fn concrete_datum_to_js_bridge(datum: &Datum, player: &DirPlayer, depth: u8) -> 
         }
         Datum::Shockwave3dObjectRef(s3d_ref) => {
             map.str_set("type", &safe_js_string("shockwave3dObject"));
-            map.str_set("value", &safe_js_string(&format!("{}(\"{}\")", s3d_ref.object_type, s3d_ref.name)));
+            map.str_set(
+                "value",
+                &safe_js_string(&format!("{}(\"{}\")", s3d_ref.object_type, s3d_ref.name)),
+            );
         }
         Datum::Transform3d(_) => {
             map.str_set("type", &safe_js_string("transform"));
         }
         Datum::HavokObjectRef(hk_ref) => {
             map.str_set("type", &safe_js_string("havokObject"));
-            map.str_set("value", &safe_js_string(&format!("{}(\"{}\")", hk_ref.object_type, hk_ref.name)));
+            map.str_set(
+                "value",
+                &safe_js_string(&format!("{}(\"{}\")", hk_ref.object_type, hk_ref.name)),
+            );
         }
     }
     return map.to_js_object();

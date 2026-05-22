@@ -15,6 +15,21 @@ interface FlashConfig {
   disableFlash?: boolean;
 }
 
+function findPolyfillScript(): HTMLScriptElement | null {
+  const current = document.currentScript;
+  if (current instanceof HTMLScriptElement) {
+    return current;
+  }
+  const scripts = Array.from(document.getElementsByTagName('script'));
+  for (let i = scripts.length - 1; i >= 0; i--) {
+    const script = scripts[i];
+    if (script.src && script.src.includes('dirplayer-polyfill')) {
+      return script;
+    }
+  }
+  return null;
+}
+
 function configureFlash(partial: FlashConfig): void {
   const win = window as any;
   const existing = win.__dirplayerFlashConfig || {};
@@ -48,9 +63,10 @@ declare global {
  * so we can load sibling assets (like ruffle/) relative to it.
  */
 const polyfillScript = document.currentScript as HTMLScriptElement | null;
+const resolvedPolyfillScript = polyfillScript || findPolyfillScript();
 function getPolyfillBaseUrl(): string {
-  if (polyfillScript?.src) {
-    return polyfillScript.src.substring(0, polyfillScript.src.lastIndexOf('/') + 1);
+  if (resolvedPolyfillScript?.src) {
+    return resolvedPolyfillScript.src.substring(0, resolvedPolyfillScript.src.lastIndexOf('/') + 1);
   }
   return '';
 }
@@ -73,7 +89,7 @@ function loadRuffle(): Promise<void> {
   }
 
   // Check for a custom ruffle URL on the script tag: data-ruffle-url="..."
-  const customUrl = polyfillScript?.getAttribute('data-ruffle-url');
+  const customUrl = resolvedPolyfillScript?.getAttribute('data-ruffle-url');
   const ruffleUrl = customUrl || (getPolyfillBaseUrl() + 'ruffle/dirplayer_ruffle.js');
 
   // Set up dirplayer_RufflePlayer config before the script loads
@@ -96,7 +112,7 @@ function loadRuffle(): Promise<void> {
 }
 
 function init() {
-  const disableFlash = polyfillScript?.hasAttribute('data-disable-flash') ?? false;
+  const disableFlash = resolvedPolyfillScript?.hasAttribute('data-disable-flash') ?? false;
   if (disableFlash) {
     const win = window as any;
     win.__dirplayerFlashConfig = {
@@ -106,7 +122,7 @@ function init() {
     console.log('[DirPlayer] data-disable-flash set — skipping Ruffle. Lingo Flash calls will no-op.');
   }
 
-  const requireClick = polyfillScript?.hasAttribute('data-require-click') ?? false;
+  const requireClick = resolvedPolyfillScript?.hasAttribute('data-require-click') ?? false;
   const config = {
     wasmUrl: getEmbeddedWasmUrl(),
     systemFontUrl: getEmbeddedFontUrl(),
@@ -132,6 +148,6 @@ window.DirPlayer = {
 };
 
 // Auto-initialize unless data-manual-init is present on the script tag
-if (!polyfillScript?.hasAttribute('data-manual-init')) {
+if (!resolvedPolyfillScript?.hasAttribute('data-manual-init')) {
   init();
 }

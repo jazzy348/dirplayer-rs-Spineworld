@@ -39,9 +39,9 @@ impl Bytecode {
     }
 
     pub fn to_bytecode_text_with_annotation(
-        &self, 
-        lctx: &ScriptContext, 
-        handler: &HandlerDef, 
+        &self,
+        lctx: &ScriptContext,
+        handler: &HandlerDef,
         multiplier: u32,
         annotation: &str,
     ) -> String {
@@ -49,16 +49,17 @@ impl Bytecode {
         let opcode_name = get_opcode_name(op_id);
 
         let mut writer = String::new();
-        
+
         // Position
         writer.push_str(&format!("[{:3}] ", self.pos));
-        
+
         // Opcode and operand
         writer.push_str(opcode_name);
         match self.opcode {
             OpCode::SetLocal | OpCode::GetLocal => {
                 let local_index = (self.obj as u32 / multiplier) as usize;
-                let name = handler.local_name_ids
+                let name = handler
+                    .local_name_ids
                     .get(local_index)
                     .and_then(|&name_id| lctx.names.get(name_id as usize))
                     .map(|s| s.as_str())
@@ -72,24 +73,29 @@ impl Bytecode {
             }
             _ => {}
         }
-        
+
         // Padding dots
         let current_len = writer.len();
         let target_len = 40; // Adjust as needed
         if current_len < target_len {
             writer.push_str(&".".repeat(target_len - current_len));
         }
-        
+
         // Annotation
         if !annotation.is_empty() {
             writer.push(' ');
             writer.push_str(annotation);
         }
-        
+
         writer
     }
 
-    pub fn to_bytecode_text(&self, lctx: &ScriptContext, handler: &HandlerDef, multiplier: u32) -> String {
+    pub fn to_bytecode_text(
+        &self,
+        lctx: &ScriptContext,
+        handler: &HandlerDef,
+        multiplier: u32,
+    ) -> String {
         let op_id = num::ToPrimitive::to_u16(&self.opcode).unwrap();
         let opcode_name = get_opcode_name(op_id);
 
@@ -121,10 +127,7 @@ impl Bytecode {
             }
             OpCode::SetLocal | OpCode::GetLocal => {
                 let local_index = (self.obj as u32 / multiplier) as usize;
-                let name_id = handler
-                    .local_name_ids
-                    .get(local_index)
-                    .map(|x| *x as usize);
+                let name_id = handler.local_name_ids.get(local_index).map(|x| *x as usize);
                 let name = name_id
                     .and_then(|name_id| lctx.names.get(name_id).map(|x| x.as_str()))
                     .unwrap_or("UNKNOWN_LOCAL");

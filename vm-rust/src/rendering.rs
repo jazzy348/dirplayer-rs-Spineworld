@@ -9,16 +9,16 @@ use async_std::task::spawn_local;
 use chrono::Local;
 use itertools::Itertools;
 use log::{debug, warn};
-use wasm_bindgen::{prelude::*, Clamped};
+use wasm_bindgen::{Clamped, prelude::*};
 
-use crate::{js_api::safe_js_string, player::reserve_player_mut};
 use crate::{
     console_warn,
     js_api::JsApi,
     player::{
+        DirPlayer, PLAYER_OPT,
         bitmap::{
-            bitmap::{self, get_system_default_palette, resolve_color_ref, Bitmap, PaletteRef},
-            drawing::{should_matte_sprite, CopyPixelsParams},
+            bitmap::{self, Bitmap, PaletteRef, get_system_default_palette, resolve_color_ref},
+            drawing::{CopyPixelsParams, should_matte_sprite},
             mask::BitmapMask,
             palette_map::PaletteMap,
         },
@@ -26,22 +26,30 @@ use crate::{
         cast_member::CastMemberType,
         geometry::IntRect,
         reserve_player_ref,
-        score::{
-            get_concrete_sprite_rect, get_score, get_score_sprite, get_sprite_at, ScoreRef,
-        },
+        score::{ScoreRef, get_concrete_sprite_rect, get_score, get_score_sprite, get_sprite_at},
         sprite::{ColorRef, CursorRef, Sprite},
-        DirPlayer, PLAYER_OPT,
     },
 };
+use crate::{js_api::safe_js_string, player::reserve_player_mut};
 
+use crate::director::lingo::datum::Datum;
 use crate::player::cast_manager::CastManager;
 use crate::player::font::BitmapFont;
 use crate::player::font::FontManager;
 use crate::player::font::bitmap_font_copy_char;
-use crate::player::handlers::datum_handlers::cast_member::font::{FontMemberHandlers, TextAlignment, StyledSpan, HtmlStyle};
-use crate::director::lingo::datum::Datum;
+use crate::player::handlers::datum_handlers::cast_member::font::{
+    FontMemberHandlers, HtmlStyle, StyledSpan, TextAlignment,
+};
 use crate::player::score_keyframes::SpritePathKeyframes;
 use crate::rendering_gpu::{DynamicRenderer, Renderer};
+
+pub(crate) fn is_non_visual_collision_mask_sprite(
+    _channel_num: i16,
+    member: &crate::player::cast_member::CastMember,
+) -> bool {
+    member.name.eq_ignore_ascii_case("mask")
+        && matches!(member.member_type, CastMemberType::Bitmap(_))
+}
 
 /// 500ms-on, 500ms-off caret blink phase derived from wall time. The renderer
 /// runs every frame so this query is cheap and needs no separate timer.
@@ -79,7 +87,10 @@ fn draw_text_selection_rects(
     let lo = sel_lo as usize;
     let hi = sel_hi as usize;
     let base_y = loc_v + top_spacing as i32;
-    let alignment_key = alignment.trim().trim_start_matches('#').to_ascii_lowercase();
+    let alignment_key = alignment
+        .trim()
+        .trim_start_matches('#')
+        .to_ascii_lowercase();
     for (i, line) in lines.iter().enumerate() {
         if hi <= line.start || lo >= line.end && line.start != line.end {
             continue;
@@ -97,7 +108,9 @@ fn draw_text_selection_rects(
         // visible character — the byte-walk variant gave umlauts and other
         // multi-byte codepoints 2x width, stretching the highlight past
         // the actual text.
-        let line_w: i32 = line.text.chars()
+        let line_w: i32 = line
+            .text
+            .chars()
             .map(|c| font.get_char_advance_for(c) as i32)
             .sum();
         let x_offset: i32 = if max_width > 0 {
@@ -116,9 +129,15 @@ fn draw_text_selection_rects(
         let advance_for = |start: usize, end: usize| -> i32 {
             let mut s = start.saturating_sub(line.start).min(line.text.len());
             let mut e = end.saturating_sub(line.start).min(line.text.len());
-            while s < line.text.len() && !line.text.is_char_boundary(s) { s += 1; }
-            while e < line.text.len() && !line.text.is_char_boundary(e) { e += 1; }
-            if e < s { return 0; }
+            while s < line.text.len() && !line.text.is_char_boundary(s) {
+                s += 1;
+            }
+            while e < line.text.len() && !line.text.is_char_boundary(e) {
+                e += 1;
+            }
+            if e < s {
+                return 0;
+            }
             line.text[s..e]
                 .chars()
                 .map(|c| font.get_char_advance_for(c) as i32)
@@ -134,13 +153,24 @@ fn draw_text_selection_rects(
         if right < left {
             std::mem::swap(&mut left, &mut right);
         }
-        bitmap.fill_rect(left, y, right, y + font.char_height as i32, SELECTION_COLOR, palettes, 1.0);
+        bitmap.fill_rect(
+            left,
+            y,
+            right,
+            y + font.char_height as i32,
+            SELECTION_COLOR,
+            palettes,
+            1.0,
+        );
     }
 }
 
 /// Interpolate path position between keyframes for filmloop animation.
 /// Returns interpolated (x, y) position for the given frame, or None if no interpolation is needed.
-fn interpolate_path_position(path_keyframes: &SpritePathKeyframes, frame: u32) -> Option<(i32, i32)> {
+fn interpolate_path_position(
+    path_keyframes: &SpritePathKeyframes,
+    frame: u32,
+) -> Option<(i32, i32)> {
     let keyframes = &path_keyframes.keyframes;
     if keyframes.is_empty() {
         return None;
@@ -196,7 +226,14 @@ pub(crate) fn get_or_load_font(
     font_size: Option<u16>,
     font_style: Option<u8>,
 ) -> Option<Rc<BitmapFont>> {
-    return get_or_load_font_with_id(font_manager, cast_manager, font_name, font_size, font_style, None);
+    return get_or_load_font_with_id(
+        font_manager,
+        cast_manager,
+        font_name,
+        font_size,
+        font_style,
+        None,
+    );
 }
 
 pub(crate) fn get_or_load_font_with_id(
@@ -237,7 +274,8 @@ pub(crate) fn get_or_load_font_with_id(
         if let Some(font_ref) = font_manager.font_by_id.get(&id).copied() {
             if let Some(font) = font_manager.fonts.get(&font_ref) {
                 debug!(
-                    "Font '{}' not found by name, but found by font_id={}", font_name, id
+                    "Font '{}' not found by name, but found by font_id={}",
+                    font_name, id
                 );
                 return Some(Rc::clone(font));
             }
@@ -254,7 +292,9 @@ pub(crate) fn get_or_load_font_with_id(
     let font_name_lower = font_name.to_lowercase();
     for (key, font) in font_manager.font_cache.iter() {
         if key.to_lowercase() == font_name_lower
-            || key.to_lowercase().starts_with(&format!("{}_", font_name_lower))
+            || key
+                .to_lowercase()
+                .starts_with(&format!("{}_", font_name_lower))
         {
             debug!(
                 "Font '{}' (id={:?}) not found by exact match, using cache entry '{}'",
@@ -270,7 +310,9 @@ pub(crate) fn get_or_load_font_with_id(
         let canon = FontManager::canonical_font_name(font_name);
         if !canon.is_empty() {
             for (_key, font) in font_manager.font_cache.iter() {
-                if font.char_widths.is_some() && FontManager::canonical_font_name(&font.font_name) == canon {
+                if font.char_widths.is_some()
+                    && FontManager::canonical_font_name(&font.font_name) == canon
+                {
                     return Some(Rc::clone(font));
                 }
             }
@@ -283,13 +325,15 @@ pub(crate) fn get_or_load_font_with_id(
     if system_font.is_some() {
         debug!(
             "Font '{}' (id={:?}) not found, using system font fallback. Available fonts: {:?}",
-            font_name, font_id,
+            font_name,
+            font_id,
             font_manager.font_cache.keys().collect::<Vec<_>>()
         );
     } else {
         debug!(
             "Font '{}' (id={:?}) not found and system font unavailable. Available fonts: {:?}",
-            font_name, font_id,
+            font_name,
+            font_id,
             font_manager.font_cache.keys().collect::<Vec<_>>()
         );
     }
@@ -340,7 +384,10 @@ pub fn render_preview_bitmap(
             );
             let palettes = &player.movie.cast_manager.palettes();
             bitmap.fill_relative_rect(
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 resolve_color_ref(
                     &palettes,
                     &player.bg_color,
@@ -400,8 +447,13 @@ pub fn render_preview_bitmap(
             // cast-scoped lookup, and falling back to existing rasterised
             // entries — so the dev preview shows exactly the glyphs Director
             // would use when rendering text in this font at this size.
-            let req_size = preview_font_size.or(if member_font_size > 0 { Some(member_font_size) } else { None });
-            let font: Rc<BitmapFont> = player.font_manager
+            let req_size = preview_font_size.or(if member_font_size > 0 {
+                Some(member_font_size)
+            } else {
+                None
+            });
+            let font: Rc<BitmapFont> = player
+                .font_manager
                 .get_font_with_cast_and_bitmap(
                     &font_name,
                     &player.movie.cast_manager,
@@ -449,7 +501,11 @@ pub fn render_preview_bitmap(
 
             let palettes = &player.movie.cast_manager.palettes();
             let mut bitmap = Bitmap::new(
-                width, height, 32, 32, 0,
+                width,
+                height,
+                32,
+                32,
+                0,
                 PaletteRef::BuiltIn(get_system_default_palette()),
             );
             bitmap.fill_relative_rect(0, 0, 0, 0, (255, 255, 255), palettes, 1.0);
@@ -459,12 +515,28 @@ pub fn render_preview_bitmap(
             // Draw horizontal grid lines
             for row in 0..=rows {
                 let y = (row * total_cell_h) as i32;
-                bitmap.fill_rect(0, y, width as i32, y + grid_w as i32, grid_color, palettes, 1.0);
+                bitmap.fill_rect(
+                    0,
+                    y,
+                    width as i32,
+                    y + grid_w as i32,
+                    grid_color,
+                    palettes,
+                    1.0,
+                );
             }
             // Draw vertical grid lines
             for col in 0..=cols {
                 let x = (col * total_cell_w) as i32;
-                bitmap.fill_rect(x, 0, x + grid_w as i32, height as i32, grid_color, palettes, 1.0);
+                bitmap.fill_rect(
+                    x,
+                    0,
+                    x + grid_w as i32,
+                    height as i32,
+                    grid_color,
+                    palettes,
+                    1.0,
+                );
             }
 
             // Glyph copy: in `is_text_rendering` mode, black source pixels
@@ -472,7 +544,8 @@ pub fn render_preview_bitmap(
             // are dropped. The default Director bitmap atlas is black-on-white,
             // so we want foreground=BLACK on the white preview background —
             // *not* white-on-white which previously rendered invisible glyphs.
-            let draw_params = CopyPixelsParams { mask_offset: (0, 0),
+            let draw_params = CopyPixelsParams {
+                mask_offset: (0, 0),
                 blend: 100,
                 ink: 0,
                 color: ColorRef::Rgb(0, 0, 0),
@@ -485,7 +558,8 @@ pub fn render_preview_bitmap(
                 original_dst_rect: None,
                 bg_color_explicit: false,
                 fore_color_explicit: false,
-                ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                ink9_mask_bitmap: None,
+                ink9_mask_offset: (0, 0),
             };
 
             for char_code in 0u16..256 {
@@ -496,7 +570,8 @@ pub fn render_preview_bitmap(
 
                 // Draw character code label using system font
                 if let Some(ref sys_font) = system_font {
-                    if let Some(sys_bitmap) = player.bitmap_manager.get_bitmap(sys_font.bitmap_ref) {
+                    if let Some(sys_bitmap) = player.bitmap_manager.get_bitmap(sys_font.bitmap_ref)
+                    {
                         let label = format!("{}", char_code);
                         let label_params = CopyPixelsParams {
                             blend: 100,
@@ -512,7 +587,8 @@ pub fn render_preview_bitmap(
                             original_dst_rect: None,
                             bg_color_explicit: false,
                             fore_color_explicit: false,
-                            ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                            ink9_mask_bitmap: None,
+                            ink9_mask_offset: (0, 0),
                         };
                         bitmap.draw_text(
                             &label,
@@ -572,7 +648,10 @@ pub fn render_preview_bitmap(
                             style.color = Some(0); // black
                             style.bold = matches!(font_style, 1 | 3);
                             style.italic = matches!(font_style, 2 | 3);
-                            let span = StyledSpan { text: ch.to_string(), style };
+                            let span = StyledSpan {
+                                text: ch.to_string(),
+                                style,
+                            };
                             let _ = FontMemberHandlers::render_native_text_to_bitmap(
                                 &mut bitmap,
                                 &[span],
@@ -608,7 +687,15 @@ pub fn render_score_to_bitmap(
     debug_sprite_num: Option<i16>,
     dest_rect: IntRect,
 ) {
-    render_score_to_bitmap_with_offset(player, score_source, bitmap, debug_sprite_num, dest_rect, (0, 0), None);
+    render_score_to_bitmap_with_offset(
+        player,
+        score_source,
+        bitmap,
+        debug_sprite_num,
+        dest_rect,
+        (0, 0),
+        None,
+    );
 }
 
 /// Get the filmloop's info rect (the authoritative viewport from the Director file).
@@ -677,25 +764,38 @@ pub fn compute_filmloop_initial_rect_with_members(
 
         // Get actual bitmap dimensions and registration point from the cast member.
         // The registration point is the anchor used for positioning - sprite_left = pos_x - reg_x.
-        let (actual_width, actual_height, reg_x, reg_y) = if let Some(sprite_member) =
-            player.movie.cast_manager.find_filmloop_inner_member(&sprite_member_ref)
+        let (actual_width, actual_height, reg_x, reg_y) = if let Some(sprite_member) = player
+            .movie
+            .cast_manager
+            .find_filmloop_inner_member(&sprite_member_ref)
         {
             match &sprite_member.member_type {
                 CastMemberType::Bitmap(bm) => {
                     // Try to get actual bitmap dimensions from BitmapManager
-                    let (w, h) = if let Some(bitmap) = player.bitmap_manager.get_bitmap(bm.image_ref) {
-                        (bitmap.width as i32, bitmap.height as i32)
-                    } else {
-                        // Fall back to BitmapInfo dimensions
-                        (bm.info.width as i32, bm.info.height as i32)
-                    };
+                    let (w, h) =
+                        if let Some(bitmap) = player.bitmap_manager.get_bitmap(bm.image_ref) {
+                            (bitmap.width as i32, bitmap.height as i32)
+                        } else {
+                            // Fall back to BitmapInfo dimensions
+                            (bm.info.width as i32, bm.info.height as i32)
+                        };
                     // Use the actual registration point from the bitmap
                     (w, h, bm.reg_point.0 as i32, bm.reg_point.1 as i32)
                 }
-                _ => (data.width as i32, data.height as i32, data.width as i32 / 2, data.height as i32 / 2),
+                _ => (
+                    data.width as i32,
+                    data.height as i32,
+                    data.width as i32 / 2,
+                    data.height as i32 / 2,
+                ),
             }
         } else {
-            (data.width as i32, data.height as i32, data.width as i32 / 2, data.height as i32 / 2)
+            (
+                data.width as i32,
+                data.height as i32,
+                data.width as i32 / 2,
+                data.height as i32 / 2,
+            )
         };
 
         if actual_width == 0 && actual_height == 0 {
@@ -711,9 +811,19 @@ pub fn compute_filmloop_initial_rect_with_members(
 
         debug!(
             "  compute_initial_rect: ch {} m {}:{} pos ({}, {}) size {}x{} reg ({}, {}) -> bounds ({}, {}, {}, {})",
-            channel_idx, sprite_member_ref.cast_lib, sprite_member_ref.cast_member,
-            data.pos_x, data.pos_y, actual_width, actual_height, reg_x, reg_y,
-            sprite_left, sprite_top, sprite_right, sprite_bottom
+            channel_idx,
+            sprite_member_ref.cast_lib,
+            sprite_member_ref.cast_member,
+            data.pos_x,
+            data.pos_y,
+            actual_width,
+            actual_height,
+            reg_x,
+            reg_y,
+            sprite_left,
+            sprite_top,
+            sprite_right,
+            sprite_bottom
         );
 
         if sprite_left < min_x {
@@ -738,8 +848,12 @@ pub fn compute_filmloop_initial_rect_with_members(
     let result = IntRect::from(min_x, min_y, max_x, max_y);
     debug!(
         "compute_filmloop_initial_rect_with_members: FINAL rect ({}, {}, {}, {}) size {}x{}",
-        result.left, result.top, result.right, result.bottom,
-        result.width(), result.height()
+        result.left,
+        result.top,
+        result.right,
+        result.bottom,
+        result.width(),
+        result.height()
     );
     Some(result)
 }
@@ -814,8 +928,10 @@ fn render_filmloop_from_channel_data(
                 let frame_idx_target = frame.saturating_sub(1);
 
                 // Group data by channel, keeping only valid sprite channels
-                let mut channel_map: std::collections::HashMap<u16, (u32, crate::director::chunks::score::ScoreFrameChannelData)> =
-                    std::collections::HashMap::new();
+                let mut channel_map: std::collections::HashMap<
+                    u16,
+                    (u32, crate::director::chunks::score::ScoreFrameChannelData),
+                > = std::collections::HashMap::new();
 
                 // Sprite-span gating: the score writes explicit "clear" deltas
                 // (all-zero bytes) at end_frame to deactivate channels, but the
@@ -831,7 +947,9 @@ fn render_filmloop_from_channel_data(
                 let frame_intervals = &film_loop_member.score_chunk.frame_intervals;
                 let has_spans = !frame_intervals.is_empty();
 
-                for (frame_idx, channel_idx, data) in film_loop_member.score.channel_initialization_data.iter() {
+                for (frame_idx, channel_idx, data) in
+                    film_loop_member.score.channel_initialization_data.iter()
+                {
                     // Skip effect channels (0-5)
                     if *channel_idx < 6 {
                         continue;
@@ -839,7 +957,8 @@ fn render_filmloop_from_channel_data(
                     // Inline shape sprites use cast_lib=0xFFFE / cast_member=0 as a
                     // sentinel — they draw an oval/rect from the sprite-record
                     // geometry, no cast member required. Keep those entries.
-                    let is_inline_shape = data.cast_lib == 0xFFFE && data.cast_member == 0
+                    let is_inline_shape = data.cast_lib == 0xFFFE
+                        && data.cast_member == 0
                         && (data.width > 0 || data.height > 0);
                     // Skip empty sprites (cast_member 0 with no inline-shape geometry).
                     if data.cast_member == 0 && !is_inline_shape {
@@ -882,17 +1001,24 @@ fn render_filmloop_from_channel_data(
 
                 // Use cached total_frames or compute and cache it
                 let total_frames = film_loop_member.cached_total_frames.unwrap_or_else(|| {
-                    let init_data_max = film_loop_member.score.channel_initialization_data
+                    let init_data_max = film_loop_member
+                        .score
+                        .channel_initialization_data
                         .iter()
                         .map(|(frame_idx, _, _)| *frame_idx + 1)
                         .max()
                         .unwrap_or(1);
-                    let span_max = film_loop_member.score.sprite_spans
+                    let span_max = film_loop_member
+                        .score
+                        .sprite_spans
                         .iter()
                         .map(|span| span.end_frame)
                         .max()
                         .unwrap_or(1);
-                    let keyframes_max = film_loop_member.score.keyframes_cache.values()
+                    let keyframes_max = film_loop_member
+                        .score
+                        .keyframes_cache
+                        .values()
                         .filter_map(|channel_kf| channel_kf.path.as_ref())
                         .flat_map(|path_kf| path_kf.keyframes.iter())
                         .map(|kf| kf.frame)
@@ -919,9 +1045,15 @@ fn render_filmloop_from_channel_data(
 
     debug!(
         "render_filmloop_from_channel_data: frame {}/{}, {} sprites, initial_rect ({}, {}, {}, {}), scale ({:.2}, {:.2})",
-        current_frame, total_frames, channel_data.len(),
-        initial_rect.left, initial_rect.top, initial_rect.right, initial_rect.bottom,
-        scale_x, scale_y
+        current_frame,
+        total_frames,
+        channel_data.len(),
+        initial_rect.left,
+        initial_rect.top,
+        initial_rect.right,
+        initial_rect.bottom,
+        scale_x,
+        scale_y
     );
 
     // Sort by channel number for consistent z-ordering
@@ -935,8 +1067,8 @@ fn render_filmloop_from_channel_data(
         // The sprite-record geometry encodes an oval/rect drawn directly. CS uses
         // this in nav_circleanim to animate growing concentric ovals as a
         // radar-ping effect. Render it here and skip the cast-member path.
-        let is_inline_shape = data.cast_lib == 0xFFFE && data.cast_member == 0
-            && (data.width > 0 || data.height > 0);
+        let is_inline_shape =
+            data.cast_lib == 0xFFFE && data.cast_member == 0 && (data.width > 0 || data.height > 0);
         if is_inline_shape {
             // Director shape sprites centre on (pos_x, pos_y). For the radar-
             // ping nav_circleanim, every channel records the same pos and
@@ -948,7 +1080,8 @@ fn render_filmloop_from_channel_data(
             let rel_x = sprite_left - initial_rect.left;
             let rel_y = sprite_top - initial_rect.top;
             let sprite_rect = IntRect::from(
-                rel_x, rel_y,
+                rel_x,
+                rel_y,
                 rel_x + data.width as i32,
                 rel_y + data.height as i32,
             );
@@ -991,17 +1124,26 @@ fn render_filmloop_from_channel_data(
         // Build member ref from channel data
         // cast_lib 65535 means "use the filmloop's cast library"
         let sprite_member_ref = CastMemberRef {
-            cast_lib: if data.cast_lib == 65535 { filmloop_cast_lib } else { data.cast_lib as i32 },
+            cast_lib: if data.cast_lib == 65535 {
+                filmloop_cast_lib
+            } else {
+                data.cast_lib as i32
+            },
             cast_member: data.cast_member as i32,
         };
 
-        let member = player.movie.cast_manager.find_filmloop_inner_member(&sprite_member_ref);
+        let member = player
+            .movie
+            .cast_manager
+            .find_filmloop_inner_member(&sprite_member_ref);
         if member.is_none() {
             warn!(
                 "[FILMLOOP-LOOKUP-FAIL] filmloop=({},{}) chan={} asked_for=({},{}) raw_cast_lib={}",
-                filmloop_cast_lib, member_ref.cast_member,
+                filmloop_cast_lib,
+                member_ref.cast_member,
                 channel_num,
-                sprite_member_ref.cast_lib, sprite_member_ref.cast_member,
+                sprite_member_ref.cast_lib,
+                sprite_member_ref.cast_member,
                 data.cast_lib,
             );
             continue;
@@ -1012,23 +1154,32 @@ fn render_filmloop_from_channel_data(
         //
         // For channels with path keyframes, interpolate between keyframes
         // Director frame numbers are 1-based, keyframes use 1-based Director frame numbers
-        let (pos_x, pos_y) = if let Some(channel_keyframes) = keyframes_cache.get(&(channel_num as u16)) {
+        let (pos_x, pos_y) = if let Some(channel_keyframes) =
+            keyframes_cache.get(&(channel_num as u16))
+        {
             if let Some(path_keyframes) = &channel_keyframes.path {
                 // Debug: log path keyframes for this channel
                 if current_frame <= 5 || current_frame >= 95 {
-                    let kf_summary: Vec<String> = path_keyframes.keyframes.iter()
+                    let kf_summary: Vec<String> = path_keyframes
+                        .keyframes
+                        .iter()
                         .take(5)
                         .map(|kf| format!("f{}:({},{})", kf.frame, kf.x, kf.y))
                         .collect();
                     let last_kf = path_keyframes.keyframes.last();
                     debug!(
                         "    PATH keyframes for channel {}: {} keyframes, first 5: {:?}, last: {:?}",
-                        channel_num, path_keyframes.keyframes.len(), kf_summary, last_kf
+                        channel_num,
+                        path_keyframes.keyframes.len(),
+                        kf_summary,
+                        last_kf
                     );
                 }
 
                 // Try to get interpolated position from path keyframes
-                if let Some((interp_x, interp_y)) = interpolate_path_position(path_keyframes, current_frame) {
+                if let Some((interp_x, interp_y)) =
+                    interpolate_path_position(path_keyframes, current_frame)
+                {
                     (interp_x as i16, interp_y as i16)
                 } else {
                     // Fall back to static keyframe position
@@ -1079,7 +1230,8 @@ fn render_filmloop_from_channel_data(
 
         // When bitmap dimensions differ from display dimensions (scale mode with channel data),
         // scale the registration point proportionally from bitmap space to display space.
-        let (scaled_reg_x, scaled_reg_y) = if member_width > 0 && member_height > 0
+        let (scaled_reg_x, scaled_reg_y) = if member_width > 0
+            && member_height > 0
             && (member_width != use_width || member_height != use_height)
         {
             (
@@ -1097,24 +1249,30 @@ fn render_filmloop_from_channel_data(
         let rel_w = use_width as i32;
         let rel_h = use_height as i32;
 
-        let sprite_rect = IntRect::from(
-            rel_x,
-            rel_y,
-            rel_x + rel_w,
-            rel_y + rel_h,
-        );
+        let sprite_rect = IntRect::from(rel_x, rel_y, rel_x + rel_w, rel_y + rel_h);
 
         debug!(
             "  channel {}: member {}:{} type {:?} orig ({}, {}) interp ({}, {}) data_size {}x{} use_size {}x{} reg ({}, {}) sprite_left {} initial_left {} -> rect ({}, {}, {}, {})",
-            channel_num, sprite_member_ref.cast_lib, sprite_member_ref.cast_member,
+            channel_num,
+            sprite_member_ref.cast_lib,
+            sprite_member_ref.cast_member,
             member.member_type.member_type_id(),
-            data.pos_x, data.pos_y,
-            pos_x, pos_y,
-            data.width, data.height,
-            use_width, use_height,
-            reg_x, reg_y,
-            sprite_left, initial_rect.left,
-            sprite_rect.left, sprite_rect.top, sprite_rect.right, sprite_rect.bottom
+            data.pos_x,
+            data.pos_y,
+            pos_x,
+            pos_y,
+            data.width,
+            data.height,
+            use_width,
+            use_height,
+            reg_x,
+            reg_y,
+            sprite_left,
+            initial_rect.left,
+            sprite_rect.left,
+            sprite_rect.top,
+            sprite_rect.right,
+            sprite_rect.bottom
         );
 
         match &member.member_type {
@@ -1136,13 +1294,22 @@ fn render_filmloop_from_channel_data(
                 // The mask is aligned to the source by their registration
                 // points (Director allows mismatched dimensions: mask 55x63 vs
                 // source 51x58 in CS rightwall torch).
-                let src_reg = (bitmap_member.reg_point.0 as i32, bitmap_member.reg_point.1 as i32);
+                let src_reg = (
+                    bitmap_member.reg_point.0 as i32,
+                    bitmap_member.reg_point.1 as i32,
+                );
                 let ink9_mask: Option<(Bitmap, (i32, i32))> = if ink == 9 {
                     let mask_ref = CastMemberRef {
-                        cast_lib: if data.cast_lib == 65535 { filmloop_cast_lib } else { data.cast_lib as i32 },
+                        cast_lib: if data.cast_lib == 65535 {
+                            filmloop_cast_lib
+                        } else {
+                            data.cast_lib as i32
+                        },
                         cast_member: data.cast_member as i32 + 1,
                     };
-                    let found_member = player.movie.cast_manager
+                    let found_member = player
+                        .movie
+                        .cast_manager
                         .find_filmloop_inner_member(&mask_ref);
                     let mask_reg = match found_member.as_ref().map(|m| &m.member_type) {
                         Some(CastMemberType::Bitmap(bm)) => {
@@ -1177,7 +1344,8 @@ fn render_filmloop_from_channel_data(
                 }
                 let src_bitmap = sprite_bitmap.unwrap();
 
-                let src_rect = IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
+                let src_rect =
+                    IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
                 // Use the display dimensions (from channel data) for dst_rect.
                 // When bitmap dimensions differ from display dimensions (e.g. thin strips
                 // that Director stretches to fill the display rect), copy_pixels will
@@ -1193,8 +1361,12 @@ fn render_filmloop_from_channel_data(
                 let flip_v = data.flip_v();
                 let dst_rect = {
                     let mut r = sprite_rect.clone();
-                    if flip_h { std::mem::swap(&mut r.left, &mut r.right); }
-                    if flip_v { std::mem::swap(&mut r.top, &mut r.bottom); }
+                    if flip_h {
+                        std::mem::swap(&mut r.left, &mut r.right);
+                    }
+                    if flip_v {
+                        std::mem::swap(&mut r.top, &mut r.bottom);
+                    }
                     r
                 };
 
@@ -1204,15 +1376,28 @@ fn render_filmloop_from_channel_data(
 
                 debug!(
                     "    Bitmap found: {}x{} bit_depth={} image_ref={} ink={} blend={} has_data={} first_bytes={:?} src_rect=({},{},{},{}) dst_rect=({},{},{},{})",
-                    src_bitmap.width, src_bitmap.height, src_bitmap.bit_depth, bitmap_member.image_ref,
-                    data.ink, data.blend, has_data, first_pixels,
-                    src_rect.left, src_rect.top, src_rect.right, src_rect.bottom,
-                    dst_rect.left, dst_rect.top, dst_rect.right, dst_rect.bottom
+                    src_bitmap.width,
+                    src_bitmap.height,
+                    src_bitmap.bit_depth,
+                    bitmap_member.image_ref,
+                    data.ink,
+                    data.blend,
+                    has_data,
+                    first_pixels,
+                    src_rect.left,
+                    src_rect.top,
+                    src_rect.right,
+                    src_rect.bottom,
+                    dst_rect.left,
+                    dst_rect.top,
+                    dst_rect.right,
+                    dst_rect.bottom
                 );
 
                 // Filmloop blend: inverted 0-255 scale (0 → 100%, 127 → ~50%)
                 // 255 is treated as default/opaque (same as shape/vector paths)
-                let blend = crate::player::score::convert_raw_blend(data.blend, player.movie.dir_version);
+                let blend =
+                    crate::player::score::convert_raw_blend(data.blend, player.movie.dir_version);
 
                 // Only use matte mask for inks that support it:
                 // - Ink 0 (copy): for trimWhiteSpace edge transparency (indexed and 16-bit)
@@ -1260,8 +1445,13 @@ fn render_filmloop_from_channel_data(
 
                 debug!(
                     "    Calling copy_pixels: dest_bitmap {}x{} bit_depth={} src_palette={:?} orig_bit_depth={} sprite_color={:?} sprite_bg_color={:?}",
-                    bitmap.width, bitmap.height, bitmap.bit_depth,
-                    src_bitmap.palette_ref, src_bitmap.original_bit_depth, sprite_color, sprite_bg_color
+                    bitmap.width,
+                    bitmap.height,
+                    bitmap.bit_depth,
+                    src_bitmap.palette_ref,
+                    src_bitmap.original_bit_depth,
+                    sprite_color,
+                    sprite_bg_color
                 );
                 debug!(
                     "    Palette test: idx_0={:?} idx_128={:?} idx_255={:?}",
@@ -1279,9 +1469,7 @@ fn render_filmloop_from_channel_data(
                         m.width, m.height, total_pixels, true_count, false_count
                     );
                 } else {
-                    debug!(
-                        "    Matte mask: None"
-                    );
+                    debug!("    Matte mask: None");
                 }
 
                 let params = CopyPixelsParams {
@@ -1310,17 +1498,18 @@ fn render_filmloop_from_channel_data(
                     ink9_mask_offset: ink9_mask.as_ref().map(|(_, off)| *off).unwrap_or((0, 0)),
                 };
 
-                bitmap.copy_pixels_with_params(
-                    &palettes,
-                    &src_bitmap,
-                    dst_rect,
-                    src_rect,
-                    &params,
-                );
+                bitmap.copy_pixels_with_params(&palettes, &src_bitmap, dst_rect, src_rect, &params);
             }
             CastMemberType::Shape(shape_member) => {
                 // Skip rendering shapes with tiny dimensions (blank placeholders or zero-size)
                 if data.width <= 1 || data.height <= 1 {
+                    continue;
+                }
+
+                if shape_member
+                    .shape_info
+                    .is_stretched_fill_placeholder(data.width as i32, data.height as i32)
+                {
                     continue;
                 }
 
@@ -1331,12 +1520,23 @@ fn render_filmloop_from_channel_data(
                 let mut temp_sprite = Sprite::new(channel_num as usize);
                 temp_sprite.color = sprite_color;
                 temp_sprite.ink = ((data.ink & 0x7F) / 5) as i32;
-                temp_sprite.blend = if data.blend == 255 { 100 } else {
+                temp_sprite.blend = if data.blend == 255 {
+                    100
+                } else {
                     ((255.0 - data.blend as f32) * 100.0 / 255.0) as i32
                 };
 
-                let frame_palette = player.movie.score.get_frame_palette(player.movie.current_frame);
-                bitmap.draw_shape_with_sprite(&temp_sprite, &shape_member.shape_info, sprite_rect, &palettes, &frame_palette);
+                let frame_palette = player
+                    .movie
+                    .score
+                    .get_frame_palette(player.movie.current_frame);
+                bitmap.draw_shape_with_sprite(
+                    &temp_sprite,
+                    &shape_member.shape_info,
+                    sprite_rect,
+                    &palettes,
+                    &frame_palette,
+                );
             }
             CastMemberType::VectorShape(vector_member) => {
                 if data.width <= 1 || data.height <= 1 {
@@ -1344,7 +1544,9 @@ fn render_filmloop_from_channel_data(
                 }
                 let mut temp_sprite = Sprite::new(channel_num as usize);
                 temp_sprite.ink = ((data.ink & 0x7F) / 5) as i32;
-                temp_sprite.blend = if data.blend == 255 { 100 } else {
+                temp_sprite.blend = if data.blend == 255 {
+                    100
+                } else {
                     ((255.0 - data.blend as f32) * 100.0 / 255.0) as i32
                 };
                 let alpha = (temp_sprite.blend as f32 / 100.0).clamp(0.0, 1.0);
@@ -1363,7 +1565,9 @@ fn render_filmloop_from_channel_data(
                 if let Some(font) = font_opt {
                     let font_bitmap = player.bitmap_manager.get_bitmap(font.bitmap_ref).unwrap();
                     let ink = ((data.ink & 0x7F) / 5) as u32;
-                    let blend = if data.blend == 255 { 100 } else {
+                    let blend = if data.blend == 255 {
+                        100
+                    } else {
                         ((255.0 - data.blend as f32) * 100.0 / 255.0) as i32
                     };
 
@@ -1383,7 +1587,8 @@ fn render_filmloop_from_channel_data(
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     bitmap.draw_text(
@@ -1400,17 +1605,24 @@ fn render_filmloop_from_channel_data(
                 }
             }
             CastMemberType::Text(text_member) => {
-                let (font_name, font_size, font_style) = if !text_member.html_styled_spans.is_empty() {
-                    let first_style = &text_member.html_styled_spans[0].style;
-                    let name = first_style.font_face.clone().unwrap_or_else(|| text_member.font.clone());
-                    let size = first_style.font_size.map(|s| s as u16).unwrap_or(text_member.font_size);
-                    let style = (if first_style.bold { 1u8 } else { 0 })
-                        | (if first_style.italic { 2u8 } else { 0 })
-                        | (if first_style.underline { 4u8 } else { 0 });
-                    (name, size, Some(style))
-                } else {
-                    (text_member.font.clone(), text_member.font_size, None)
-                };
+                let (font_name, font_size, font_style) =
+                    if !text_member.html_styled_spans.is_empty() {
+                        let first_style = &text_member.html_styled_spans[0].style;
+                        let name = first_style
+                            .font_face
+                            .clone()
+                            .unwrap_or_else(|| text_member.font.clone());
+                        let size = first_style
+                            .font_size
+                            .map(|s| s as u16)
+                            .unwrap_or(text_member.font_size);
+                        let style = (if first_style.bold { 1u8 } else { 0 })
+                            | (if first_style.italic { 2u8 } else { 0 })
+                            | (if first_style.underline { 4u8 } else { 0 });
+                        (name, size, Some(style))
+                    } else {
+                        (text_member.font.clone(), text_member.font_size, None)
+                    };
 
                 let mut font_opt = get_or_load_font(
                     &mut player.font_manager,
@@ -1441,7 +1653,9 @@ fn render_filmloop_from_channel_data(
                 if let Some(font) = font_opt {
                     let font_bitmap = player.bitmap_manager.get_bitmap(font.bitmap_ref).unwrap();
                     let ink = ((data.ink & 0x7F) / 5) as u32;
-                    let blend = if data.blend == 255 { 100 } else {
+                    let blend = if data.blend == 255 {
+                        100
+                    } else {
                         ((255.0 - data.blend as f32) * 100.0 / 255.0) as i32
                     };
 
@@ -1461,7 +1675,8 @@ fn render_filmloop_from_channel_data(
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     bitmap.draw_text(
@@ -1486,11 +1701,14 @@ fn render_filmloop_from_channel_data(
                 if let Some(&bitmap_ref) = flash_bitmap_ref.as_ref().filter(|&&r| r != 0) {
                     let src_bitmap = player.bitmap_manager.get_bitmap(bitmap_ref);
                     if let Some(src_bitmap) = src_bitmap {
-                        let src_rect = IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
+                        let src_rect =
+                            IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
                         let dst_rect = sprite_rect.clone();
 
                         let ink = parent_ink;
-                        let blend = if data.blend == 255 { 100 } else {
+                        let blend = if data.blend == 255 {
+                            100
+                        } else {
                             ((255.0 - data.blend as f32) * 100.0 / 255.0) as i32
                         };
 
@@ -1508,15 +1726,12 @@ fn render_filmloop_from_channel_data(
                             original_dst_rect: Some(dst_rect.clone()),
                             bg_color_explicit: false,
                             fore_color_explicit: false,
-                            ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                            ink9_mask_bitmap: None,
+                            ink9_mask_offset: (0, 0),
                         };
 
                         bitmap.copy_pixels_with_params(
-                            &palettes,
-                            src_bitmap,
-                            dst_rect,
-                            src_rect,
-                            &params,
+                            &palettes, src_bitmap, dst_rect, src_rect, &params,
                         );
                     }
                 }
@@ -1568,7 +1783,8 @@ fn render_filmloop_from_channel_data(
                     }),
                 );
 
-                let blend = crate::player::score::convert_raw_blend(data.blend, player.movie.dir_version);
+                let blend =
+                    crate::player::score::convert_raw_blend(data.blend, player.movie.dir_version);
 
                 // Mirror the Bitmap arm's flip handling so nested filmloops
                 // honor the child sprite's flipH/flipV bits.
@@ -1576,8 +1792,12 @@ fn render_filmloop_from_channel_data(
                 let flip_v = data.flip_v();
                 let dst_rect = {
                     let mut r = sprite_rect.clone();
-                    if flip_h { std::mem::swap(&mut r.left, &mut r.right); }
-                    if flip_v { std::mem::swap(&mut r.top, &mut r.bottom); }
+                    if flip_h {
+                        std::mem::swap(&mut r.left, &mut r.right);
+                    }
+                    if flip_v {
+                        std::mem::swap(&mut r.top, &mut r.bottom);
+                    }
                     r
                 };
 
@@ -1595,7 +1815,8 @@ fn render_filmloop_from_channel_data(
                     original_dst_rect: Some(sprite_rect.clone()),
                     bg_color_explicit: false,
                     fore_color_explicit: false,
-                    ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                    ink9_mask_bitmap: None,
+                    ink9_mask_offset: (0, 0),
                 };
 
                 bitmap.copy_pixels_with_params(
@@ -1610,7 +1831,8 @@ fn render_filmloop_from_channel_data(
                 // Other member types not yet supported in filmloop rendering
                 debug!(
                     "  channel {}: unsupported member type {:?}",
-                    channel_num, member.member_type.member_type_id()
+                    channel_num,
+                    member.member_type.member_type_id()
                 );
             }
         }
@@ -1658,7 +1880,8 @@ pub fn render_score_to_bitmap_with_offset(
         let info_rect = get_filmloop_info_rect(player, member_ref);
         let bitmap_dim_rect = compute_filmloop_initial_rect_with_members(player, member_ref);
 
-        let initial_rect = info_rect.clone()
+        let initial_rect = info_rect
+            .clone()
             .or_else(|| bitmap_dim_rect.clone())
             .unwrap_or_else(|| {
                 // Fall back to load-time computed initial_rect
@@ -1680,16 +1903,15 @@ pub fn render_score_to_bitmap_with_offset(
         // (channel data) which represent the intended display sizes.
         let prefer_bitmap_dims = match (&info_rect, &bitmap_dim_rect) {
             (Some(info), Some(bm)) => {
-                (info.width() - bm.width()).abs() <= 10
-                    && (info.height() - bm.height()).abs() <= 10
+                (info.width() - bm.width()).abs() <= 10 && (info.height() - bm.height()).abs() <= 10
             }
             _ => false,
         };
 
         // Get parent sprite properties - use defaults if not provided
         let props = parent_props.unwrap_or(FilmLoopParentProps {
-            ink: 0, // Default to copy ink
-            color: ColorRef::PaletteIndex(255), // Default foreground (black in most palettes)
+            ink: 0,                              // Default to copy ink
+            color: ColorRef::PaletteIndex(255),  // Default foreground (black in most palettes)
             bg_color: ColorRef::PaletteIndex(0), // Default background (white in most palettes)
         });
 
@@ -1777,10 +1999,7 @@ pub fn render_score_to_bitmap_with_offset(
             let sprite = score.get_sprite(channel_num);
             if sprite.is_none() {
                 if matches!(score_source, ScoreRef::Stage) {
-                    debug!(
-                        "  STAGE channel {} SKIPPED: sprite is None",
-                        channel_num
-                    );
+                    debug!("  STAGE channel {} SKIPPED: sprite is None", channel_num);
                 }
                 continue;
             }
@@ -1813,15 +2032,20 @@ pub fn render_score_to_bitmap_with_offset(
         if matches!(score_source, ScoreRef::Stage) {
             debug!(
                 "  STAGE channel {}: member {}:{} type {:?}",
-                channel_num, member_ref.cast_lib, member_ref.cast_member,
+                channel_num,
+                member_ref.cast_lib,
+                member_ref.cast_member,
                 member.member_type.member_type_id()
             );
         }
 
+        if is_non_visual_collision_mask_sprite(channel_num, member) {
+            continue;
+        }
+
         match &member.member_type {
             CastMemberType::Bitmap(bitmap_member) => {
-                let sprite =
-                    get_score_sprite(&player.movie, score_source, channel_num).unwrap();
+                let sprite = get_score_sprite(&player.movie, score_source, channel_num).unwrap();
                 let sprite_rect = get_concrete_sprite_rect(player, sprite);
                 let logical_rect = sprite_rect.clone();
 
@@ -1856,7 +2080,12 @@ pub fn render_score_to_bitmap_with_offset(
                             })
                             .and_then(|img_ref| player.bitmap_manager.get_bitmap(img_ref))
                             .cloned()
-                            .map(|bmp| (bmp, (mask_reg.0 - stage_src_reg.0, mask_reg.1 - stage_src_reg.1)))
+                            .map(|bmp| {
+                                (
+                                    bmp,
+                                    (mask_reg.0 - stage_src_reg.0, mask_reg.1 - stage_src_reg.1),
+                                )
+                            })
                     })
                 } else {
                     None
@@ -1883,23 +2112,46 @@ pub fn render_score_to_bitmap_with_offset(
                 let mut option = 0;
 
                 if sprite.has_size_tweened || sprite.has_size_changed {
-                    src_rect = IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
-                } else if sprite.width > player.movie.rect.width() && sprite.height >  player.movie.rect.height() {
+                    src_rect =
+                        IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
+                } else if sprite.width > player.movie.rect.width()
+                    && sprite.height > player.movie.rect.height()
+                {
                     // sprite dimensions > movie dimensions
-                    src_rect = IntRect::from(0, 0, bitmap_member.info.width as i32, bitmap_member.info.height as i32);
+                    src_rect = IntRect::from(
+                        0,
+                        0,
+                        bitmap_member.info.width as i32,
+                        bitmap_member.info.height as i32,
+                    );
                     option = 1;
                 } else if bitmap_member.info.width == 0 && bitmap_member.info.height == 0 {
                     // bitmap dimensions are 0
                     src_rect = IntRect::from(0, 0, sprite.width as i32, sprite.height as i32);
                     option = 2;
-                } else if i32::from(bitmap_member.info.width) < sprite.width && i32::from(bitmap_member.info.height) < sprite.height || 
-                    i32::from(bitmap_member.info.width) > sprite.width && i32::from(bitmap_member.info.height) > sprite.height {
+                } else if i32::from(bitmap_member.info.width) < sprite.width
+                    && i32::from(bitmap_member.info.height) < sprite.height
+                    || i32::from(bitmap_member.info.width) > sprite.width
+                        && i32::from(bitmap_member.info.height) > sprite.height
+                {
                     // bitmap dimensions are < than sprite dimensions OR bitmap dimensions are > than sprite dimensions
-                    src_rect = IntRect::from(0, 0, bitmap_member.info.width as i32, bitmap_member.info.height as i32);
+                    src_rect = IntRect::from(
+                        0,
+                        0,
+                        bitmap_member.info.width as i32,
+                        bitmap_member.info.height as i32,
+                    );
                     option = 3;
-                } else if sprite.width > i32::from(bitmap_member.info.width) || sprite.height > i32::from(bitmap_member.info.height) {
+                } else if sprite.width > i32::from(bitmap_member.info.width)
+                    || sprite.height > i32::from(bitmap_member.info.height)
+                {
                     // sprite dimensions > bitmap dimensions
-                    src_rect = IntRect::from(0, 0, bitmap_member.info.width as i32, bitmap_member.info.height as i32);
+                    src_rect = IntRect::from(
+                        0,
+                        0,
+                        bitmap_member.info.width as i32,
+                        bitmap_member.info.height as i32,
+                    );
                     option = 4;
                 } else {
                     src_rect = IntRect::from(0, 0, sprite.width as i32, sprite.height as i32);
@@ -1967,19 +2219,20 @@ pub fn render_score_to_bitmap_with_offset(
                     src_rect
                 );
 
-                bitmap.copy_pixels_with_params(
-                    &palettes,
-                    &src_bitmap,
-                    dst_rect,
-                    src_rect,
-                    &params,
-                );
+                bitmap.copy_pixels_with_params(&palettes, &src_bitmap, dst_rect, src_rect, &params);
             }
             CastMemberType::Shape(shape_member) => {
                 let sprite = get_score_sprite(&player.movie, score_source, channel_num).unwrap();
 
                 // Skip rendering shapes with tiny dimensions (blank placeholders or zero-size)
                 if sprite.width <= 1 || sprite.height <= 1 {
+                    continue;
+                }
+
+                if shape_member
+                    .shape_info
+                    .is_stretched_fill_placeholder(sprite.width as i32, sprite.height as i32)
+                {
                     continue;
                 }
 
@@ -1990,13 +2243,23 @@ pub fn render_score_to_bitmap_with_offset(
                     }
                 }
 
-                let frame_palette = player.movie.score.get_frame_palette(player.movie.current_frame);
+                let frame_palette = player
+                    .movie
+                    .score
+                    .get_frame_palette(player.movie.current_frame);
                 debug!(
                     "  SHAPE RENDER: channel {} member {:?} type {:?} size {}x{} color {:?} bg {:?} ink {} blend {} filled={} lineThick={}",
-                    channel_num, sprite.member, shape_member.shape_info.shape_type,
-                    sprite.width, sprite.height,
-                    sprite.color, sprite.bg_color, sprite.ink, sprite.blend,
-                    shape_member.shape_info.fill_type, shape_member.shape_info.line_thickness
+                    channel_num,
+                    sprite.member,
+                    shape_member.shape_info.shape_type,
+                    sprite.width,
+                    sprite.height,
+                    sprite.color,
+                    sprite.bg_color,
+                    sprite.ink,
+                    sprite.blend,
+                    shape_member.shape_info.fill_type,
+                    shape_member.shape_info.line_thickness
                 );
 
                 let shape_info = &shape_member.shape_info;
@@ -2011,9 +2274,21 @@ pub fn render_score_to_bitmap_with_offset(
                     let mut translated_sprite = sprite.clone();
                     translated_sprite.loc_h -= offset.0;
                     translated_sprite.loc_v -= offset.1;
-                    bitmap.draw_shape_with_sprite(&translated_sprite, shape_info, sprite_rect, &palettes, &frame_palette);
+                    bitmap.draw_shape_with_sprite(
+                        &translated_sprite,
+                        shape_info,
+                        sprite_rect,
+                        &palettes,
+                        &frame_palette,
+                    );
                 } else {
-                    bitmap.draw_shape_with_sprite(sprite, shape_info, sprite_rect, &palettes, &frame_palette);
+                    bitmap.draw_shape_with_sprite(
+                        sprite,
+                        shape_info,
+                        sprite_rect,
+                        &palettes,
+                        &frame_palette,
+                    );
                 }
             }
             CastMemberType::VectorShape(vector_member) => {
@@ -2040,9 +2315,19 @@ pub fn render_score_to_bitmap_with_offset(
                     let mut translated_sprite = sprite.clone();
                     translated_sprite.loc_h -= offset.0;
                     translated_sprite.loc_v -= offset.1;
-                    bitmap.draw_vector_shape_with_sprite(&translated_sprite, vector_member, sprite_rect, &palettes);
+                    bitmap.draw_vector_shape_with_sprite(
+                        &translated_sprite,
+                        vector_member,
+                        sprite_rect,
+                        &palettes,
+                    );
                 } else {
-                    bitmap.draw_vector_shape_with_sprite(sprite, vector_member, sprite_rect, &palettes);
+                    bitmap.draw_vector_shape_with_sprite(
+                        sprite,
+                        vector_member,
+                        sprite_rect,
+                        &palettes,
+                    );
                 }
             }
             CastMemberType::Field(field_member) => {
@@ -2086,7 +2371,8 @@ pub fn render_score_to_bitmap_with_offset(
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     let is_focused = player.keyboard_focus_sprite == sprite.number as i16;
@@ -2095,7 +2381,11 @@ pub fn render_score_to_bitmap_with_offset(
                     let has_selection = is_focused && sel_lo != sel_hi;
                     // Same line stride bitmap.draw_text_wrapped uses internally.
                     let line_h = font.char_height as i32 + field_member.fixed_line_space as i32;
-                    let wrap_w = if field_member.word_wrap { sprite.width } else { 0 };
+                    let wrap_w = if field_member.word_wrap {
+                        sprite.width
+                    } else {
+                        0
+                    };
 
                     if has_selection {
                         draw_text_selection_rects(
@@ -2169,18 +2459,28 @@ pub fn render_score_to_bitmap_with_offset(
 
                 // Determine colors based on hilite state
                 // Only push buttons invert everything; radio/checkbox keep black text
-                let is_push = matches!(button_type, crate::player::cast_member::ButtonType::PushButton);
-                let (frame_color, fill_color, text_color_rgb): ((u8,u8,u8),(u8,u8,u8),(u8,u8,u8)) = if hilite && is_push {
-                    ((255,255,255), (0,0,0), (255,255,255))
+                let is_push = matches!(
+                    button_type,
+                    crate::player::cast_member::ButtonType::PushButton
+                );
+                let (frame_color, fill_color, text_color_rgb): (
+                    (u8, u8, u8),
+                    (u8, u8, u8),
+                    (u8, u8, u8),
+                ) = if hilite && is_push {
+                    ((255, 255, 255), (0, 0, 0), (255, 255, 255))
                 } else {
-                    ((0,0,0), (255,255,255), (0,0,0))
+                    ((0, 0, 0), (255, 255, 255), (0, 0, 0))
                 };
 
                 // Render button to intermediate bitmap, then composite with ink.
                 // This handles all ink modes (bgTransparent, addPin, etc.) uniformly.
                 let mut temp = Bitmap::new(
-                    draw_w as u16, draw_h as u16,
-                    32, 32, 0,
+                    draw_w as u16,
+                    draw_h as u16,
+                    32,
+                    32,
+                    0,
                     PaletteRef::BuiltIn(get_system_default_palette()),
                 );
                 temp.data.fill(0); // Start fully transparent
@@ -2203,38 +2503,123 @@ pub fn render_score_to_bitmap_with_offset(
                             temp.fill_rect(0, box_y + 9, 10, box_y + 10, (0, 0, 0), &palettes, 1.0);
                             temp.fill_rect(0, box_y, 1, box_y + 10, (0, 0, 0), &palettes, 1.0);
                             temp.fill_rect(9, box_y, 10, box_y + 10, (0, 0, 0), &palettes, 1.0);
-                            temp.fill_rect(1, box_y + 1, 9, box_y + 9, (255, 255, 255), &palettes, 1.0);
+                            temp.fill_rect(
+                                1,
+                                box_y + 1,
+                                9,
+                                box_y + 9,
+                                (255, 255, 255),
+                                &palettes,
+                                1.0,
+                            );
                             if hilite {
                                 for i in 1..9 {
-                                    temp.fill_rect(i, box_y + i, i + 1, box_y + i + 1, (0, 0, 0), &palettes, 1.0);
-                                    temp.fill_rect(9 - i, box_y + i, 10 - i, box_y + i + 1, (0, 0, 0), &palettes, 1.0);
+                                    temp.fill_rect(
+                                        i,
+                                        box_y + i,
+                                        i + 1,
+                                        box_y + i + 1,
+                                        (0, 0, 0),
+                                        &palettes,
+                                        1.0,
+                                    );
+                                    temp.fill_rect(
+                                        9 - i,
+                                        box_y + i,
+                                        10 - i,
+                                        box_y + i + 1,
+                                        (0, 0, 0),
+                                        &palettes,
+                                        1.0,
+                                    );
                                 }
                             }
                         }
                         crate::player::cast_member::ButtonType::RadioButton => {
                             let base_y = 0;
                             let circle_points: &[(i32, i32)] = &[
-                                (4, 0), (5, 0), (6, 0),
-                                (3, 1), (7, 1),
-                                (2, 2), (8, 2),
-                                (1, 3), (9, 3),
-                                (0, 4), (10, 4),
-                                (0, 5), (10, 5),
-                                (0, 6), (10, 6),
-                                (1, 7), (9, 7),
-                                (2, 8), (8, 8),
-                                (3, 9), (7, 9),
-                                (4, 10), (5, 10), (6, 10),
+                                (4, 0),
+                                (5, 0),
+                                (6, 0),
+                                (3, 1),
+                                (7, 1),
+                                (2, 2),
+                                (8, 2),
+                                (1, 3),
+                                (9, 3),
+                                (0, 4),
+                                (10, 4),
+                                (0, 5),
+                                (10, 5),
+                                (0, 6),
+                                (10, 6),
+                                (1, 7),
+                                (9, 7),
+                                (2, 8),
+                                (8, 8),
+                                (3, 9),
+                                (7, 9),
+                                (4, 10),
+                                (5, 10),
+                                (6, 10),
                             ];
                             for &(px, py) in circle_points {
-                                temp.fill_rect(px, base_y + py, px + 1, base_y + py + 1, (0, 0, 0), &palettes, 1.0);
+                                temp.fill_rect(
+                                    px,
+                                    base_y + py,
+                                    px + 1,
+                                    base_y + py + 1,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
                             }
                             if hilite {
-                                temp.fill_rect(4, base_y + 3, 7, base_y + 4, (0, 0, 0), &palettes, 1.0);
-                                temp.fill_rect(3, base_y + 4, 8, base_y + 5, (0, 0, 0), &palettes, 1.0);
-                                temp.fill_rect(3, base_y + 5, 8, base_y + 6, (0, 0, 0), &palettes, 1.0);
-                                temp.fill_rect(3, base_y + 6, 8, base_y + 7, (0, 0, 0), &palettes, 1.0);
-                                temp.fill_rect(4, base_y + 7, 7, base_y + 8, (0, 0, 0), &palettes, 1.0);
+                                temp.fill_rect(
+                                    4,
+                                    base_y + 3,
+                                    7,
+                                    base_y + 4,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
+                                temp.fill_rect(
+                                    3,
+                                    base_y + 4,
+                                    8,
+                                    base_y + 5,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
+                                temp.fill_rect(
+                                    3,
+                                    base_y + 5,
+                                    8,
+                                    base_y + 6,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
+                                temp.fill_rect(
+                                    3,
+                                    base_y + 6,
+                                    8,
+                                    base_y + 7,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
+                                temp.fill_rect(
+                                    4,
+                                    base_y + 7,
+                                    7,
+                                    base_y + 8,
+                                    (0, 0, 0),
+                                    &palettes,
+                                    1.0,
+                                );
                             }
                         }
                         _ => {}
@@ -2289,7 +2674,8 @@ pub fn render_score_to_bitmap_with_offset(
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     let wrap_w = if field.word_wrap { text_area_w } else { 0 };
@@ -2308,8 +2694,16 @@ pub fn render_score_to_bitmap_with_offset(
                     );
                 } else {
                     // Native Canvas2D rendering for system fonts (Arial etc.)
-                    let font_name = if field.font.is_empty() { "Arial".to_string() } else { field.font.clone() };
-                    let font_size = if field.font_size > 0 { field.font_size as i32 } else { 12 };
+                    let font_name = if field.font.is_empty() {
+                        "Arial".to_string()
+                    } else {
+                        field.font.clone()
+                    };
+                    let font_size = if field.font_size > 0 {
+                        field.font_size as i32
+                    } else {
+                        12
+                    };
                     let text_color = ((text_color_rgb.0 as u32) << 16)
                         | ((text_color_rgb.1 as u32) << 8)
                         | (text_color_rgb.2 as u32);
@@ -2363,7 +2757,8 @@ pub fn render_score_to_bitmap_with_offset(
                 // For matte-like inks (bgTransparent 36, Matte 8, Not Ghost 7),
                 // skip the fill and rely on the alpha channel instead of color-keying.
                 // This avoids white fringe from AA text pixels that don't exactly match bgColor.
-                let use_alpha_matte = sprite.ink == 2 || sprite.ink == 36 || sprite.ink == 8 || sprite.ink == 7;
+                let use_alpha_matte =
+                    sprite.ink == 2 || sprite.ink == 36 || sprite.ink == 8 || sprite.ink == 7;
 
                 if is_push {
                     if !use_alpha_matte {
@@ -2382,24 +2777,60 @@ pub fn render_score_to_bitmap_with_offset(
                     }
                     // Border on top
                     temp.fill_rect(2, 0, draw_w - 2, 1, frame_color, &palettes, 1.0);
-                    temp.fill_rect(2, draw_h - 1, draw_w - 2, draw_h, frame_color, &palettes, 1.0);
+                    temp.fill_rect(
+                        2,
+                        draw_h - 1,
+                        draw_w - 2,
+                        draw_h,
+                        frame_color,
+                        &palettes,
+                        1.0,
+                    );
                     temp.fill_rect(0, 2, 1, draw_h - 2, frame_color, &palettes, 1.0);
-                    temp.fill_rect(draw_w - 1, 2, draw_w, draw_h - 2, frame_color, &palettes, 1.0);
+                    temp.fill_rect(
+                        draw_w - 1,
+                        2,
+                        draw_w,
+                        draw_h - 2,
+                        frame_color,
+                        &palettes,
+                        1.0,
+                    );
                     // Corner pixels
                     temp.fill_rect(1, 0, 2, 1, frame_color, &palettes, 1.0);
                     temp.fill_rect(draw_w - 2, 0, draw_w - 1, 1, frame_color, &palettes, 1.0);
                     temp.fill_rect(0, 1, 1, 2, frame_color, &palettes, 1.0);
                     temp.fill_rect(draw_w - 1, 1, draw_w, 2, frame_color, &palettes, 1.0);
                     temp.fill_rect(1, draw_h - 1, 2, draw_h, frame_color, &palettes, 1.0);
-                    temp.fill_rect(draw_w - 2, draw_h - 1, draw_w - 1, draw_h, frame_color, &palettes, 1.0);
+                    temp.fill_rect(
+                        draw_w - 2,
+                        draw_h - 1,
+                        draw_w - 1,
+                        draw_h,
+                        frame_color,
+                        &palettes,
+                        1.0,
+                    );
                     temp.fill_rect(0, draw_h - 2, 1, draw_h - 1, frame_color, &palettes, 1.0);
-                    temp.fill_rect(draw_w - 1, draw_h - 2, draw_w, draw_h - 1, frame_color, &palettes, 1.0);
+                    temp.fill_rect(
+                        draw_w - 1,
+                        draw_h - 2,
+                        draw_w,
+                        draw_h - 1,
+                        frame_color,
+                        &palettes,
+                        1.0,
+                    );
                 }
 
                 // Composite temp bitmap onto stage with sprite's ink.
                 // For matte-like inks, use Matte (ink 8) to composite via alpha channel
                 // instead of color-keying, which avoids AA fringe artifacts.
-                let compositing_ink = if use_alpha_matte { 8 } else { sprite.ink as i32 };
+                let compositing_ink = if use_alpha_matte {
+                    8
+                } else {
+                    sprite.ink as i32
+                };
 
                 let mut ink_params = HashMap::new();
                 ink_params.insert("blend".into(), Datum::Int(sprite.blend as i32));
@@ -2457,7 +2888,8 @@ pub fn render_score_to_bitmap_with_offset(
                     original_dst_rect: None,
                     bg_color_explicit: false,
                     fore_color_explicit: false,
-                    ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                    ink9_mask_bitmap: None,
+                    ink9_mask_offset: (0, 0),
                 };
 
                 if let Some(mask) = mask {
@@ -2502,18 +2934,25 @@ pub fn render_score_to_bitmap_with_offset(
                 let draw_h = sprite_rect.height();
 
                 // Extract font properties from first styled span if available
-                let (font_name, font_size, font_style) = if !text_member.html_styled_spans.is_empty() {
-                    let first_style = &text_member.html_styled_spans[0].style;
-                    let name = first_style.font_face.clone().unwrap_or_else(|| text_member.font.clone());
-                    let size = first_style.font_size.map(|s| s as u16).unwrap_or(text_member.font_size);
-                    // Convert bold/italic/underline to font_style: bit 0 = bold, bit 1 = italic, bit 2 = underline
-                    let style = (if first_style.bold { 1u8 } else { 0 })
-                        | (if first_style.italic { 2u8 } else { 0 })
-                        | (if first_style.underline { 4u8 } else { 0 });
-                    (name, size, Some(style))
-                } else {
-                    (text_member.font.clone(), text_member.font_size, None)
-                };
+                let (font_name, font_size, font_style) =
+                    if !text_member.html_styled_spans.is_empty() {
+                        let first_style = &text_member.html_styled_spans[0].style;
+                        let name = first_style
+                            .font_face
+                            .clone()
+                            .unwrap_or_else(|| text_member.font.clone());
+                        let size = first_style
+                            .font_size
+                            .map(|s| s as u16)
+                            .unwrap_or(text_member.font_size);
+                        // Convert bold/italic/underline to font_style: bit 0 = bold, bit 1 = italic, bit 2 = underline
+                        let style = (if first_style.bold { 1u8 } else { 0 })
+                            | (if first_style.italic { 2u8 } else { 0 })
+                            | (if first_style.underline { 4u8 } else { 0 });
+                        (name, size, Some(style))
+                    } else {
+                        (text_member.font.clone(), text_member.font_size, None)
+                    };
 
                 debug!(
                     "🔤 Text member font request: name='{}', size={}, style={:?}",
@@ -2531,9 +2970,7 @@ pub fn render_score_to_bitmap_with_offset(
 
                 // If not found with style, try without style
                 if font_opt.is_none() && font_style.is_some() {
-                    debug!(
-                        "⚠️ Font not found with style, trying without style..."
-                    );
+                    debug!("⚠️ Font not found with style, trying without style...");
                     font_opt = get_or_load_font(
                         &mut player.font_manager,
                         &player.movie.cast_manager,
@@ -2545,9 +2982,7 @@ pub fn render_score_to_bitmap_with_offset(
 
                 // If still not found with size, try without size
                 if font_opt.is_none() {
-                    debug!(
-                        "⚠️ Font not found with size, trying without size..."
-                    );
+                    debug!("⚠️ Font not found with size, trying without size...");
                     font_opt = get_or_load_font(
                         &mut player.font_manager,
                         &player.movie.cast_manager,
@@ -2596,14 +3031,18 @@ pub fn render_score_to_bitmap_with_offset(
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     // Use styled text rendering if html_styled_spans is populated
                     // BUT only use native rendering if the font is NOT a PFR bitmap font
                     // PFR fonts can't be used by Canvas2D, so we must use bitmap rendering
                     let is_pfr_font = font.char_widths.is_some();
-                    if !text_member.html_styled_spans.is_empty() && !is_pfr_font && player.font_manager.pfr_enabled {
+                    if !text_member.html_styled_spans.is_empty()
+                        && !is_pfr_font
+                        && player.font_manager.pfr_enabled
+                    {
                         // Parse alignment from text_member
                         let alignment = match text_member.alignment.to_lowercase().as_str() {
                             "center" | "#center" => TextAlignment::Center,
@@ -2623,51 +3062,55 @@ pub fn render_score_to_bitmap_with_offset(
                         // Clone spans and apply text member runtime overrides when needed.
                         // The movie can set font, fontSize, fontStyle at runtime, so these
                         // should override whatever was in the original styled spans
-                        let spans_with_defaults: Vec<StyledSpan> = text_member.html_styled_spans.iter().map(|span| {
-                            let mut style = span.style.clone();
+                        let spans_with_defaults: Vec<StyledSpan> = text_member
+                            .html_styled_spans
+                            .iter()
+                            .map(|span| {
+                                let mut style = span.style.clone();
 
-                            // ALWAYS use text_member's font if set (movie may have changed it)
-                            if !text_member.font.is_empty() {
-                                style.font_face = Some(text_member.font.clone());
-                            } else if style.font_face.as_ref().map_or(true, |f| f.is_empty()) {
-                                style.font_face = Some("Arial".to_string());
-                            }
+                                // ALWAYS use text_member's font if set (movie may have changed it)
+                                if !text_member.font.is_empty() {
+                                    style.font_face = Some(text_member.font.clone());
+                                } else if style.font_face.as_ref().map_or(true, |f| f.is_empty()) {
+                                    style.font_face = Some("Arial".to_string());
+                                }
 
-                            // Preserve per-span sizes unless the movie changed fontSize at runtime.
-                            if should_override_span_sizes {
-                                style.font_size = Some(text_member.font_size as i32);
-                            } else if style.font_size.map_or(true, |s| s <= 0) {
-                                style.font_size = Some(12);
-                            }
+                                // Preserve per-span sizes unless the movie changed fontSize at runtime.
+                                if should_override_span_sizes {
+                                    style.font_size = Some(text_member.font_size as i32);
+                                } else if style.font_size.map_or(true, |s| s <= 0) {
+                                    style.font_size = Some(12);
+                                }
 
-                            // Use sprite color if span doesn't have color
-                            if style.color.is_none() {
-                                style.color = match &sprite.color {
-                                    ColorRef::Rgb(r, g, b) => {
-                                        Some(((*r as u32) << 16) | ((*g as u32) << 8) | (*b as u32))
-                                    }
-                                    ColorRef::PaletteIndex(idx) => {
-                                        match *idx {
+                                // Use sprite color if span doesn't have color
+                                if style.color.is_none() {
+                                    style.color = match &sprite.color {
+                                        ColorRef::Rgb(r, g, b) => Some(
+                                            ((*r as u32) << 16) | ((*g as u32) << 8) | (*b as u32),
+                                        ),
+                                        ColorRef::PaletteIndex(idx) => match *idx {
                                             0 => Some(0xFFFFFF),
                                             255 => Some(0x000000),
                                             _ => Some(0x000000),
-                                        }
-                                    }
-                                };
-                            }
+                                        },
+                                    };
+                                }
 
-                            // ALWAYS apply text_member's fontStyle (movie may have changed it)
-                            if !text_member.font_style.is_empty() {
-                                style.bold = text_member.font_style.iter().any(|s| s == "bold");
-                                style.italic = text_member.font_style.iter().any(|s| s == "italic");
-                                style.underline = text_member.font_style.iter().any(|s| s == "underline");
-                            }
+                                // ALWAYS apply text_member's fontStyle (movie may have changed it)
+                                if !text_member.font_style.is_empty() {
+                                    style.bold = text_member.font_style.iter().any(|s| s == "bold");
+                                    style.italic =
+                                        text_member.font_style.iter().any(|s| s == "italic");
+                                    style.underline =
+                                        text_member.font_style.iter().any(|s| s == "underline");
+                                }
 
-                            StyledSpan {
-                                text: span.text.clone(),
-                                style,
-                            }
-                        }).collect();
+                                StyledSpan {
+                                    text: span.text.clone(),
+                                    style,
+                                }
+                            })
+                            .collect();
 
                         // Use native browser text rendering for smooth, anti-aliased text
                         if let Err(e) = FontMemberHandlers::render_native_text_to_bitmap(
@@ -2767,7 +3210,8 @@ pub fn render_score_to_bitmap_with_offset(
                     initial_rect,
                     current_frame,
                 ) = {
-                    let sprite = get_score_sprite(&player.movie, score_source, channel_num).unwrap();
+                    let sprite =
+                        get_score_sprite(&player.movie, score_source, channel_num).unwrap();
 
                     let rect = get_concrete_sprite_rect(player, sprite);
 
@@ -2796,11 +3240,20 @@ pub fn render_score_to_bitmap_with_offset(
                     "Rendering FilmLoop: channel {} frame {} ink={} blend={} initial_rect ({}, {}, {}, {}) bitmap size {}x{} sprite_rect ({}, {}, {}, {}) offset ({}, {})",
                     channel_num,
                     current_frame,
-                    ink, blend,
-                    initial_rect.left, initial_rect.top, initial_rect.right, initial_rect.bottom,
-                    width, height,
-                    sprite_rect.left, sprite_rect.top, sprite_rect.right, sprite_rect.bottom,
-                    initial_rect.left, initial_rect.top
+                    ink,
+                    blend,
+                    initial_rect.left,
+                    initial_rect.top,
+                    initial_rect.right,
+                    initial_rect.bottom,
+                    width,
+                    height,
+                    sprite_rect.left,
+                    sprite_rect.top,
+                    sprite_rect.right,
+                    sprite_rect.bottom,
+                    initial_rect.left,
+                    initial_rect.top
                 );
 
                 let mut filmloop_bitmap = Bitmap::new(
@@ -2836,18 +3289,36 @@ pub fn render_score_to_bitmap_with_offset(
 
                 // ---- 4. Composite filmloop onto stage ----
                 // Count total opaque pixels in filmloop bitmap to verify rendering worked
-                let opaque_count = (0..filmloop_bitmap.data.len()).step_by(4)
-                    .filter(|&i| i + 3 < filmloop_bitmap.data.len() && filmloop_bitmap.data[i + 3] > 0)
+                let opaque_count = (0..filmloop_bitmap.data.len())
+                    .step_by(4)
+                    .filter(|&i| {
+                        i + 3 < filmloop_bitmap.data.len() && filmloop_bitmap.data[i + 3] > 0
+                    })
                     .count();
-                let transparent_count = (0..filmloop_bitmap.data.len()).step_by(4)
-                    .filter(|&i| i + 3 < filmloop_bitmap.data.len() && filmloop_bitmap.data[i + 3] == 0)
+                let transparent_count = (0..filmloop_bitmap.data.len())
+                    .step_by(4)
+                    .filter(|&i| {
+                        i + 3 < filmloop_bitmap.data.len() && filmloop_bitmap.data[i + 3] == 0
+                    })
                     .count();
                 let total_pixels = filmloop_bitmap.width as usize * filmloop_bitmap.height as usize;
                 debug!(
                     "    FILMLOOP BITMAP STATS: {}x{} total={} opaque={} ({}%) transparent={} ({}%)",
-                    filmloop_bitmap.width, filmloop_bitmap.height, total_pixels,
-                    opaque_count, if total_pixels > 0 { opaque_count * 100 / total_pixels } else { 0 },
-                    transparent_count, if total_pixels > 0 { transparent_count * 100 / total_pixels } else { 0 }
+                    filmloop_bitmap.width,
+                    filmloop_bitmap.height,
+                    total_pixels,
+                    opaque_count,
+                    if total_pixels > 0 {
+                        opaque_count * 100 / total_pixels
+                    } else {
+                        0
+                    },
+                    transparent_count,
+                    if total_pixels > 0 {
+                        transparent_count * 100 / total_pixels
+                    } else {
+                        0
+                    }
                 );
 
                 let params = CopyPixelsParams {
@@ -2864,22 +3335,29 @@ pub fn render_score_to_bitmap_with_offset(
                     original_dst_rect: Some(logical_rect),
                     bg_color_explicit: false,
                     fore_color_explicit: false,
-                    ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                    ink9_mask_bitmap: None,
+                    ink9_mask_offset: (0, 0),
                 };
 
                 // Debug: log filmloop bitmap properties before compositing
                 debug!(
                     "    FILMLOOP COMPOSITE: use_alpha={} bit_depth={} orig_bit_depth={} ink={}",
-                    filmloop_bitmap.use_alpha, filmloop_bitmap.bit_depth,
-                    filmloop_bitmap.original_bit_depth, ink
+                    filmloop_bitmap.use_alpha,
+                    filmloop_bitmap.bit_depth,
+                    filmloop_bitmap.original_bit_depth,
+                    ink
                 );
 
                 // Position the filmloop bitmap at sprite_rect location, but keep natural size.
                 let dst_rect = IntRect::from_size(sprite_rect.left, sprite_rect.top, width, height);
                 debug!(
                     "    FILMLOOP DST_RECT: ({}, {}, {}, {}) <- sprite_rect.left={} sprite_rect.top={}",
-                    dst_rect.left, dst_rect.top, dst_rect.right, dst_rect.bottom,
-                    sprite_rect.left, sprite_rect.top
+                    dst_rect.left,
+                    dst_rect.top,
+                    dst_rect.right,
+                    dst_rect.bottom,
+                    sprite_rect.left,
+                    sprite_rect.top
                 );
                 bitmap.copy_pixels_with_params(
                     &palettes,
@@ -2897,7 +3375,8 @@ pub fn render_score_to_bitmap_with_offset(
                     .copied();
 
                 if let Some(&bitmap_ref) = flash_bitmap_ref.as_ref().filter(|&&r| r != 0) {
-                    let sprite = get_score_sprite(&player.movie, score_source, channel_num).unwrap();
+                    let sprite =
+                        get_score_sprite(&player.movie, score_source, channel_num).unwrap();
                     let rect = get_concrete_sprite_rect(player, sprite);
                     let sprite_rect = IntRect::from(
                         rect.left - offset.0,
@@ -2908,7 +3387,8 @@ pub fn render_score_to_bitmap_with_offset(
 
                     let src_bitmap = player.bitmap_manager.get_bitmap(bitmap_ref);
                     if let Some(src_bitmap) = src_bitmap {
-                        let src_rect = IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
+                        let src_rect =
+                            IntRect::from(0, 0, src_bitmap.width as i32, src_bitmap.height as i32);
                         let dst_rect = sprite_rect;
 
                         let params = CopyPixelsParams {
@@ -2925,25 +3405,28 @@ pub fn render_score_to_bitmap_with_offset(
                             original_dst_rect: Some(dst_rect.clone()),
                             bg_color_explicit: false,
                             fore_color_explicit: false,
-                            ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                            ink9_mask_bitmap: None,
+                            ink9_mask_offset: (0, 0),
                         };
 
                         bitmap.copy_pixels_with_params(
-                            &palettes,
-                            src_bitmap,
-                            dst_rect,
-                            src_rect,
-                            &params,
+                            &palettes, src_bitmap, dst_rect, src_rect, &params,
                         );
                     }
                 } else if flash_bitmap_ref.is_none() && has_swf_signature(&flash_member.data) {
                     // First time seeing this Flash member - notify JS to create Ruffle instance
-                    let sprite = get_score_sprite(&player.movie, score_source, channel_num).unwrap();
+                    let sprite =
+                        get_score_sprite(&player.movie, score_source, channel_num).unwrap();
                     let w = sprite.width.max(1) as u32;
                     let h = sprite.height.max(1) as u32;
                     debug!(
                         "  Flash channel {}: requesting Ruffle instance for member {}:{} ({}x{}, {} bytes SWF)",
-                        channel_num, member_ref.cast_lib, member_ref.cast_member, w, h, flash_member.data.len()
+                        channel_num,
+                        member_ref.cast_lib,
+                        member_ref.cast_member,
+                        w,
+                        h,
+                        flash_member.data.len()
                     );
                     JsApi::dispatch_flash_member_loaded(
                         member_ref.cast_lib,
@@ -2969,7 +3452,9 @@ pub fn render_score_to_bitmap_with_offset(
         // Check if any sprite in the current frame has trails
         let mut has_trails = false;
         let frame_num = player.movie.current_frame;
-        let channels: Vec<i16> = player.movie.score
+        let channels: Vec<i16> = player
+            .movie
+            .score
             .get_sorted_channels(frame_num)
             .iter()
             .map(|x| x.number as i16)
@@ -3060,7 +3545,8 @@ pub fn render_score_to_bitmap_with_offset(
     // Draw pick rect
     let is_picking_sprite = player.picking_mode
         || (player.keyboard_manager.is_alt_down()
-            && (player.keyboard_manager.is_control_down() || player.keyboard_manager.is_command_down()));
+            && (player.keyboard_manager.is_control_down()
+                || player.keyboard_manager.is_command_down()));
     if is_picking_sprite {
         let hovered_sprite = get_sprite_at(player, player.mouse_loc.0, player.mouse_loc.1, false);
         if let Some(hovered_sprite) = hovered_sprite {
@@ -3151,7 +3637,8 @@ fn draw_cursor(player: &mut DirPlayer, bitmap: &mut Bitmap, palettes: &PaletteMa
                 cursor_bitmap.width as i32,
                 cursor_bitmap.height as i32,
             ),
-            &CopyPixelsParams { mask_offset: (0, 0),
+            &CopyPixelsParams {
+                mask_offset: (0, 0),
                 blend: 100,
                 ink: 0,
                 bg_color: bitmap.get_bg_color_ref(),
@@ -3164,7 +3651,8 @@ fn draw_cursor(player: &mut DirPlayer, bitmap: &mut Bitmap, palettes: &PaletteMa
                 original_dst_rect: None,
                 bg_color_explicit: false,
                 fore_color_explicit: false,
-                ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                ink9_mask_bitmap: None,
+                ink9_mask_offset: (0, 0),
             },
         );
     }
@@ -3241,8 +3729,12 @@ impl PlayerCanvasRenderer {
     pub fn draw_frame(&mut self, player: &mut DirPlayer) {
         // Sync persistent Transform3d datums → node_transforms for in-place mutations
         // (e.g. model.transform.position = vector(...) used by overlay/HUD scripts)
-        crate::player::handlers::datum_handlers::shockwave3d_object::sync_persistent_transforms(player);
-        crate::player::handlers::datum_handlers::shockwave3d_object::sync_shader_texture_lists(player);
+        crate::player::handlers::datum_handlers::shockwave3d_object::sync_persistent_transforms(
+            player,
+        );
+        crate::player::handlers::datum_handlers::shockwave3d_object::sync_shader_texture_lists(
+            player,
+        );
 
         // let time = chrono::Local::now().timestamp_millis() as i64;
         // let time_seconds = time as f64 / 1000.0;
@@ -3292,7 +3784,8 @@ impl PlayerCanvasRenderer {
                 player.allocator.script_instance_count()
             );
 
-            let params = CopyPixelsParams { mask_offset: (0, 0),
+            let params = CopyPixelsParams {
+                mask_offset: (0, 0),
                 blend: 100,
                 ink: 36,
                 color: bitmap.get_fg_color_ref(),
@@ -3305,7 +3798,8 @@ impl PlayerCanvasRenderer {
                 original_dst_rect: None,
                 bg_color_explicit: false,
                 fore_color_explicit: false,
-                ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                ink9_mask_bitmap: None,
+                ink9_mask_offset: (0, 0),
             };
 
             bitmap.draw_text(
@@ -3446,9 +3940,8 @@ where
 
 pub fn draw_frame_immediate() {
     use crate::rendering_gpu::Renderer;
-    let (tempo, dirty) = reserve_player_ref(|player| {
-        (player.current_frame_tempo as f64, player.stage_dirty)
-    });
+    let (tempo, dirty) =
+        reserve_player_ref(|player| (player.current_frame_tempo as f64, player.stage_dirty));
     if !dirty {
         return;
     }
@@ -3593,23 +4086,35 @@ pub fn player_set_preview_parent(parent_selector: &str) -> Result<(), JsValue> {
 fn set_pixelated_canvas_style(canvas: &web_sys::HtmlCanvasElement) {
     let style = canvas.style();
     // Nearest-neighbor scaling when CSS size differs from canvas resolution
-    style.set_property("image-rendering", "pixelated").unwrap_or(());
-    style.set_property("image-rendering", "-moz-crisp-edges").unwrap_or(());
-    style.set_property("image-rendering", "crisp-edges").unwrap_or(());
+    style
+        .set_property("image-rendering", "pixelated")
+        .unwrap_or(());
+    style
+        .set_property("image-rendering", "-moz-crisp-edges")
+        .unwrap_or(());
+    style
+        .set_property("image-rendering", "crisp-edges")
+        .unwrap_or(());
     // Disable ClearType / subpixel font smoothing - force grayscale AA
-    style.set_property("-webkit-font-smoothing", "none").unwrap_or(());
-    style.set_property("-moz-osx-font-smoothing", "grayscale").unwrap_or(());
+    style
+        .set_property("-webkit-font-smoothing", "none")
+        .unwrap_or(());
+    style
+        .set_property("-moz-osx-font-smoothing", "grayscale")
+        .unwrap_or(());
     style.set_property("font-smooth", "never").unwrap_or(());
     // Disable text anti-aliasing optimizations
-    style.set_property("text-rendering", "optimizeSpeed").unwrap_or(());
+    style
+        .set_property("text-rendering", "optimizeSpeed")
+        .unwrap_or(());
     // Force no backface-visibility optimization (can cause blurring on some GPUs)
-    style.set_property("backface-visibility", "hidden").unwrap_or(());
+    style
+        .set_property("backface-visibility", "hidden")
+        .unwrap_or(());
 }
 
 /// Create a Canvas2D renderer (fallback)
-pub(crate) fn create_canvas2d_renderer(
-    canvas_size: (u32, u32),
-) -> PlayerCanvasRenderer {
+pub(crate) fn create_canvas2d_renderer(canvas_size: (u32, u32)) -> PlayerCanvasRenderer {
     let canvas = web_sys::window()
         .unwrap()
         .document()
@@ -3723,7 +4228,10 @@ pub(crate) fn try_create_webgl2_renderer(
             Some(renderer)
         }
         Err(e) => {
-            warn!("Failed to create WebGL2 renderer: {:?}, falling back to Canvas2D", e);
+            warn!(
+                "Failed to create WebGL2 renderer: {:?}, falling back to Canvas2D",
+                e
+            );
             None
         }
     }
@@ -3753,11 +4261,10 @@ fn get_canvas_size() -> (u32, u32) {
 
 fn create_renderer(backend: &str, canvas_size: (u32, u32)) -> Option<DynamicRenderer> {
     match backend {
-        "WebGL2" => {
-            try_create_webgl2_renderer(canvas_size)
-                .map(DynamicRenderer::WebGL2)
-        }
-        _ => Some(DynamicRenderer::Canvas2D(create_canvas2d_renderer(canvas_size))),
+        "WebGL2" => try_create_webgl2_renderer(canvas_size).map(DynamicRenderer::WebGL2),
+        _ => Some(DynamicRenderer::Canvas2D(create_canvas2d_renderer(
+            canvas_size,
+        ))),
     }
 }
 
@@ -3788,11 +4295,12 @@ pub fn player_create_canvas() -> Result<(), JsValue> {
             let canvas_size = reserve_player_ref(crate::player::stage::stage_canvas_dims);
 
             // Try WebGL2 first, fall back to Canvas2D
-            let dynamic_renderer = if let Some(webgl2_renderer) = try_create_webgl2_renderer(canvas_size) {
-                DynamicRenderer::WebGL2(webgl2_renderer)
-            } else {
-                DynamicRenderer::Canvas2D(create_canvas2d_renderer(canvas_size))
-            };
+            let dynamic_renderer =
+                if let Some(webgl2_renderer) = try_create_webgl2_renderer(canvas_size) {
+                    DynamicRenderer::WebGL2(webgl2_renderer)
+                } else {
+                    DynamicRenderer::Canvas2D(create_canvas2d_renderer(canvas_size))
+                };
 
             *renderer_lock = Some(dynamic_renderer);
             // Only spawn the draw loop the first time. Later calls (after the
@@ -3843,9 +4351,8 @@ async fn run_draw_loop() {
 
     let mut last_frame_ms = 0;
     let cb = Closure::<dyn FnMut()>::new(move || {
-        // Player may be momentarily None while a test harness tears down the
-        // old player before allocating the new one. Skip drawing instead of
-        // panicking — the next rAF will pick it back up.
+        // Player may be momentarily unavailable while a new movie is being
+        // allocated. Keep the draw loop alive instead of panicking.
         let player = match unsafe { PLAYER_OPT.as_mut() } {
             Some(p) => p,
             None => {
@@ -3865,7 +4372,9 @@ async fn run_draw_loop() {
             last_frame_ms = Local::now().timestamp_millis();
             with_renderer_mut(|renderer_lock| {
                 if let Some(renderer) = renderer_lock {
-                    if (player.is_playing || player.stage_dirty) && !was_frame_drawn_recently(frame_interval) {
+                    if (player.is_playing || player.stage_dirty)
+                        && !was_frame_drawn_recently(frame_interval)
+                    {
                         renderer.draw_frame(&mut player);
                         player.stage_dirty = false;
                     }
@@ -3877,15 +4386,15 @@ async fn run_draw_loop() {
             });
         }
 
-        let cb = rc.as_ref().borrow();
-        let cb = cb.as_ref().unwrap();
-        request_animation_frame(&cb);
+        if let Some(cb) = rc.as_ref().borrow().as_ref() {
+            request_animation_frame(cb);
+        }
     });
     rc_clone.replace(Some(cb));
 
-    let cb = rc_clone.as_ref().borrow();
-    let cb = cb.as_ref().unwrap();
-    request_animation_frame(&cb);
+    if let Some(cb) = rc_clone.as_ref().borrow().as_ref() {
+        request_animation_frame(cb);
+    }
 }
 
 /// Check if data starts with a valid SWF signature (FWS, CWS, or ZWS)

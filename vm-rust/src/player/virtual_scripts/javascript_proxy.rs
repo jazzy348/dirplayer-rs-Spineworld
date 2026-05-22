@@ -1,13 +1,16 @@
+use super::{VirtualScriptHandler, VirtualScriptRegistry};
 use crate::director::lingo::datum::Datum;
 use crate::player::script_ref::ScriptInstanceRef;
-use super::{VirtualScriptHandler, VirtualScriptRegistry};
 use crate::player::{DatumRef, DirPlayer, ScriptError};
 
 pub struct JavascriptProxy;
 
 impl VirtualScriptHandler for JavascriptProxy {
     fn has_handler(&self, name: &str) -> bool {
-        matches!(name, "new" | "newJavaScriptProxy" | "JavaScriptProxy" | "call")
+        matches!(
+            name,
+            "new" | "newJavaScriptProxy" | "JavaScriptProxy" | "call"
+        )
     }
 
     fn call_handler(
@@ -29,7 +32,9 @@ impl VirtualScriptHandler for JavascriptProxy {
                         .movie
                         .cast_manager
                         .find_member_ref_by_name(&"JavaScriptProxy".to_string())
-                        .ok_or_else(|| ScriptError::new("JavaScriptProxy script not found".to_string()))?;
+                        .ok_or_else(|| {
+                            ScriptError::new("JavaScriptProxy script not found".to_string())
+                        })?;
                     let (_instance_ref, datum_ref) =
                         VirtualScriptRegistry::create_instance(player, &script_ref);
                     Ok(Some(datum_ref))

@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 
 use crate::{
-    director::lingo::datum::{datum_bool, Datum, DatumType},
+    director::lingo::datum::{Datum, DatumType, datum_bool},
     player::{
+        DirPlayer, ScriptError,
         bitmap::bitmap::{Bitmap, BuiltInPalette, PaletteRef},
         cast_lib::CastMemberRef,
         cast_member::CastMemberType,
         datum_ref::DatumRef,
         sprite::ColorRef,
-        DirPlayer, ScriptError,
     },
 };
 
@@ -175,12 +175,14 @@ impl VectorShapeMemberHandlers {
                 ColorRef::Rgb(r, g, b) => (*r, *g, *b),
                 ColorRef::PaletteIndex(_) => {
                     let palettes = player.movie.cast_manager.palettes();
-                    let bitmap_palette =
-                        crate::player::bitmap::bitmap::PaletteRef::BuiltIn(
-                            crate::player::bitmap::bitmap::get_system_default_palette(),
-                        );
+                    let bitmap_palette = crate::player::bitmap::bitmap::PaletteRef::BuiltIn(
+                        crate::player::bitmap::bitmap::get_system_default_palette(),
+                    );
                     crate::player::bitmap::bitmap::resolve_color_ref(
-                        &palettes, &cref, &bitmap_palette, 8,
+                        &palettes,
+                        &cref,
+                        &bitmap_palette,
+                        8,
                     )
                 }
             };
@@ -310,16 +312,13 @@ impl VectorShapeMemberHandlers {
             .iter()
             .map(|(vx, vy, h1x, h1y, h2x, h2y, is_bezier)| {
                 let vertex_key = player.alloc_datum(Datum::Symbol("vertex".to_string()));
-                let vertex_val =
-                    player.alloc_datum(Datum::Point([*vx as f64, *vy as f64], 0));
+                let vertex_val = player.alloc_datum(Datum::Point([*vx as f64, *vy as f64], 0));
                 let mut entries = vec![(vertex_key, vertex_val)];
                 if *is_bezier {
                     let h1_key = player.alloc_datum(Datum::Symbol("handle1".to_string()));
-                    let h1_val =
-                        player.alloc_datum(Datum::Point([*h1x as f64, *h1y as f64], 0));
+                    let h1_val = player.alloc_datum(Datum::Point([*h1x as f64, *h1y as f64], 0));
                     let h2_key = player.alloc_datum(Datum::Symbol("handle2".to_string()));
-                    let h2_val =
-                        player.alloc_datum(Datum::Point([*h2x as f64, *h2y as f64], 0));
+                    let h2_val = player.alloc_datum(Datum::Point([*h2x as f64, *h2y as f64], 0));
                     entries.push((h1_key, h1_val));
                     entries.push((h2_key, h2_val));
                 }
@@ -336,14 +335,10 @@ impl VectorShapeMemberHandlers {
     /// VectorShape produces a solid `fillColor` polygon; gradient /
     /// fillScale / fillOffset etc. don't affect the rasterized output.
     /// Verified against CS catalog `floor_shape_preview`.
-    fn get_image(
-        player: &mut DirPlayer,
-        member_ref: &CastMemberRef,
-    ) -> Result<Datum, ScriptError> {
+    fn get_image(player: &mut DirPlayer, member_ref: &CastMemberRef) -> Result<Datum, ScriptError> {
         // Snapshot everything we need from the cast member before we
         // need `&mut player.bitmap_manager`.
-        let (w, h, fill, end, bg, fill_mode, closed, poly,
-             gradient_type, fill_scale, fill_offset) = {
+        let (w, h, fill, end, bg, fill_mode, closed, poly, gradient_type, fill_scale, fill_offset) = {
             let cast_member = player
                 .movie
                 .cast_manager
@@ -374,8 +369,19 @@ impl VectorShapeMemberHandlers {
                 .iter()
                 .map(|v| (v.x - bbox_left, v.y - bbox_top))
                 .collect();
-            (w, h, fill, end, bg, fill_mode, closed, poly,
-             gradient_type, fill_scale, fill_offset)
+            (
+                w,
+                h,
+                fill,
+                end,
+                bg,
+                fill_mode,
+                closed,
+                poly,
+                gradient_type,
+                fill_scale,
+                fill_offset,
+            )
         };
 
         let mut bitmap = Bitmap::new(
@@ -422,8 +428,8 @@ impl VectorShapeMemberHandlers {
             for i in 0..n {
                 let (xi, yi) = poly[i];
                 let (xj, yj) = poly[j];
-                let cond = (yi > py) != (yj > py)
-                    && px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi;
+                let cond =
+                    (yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi;
                 if cond {
                     inside = !inside;
                 }
@@ -460,7 +466,9 @@ impl VectorShapeMemberHandlers {
             (half_diag * fill_scale / 100.0).max(1.0)
         };
         let lerp_u8 = |a: u8, b: u8, t: f32| -> u8 {
-            ((a as f32) * (1.0 - t) + (b as f32) * t).round().clamp(0.0, 255.0) as u8
+            ((a as f32) * (1.0 - t) + (b as f32) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8
         };
         let sample = |x: usize, y: usize| -> (u8, u8, u8) {
             if !is_gradient {

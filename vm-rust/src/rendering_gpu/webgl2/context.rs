@@ -2,8 +2,8 @@
 
 use wasm_bindgen::JsValue;
 use web_sys::{
-    WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer, WebGlProgram, WebGlShader,
-    WebGlTexture, WebGlUniformLocation, WebGlVertexArrayObject,
+    WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer, WebGlProgram, WebGlShader, WebGlTexture,
+    WebGlUniformLocation, WebGlVertexArrayObject,
 };
 
 /// Wrapper around WebGL2RenderingContext with convenience methods
@@ -33,11 +33,7 @@ impl WebGL2Context {
     }
 
     /// Compile a shader from source
-    pub fn compile_shader(
-        &self,
-        shader_type: u32,
-        source: &str,
-    ) -> Result<WebGlShader, JsValue> {
+    pub fn compile_shader(&self, shader_type: u32, source: &str) -> Result<WebGlShader, JsValue> {
         let shader = self
             .gl
             .create_shader(shader_type)
@@ -59,7 +55,10 @@ impl WebGL2Context {
                 .get_shader_info_log(&shader)
                 .unwrap_or_else(|| "Unknown error".to_string());
             self.gl.delete_shader(Some(&shader));
-            Err(JsValue::from_str(&format!("Shader compilation failed: {}", log)))
+            Err(JsValue::from_str(&format!(
+                "Shader compilation failed: {}",
+                log
+            )))
         }
     }
 
@@ -91,7 +90,10 @@ impl WebGL2Context {
                 .get_program_info_log(&program)
                 .unwrap_or_else(|| "Unknown error".to_string());
             self.gl.delete_program(Some(&program));
-            Err(JsValue::from_str(&format!("Program linking failed: {}", log)))
+            Err(JsValue::from_str(&format!(
+                "Program linking failed: {}",
+                log
+            )))
         }
     }
 
@@ -140,7 +142,8 @@ impl WebGL2Context {
         height: u32,
         data: &[u8],
     ) -> Result<(), JsValue> {
-        self.gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(texture));
+        self.gl
+            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(texture));
 
         // Set texture parameters for pixel-perfect rendering
         self.gl.tex_parameteri(
@@ -165,7 +168,8 @@ impl WebGL2Context {
         );
 
         // Ensure alpha is NOT premultiplied during upload (non-premultiplied RGBA data)
-        self.gl.pixel_storei(WebGl2RenderingContext::UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+        self.gl
+            .pixel_storei(WebGl2RenderingContext::UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
 
         // Upload texture data
         self.gl
@@ -181,7 +185,8 @@ impl WebGL2Context {
                 Some(data),
             )?;
 
-        self.gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, None);
+        self.gl
+            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, None);
         Ok(())
     }
 
@@ -205,10 +210,10 @@ impl WebGL2Context {
         //        AddPin from modifying the alpha channel when drawn on
         //        top of semi-transparent sprites (blend < 100).
         self.gl.blend_func_separate(
-            WebGl2RenderingContext::SRC_ALPHA,     // srcRGB
-            WebGl2RenderingContext::ONE,           // dstRGB
-            WebGl2RenderingContext::ZERO,          // srcAlpha
-            WebGl2RenderingContext::ONE,           // dstAlpha
+            WebGl2RenderingContext::SRC_ALPHA, // srcRGB
+            WebGl2RenderingContext::ONE,       // dstRGB
+            WebGl2RenderingContext::ZERO,      // srcAlpha
+            WebGl2RenderingContext::ONE,       // dstAlpha
         );
     }
 
@@ -236,10 +241,10 @@ impl WebGL2Context {
         self.gl.blend_equation(WebGl2RenderingContext::FUNC_ADD);
         // Preserve destination alpha (same fix as other blend modes)
         self.gl.blend_func_separate(
-            WebGl2RenderingContext::DST_COLOR,  // srcRGB
-            WebGl2RenderingContext::ZERO,       // dstRGB
-            WebGl2RenderingContext::ZERO,       // srcAlpha
-            WebGl2RenderingContext::ONE,        // dstAlpha
+            WebGl2RenderingContext::DST_COLOR, // srcRGB
+            WebGl2RenderingContext::ZERO,      // dstRGB
+            WebGl2RenderingContext::ZERO,      // srcAlpha
+            WebGl2RenderingContext::ONE,       // dstAlpha
         );
     }
 
@@ -249,10 +254,10 @@ impl WebGL2Context {
         self.gl.blend_equation(WebGl2RenderingContext::MAX);
         // Preserve destination alpha (same fix as AddPin)
         self.gl.blend_func_separate(
-            WebGl2RenderingContext::ONE,           // srcRGB
-            WebGl2RenderingContext::ONE,           // dstRGB
-            WebGl2RenderingContext::ZERO,          // srcAlpha
-            WebGl2RenderingContext::ONE,           // dstAlpha
+            WebGl2RenderingContext::ONE,  // srcRGB
+            WebGl2RenderingContext::ONE,  // dstRGB
+            WebGl2RenderingContext::ZERO, // srcAlpha
+            WebGl2RenderingContext::ONE,  // dstAlpha
         );
     }
 
@@ -262,23 +267,24 @@ impl WebGL2Context {
         self.gl.blend_equation(WebGl2RenderingContext::MIN);
         // Preserve destination alpha (same fix as AddPin)
         self.gl.blend_func_separate(
-            WebGl2RenderingContext::ONE,           // srcRGB
-            WebGl2RenderingContext::ONE,           // dstRGB
-            WebGl2RenderingContext::ZERO,          // srcAlpha
-            WebGl2RenderingContext::ONE,           // dstAlpha
+            WebGl2RenderingContext::ONE,  // srcRGB
+            WebGl2RenderingContext::ONE,  // dstRGB
+            WebGl2RenderingContext::ZERO, // srcAlpha
+            WebGl2RenderingContext::ONE,  // dstAlpha
         );
     }
 
     /// Set blend mode for subtractive blending (ink 35 - Sub Pin)
     /// Uses FUNC_REVERSE_SUBTRACT equation: result = dst - src
     pub fn set_blend_subtractive(&self) {
-        self.gl.blend_equation(WebGl2RenderingContext::FUNC_REVERSE_SUBTRACT);
+        self.gl
+            .blend_equation(WebGl2RenderingContext::FUNC_REVERSE_SUBTRACT);
         // Preserve destination alpha (same fix as AddPin)
         self.gl.blend_func_separate(
-            WebGl2RenderingContext::ONE,           // srcRGB
-            WebGl2RenderingContext::ONE,           // dstRGB
-            WebGl2RenderingContext::ZERO,          // srcAlpha
-            WebGl2RenderingContext::ONE,           // dstAlpha
+            WebGl2RenderingContext::ONE,  // srcRGB
+            WebGl2RenderingContext::ONE,  // dstRGB
+            WebGl2RenderingContext::ZERO, // srcAlpha
+            WebGl2RenderingContext::ONE,  // dstAlpha
         );
     }
 

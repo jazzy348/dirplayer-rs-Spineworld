@@ -1,6 +1,6 @@
 use vm_rust::browser_e2e_test;
 use vm_rust::director::static_datum::StaticDatum;
-use vm_rust::player::testing_shared::{datum, SnapshotContext, TestConfig, TestHarness};
+use vm_rust::player::testing_shared::{SnapshotContext, TestConfig, TestHarness, datum};
 
 const CONFIG: &str = include_str!("../configs/misc_infestation.toml");
 
@@ -15,7 +15,10 @@ browser_e2e_test!(test_infestation_load, |player| async move {
 
     snapshots.verify("game_start", player.snapshot_stage())?;
 
-    player.step_until(datum("_movie.frame").equals(StaticDatum::Int(147))).timeout(120.0).await?;
+    player
+        .step_until(datum("_movie.frame").equals(StaticDatum::Int(147)))
+        .timeout(120.0)
+        .await?;
 
     snapshots.verify("in_game", player.snapshot_stage())?;
 

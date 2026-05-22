@@ -4,7 +4,10 @@ use log::debug;
 
 use crate::director::{
     chunks::cast_member_info::CastMemberInfoChunk,
-    enums::{BitmapInfo, FilmLoopInfo, FlashInfo, FontInfo, MemberType, ScriptType, ShapeInfo, SoundInfo, FieldInfo, TextInfo},
+    enums::{
+        BitmapInfo, FieldInfo, FilmLoopInfo, FlashInfo, FontInfo, MemberType, ScriptType,
+        ShapeInfo, SoundInfo, TextInfo,
+    },
 };
 
 use super::Chunk;
@@ -121,8 +124,10 @@ impl CastMemberChunk {
                 ));
             }
             MemberType::Bitmap => {
-                specific_data_parsed =
-                    CastMemberSpecificData::Bitmap(BitmapInfo::from_versioned(specific_data.as_slice(), dir_version));
+                specific_data_parsed = CastMemberSpecificData::Bitmap(BitmapInfo::from_versioned(
+                    specific_data.as_slice(),
+                    dir_version,
+                ));
             }
             MemberType::Shape => {
                 specific_data_parsed =
@@ -180,7 +185,7 @@ pub enum CastMemberSpecificData {
     Sound(SoundInfo),
     Font(FontInfo),
     Field(FieldInfo),
-    Text(TextInfo),  // D6+ text member with "text" FourCC header
+    Text(TextInfo), // D6+ text member with "text" FourCC header
     Flash(FlashInfo),
     None,
 }

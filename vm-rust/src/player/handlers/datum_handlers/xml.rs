@@ -2,11 +2,11 @@ use std::collections::VecDeque;
 
 use crate::{
     director::lingo::datum::Datum,
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
+use log::{debug, error, warn};
 use std::collections::HashMap;
 use std::io::Cursor;
-use log::{debug, error, warn};
 use xml::attribute::OwnedAttribute;
 use xml::reader::{EventReader, XmlEvent};
 

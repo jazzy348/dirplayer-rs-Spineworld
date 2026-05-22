@@ -7,7 +7,7 @@ use std::fmt::Write;
 
 use super::opcodes::{JsOp, JsOpFormat};
 use super::variable_length::{read_i16_operand, read_u16_operand};
-use super::xdr::{iter_ops, JsAtom, JsScriptIR};
+use super::xdr::{JsAtom, JsScriptIR, iter_ops};
 
 pub fn disassemble(ir: &JsScriptIR) -> String {
     let mut out = String::new();
@@ -116,10 +116,12 @@ fn format_operand(ir: &JsScriptIR, op: JsOp, operand: &[u8], offset: usize) -> S
             Ok(v) => format!(" {}", v),
             Err(e) => format!(" <{}>", e),
         },
-        JsOpFormat::Local | JsOpFormat::Qarg | JsOpFormat::Qvar => match read_u16_operand(operand) {
-            Ok(v) => format!(" {}", v),
-            Err(e) => format!(" <{}>", e),
-        },
+        JsOpFormat::Local | JsOpFormat::Qarg | JsOpFormat::Qvar => {
+            match read_u16_operand(operand) {
+                Ok(v) => format!(" {}", v),
+                Err(e) => format!(" <{}>", e),
+            }
+        }
         JsOpFormat::Const => match read_u16_operand(operand) {
             Ok(idx) => {
                 let label = ir

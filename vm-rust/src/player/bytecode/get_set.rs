@@ -1,17 +1,22 @@
 use log::warn;
 
+use super::handler_manager::BytecodeHandlerContext;
+use crate::player::handlers::datum_handlers::{
+    list_handlers::ListDatumHandlers, sound_channel::SoundChannelDatumHandlers,
+};
 use crate::{
     director::lingo::{
         constants::{
-            get_anim_prop_name, get_cast_member_prop_name, get_sprite_prop_name, movie_prop_names, sprite_prop_names, get_sound_prop_name,
+            get_anim_prop_name, get_cast_member_prop_name, get_sound_prop_name,
+            get_sprite_prop_name, movie_prop_names, sprite_prop_names,
         },
         datum::{Datum, StringChunkType},
     },
     player::{
+        DatumRef, DirPlayer, HandlerExecutionResult, PLAYER_OPT, ScriptError,
         allocator::{DatumAllocatorTrait, ScriptInstanceAllocatorTrait},
         handlers::datum_handlers::{
-            cast_member_ref::CastMemberRefHandlers,
-            string_chunk::StringChunkUtils,
+            cast_member_ref::CastMemberRefHandlers, string_chunk::StringChunkUtils,
         },
         reserve_player_mut,
         score::{sprite_get_prop, sprite_set_prop},
@@ -20,11 +25,8 @@ use crate::{
             player_set_obj_prop, script_get_prop, script_get_static_prop, script_set_prop,
             script_set_static_prop,
         },
-        DatumRef, DirPlayer, HandlerExecutionResult, ScriptError, PLAYER_OPT,
     },
 };
-use super::handler_manager::BytecodeHandlerContext;
-use crate::player::handlers::datum_handlers::{list_handlers::ListDatumHandlers, sound_channel::SoundChannelDatumHandlers};
 
 pub struct GetSetBytecodeHandler {}
 pub struct GetSetUtils {}
@@ -64,9 +66,10 @@ impl GetSetUtils {
             "_player" => Ok(Datum::PlayerRef),
             "_movie" => Ok(Datum::MovieRef),
             "_mouse" => Ok(Datum::MouseRef),
+            "_global" => Ok(Datum::GlobalRef),
             "_system" => Ok(Datum::MovieRef), // _system properties like randomSeed are movie-level
             "_sound" => Ok(Datum::MovieRef),  // _sound properties like soundDevice are movie-level
-            "_key" => Ok(Datum::PlayerRef),    // _key properties handled via PlayerRef
+            "_key" => Ok(Datum::PlayerRef),   // _key properties handled via PlayerRef
             _ => Err(ScriptError::new(format!(
                 "Invalid top level prop: {}",
                 prop_name
@@ -105,7 +108,11 @@ impl GetSetBytecodeHandler {
         let player = unsafe { PLAYER_OPT.as_mut().unwrap() };
         let (receiver, script_ref, cached) = {
             let scope = player.scopes.get(ctx.scope_ref).unwrap();
-            (scope.receiver.clone(), scope.script_ref.clone(), scope.cached_handler_instance.clone())
+            (
+                scope.receiver.clone(),
+                scope.script_ref.clone(),
+                scope.cached_handler_instance.clone(),
+            )
         };
         let name_id = player.get_ctx_current_bytecode(ctx).obj as u16;
         let prop_name = ctx.get_name(name_id).to_owned();
@@ -121,7 +128,11 @@ impl GetSetBytecodeHandler {
                 c.clone()
             } else {
                 let hi = Self::find_handler_level_instance(player, &instance_ref, &script_ref);
-                player.scopes.get_mut(ctx.scope_ref).unwrap().cached_handler_instance = Some(hi.clone());
+                player
+                    .scopes
+                    .get_mut(ctx.scope_ref)
+                    .unwrap()
+                    .cached_handler_instance = Some(hi.clone());
                 hi
             };
             script_get_prop(player, &handler_instance, &prop_name)?
@@ -134,14 +145,21 @@ impl GetSetBytecodeHandler {
     }
 
     pub fn set_prop(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id).to_owned();
 
         reserve_player_mut(|player| {
             let (value_ref, receiver, script_ref, cached) = {
                 let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                 let value_ref = scope.stack.pop().unwrap();
-                (value_ref, scope.receiver.clone(), scope.script_ref.clone(), scope.cached_handler_instance.clone())
+                (
+                    value_ref,
+                    scope.receiver.clone(),
+                    scope.script_ref.clone(),
+                    scope.cached_handler_instance.clone(),
+                )
             };
 
             match receiver {
@@ -156,8 +174,13 @@ impl GetSetBytecodeHandler {
                     let handler_instance = if let Some(ref c) = cached {
                         c.clone()
                     } else {
-                        let hi = Self::find_handler_level_instance(player, &instance_ref, &script_ref);
-                        player.scopes.get_mut(ctx.scope_ref).unwrap().cached_handler_instance = Some(hi.clone());
+                        let hi =
+                            Self::find_handler_level_instance(player, &instance_ref, &script_ref);
+                        player
+                            .scopes
+                            .get_mut(ctx.scope_ref)
+                            .unwrap()
+                            .cached_handler_instance = Some(hi.clone());
                         hi
                     };
                     script_set_prop(player, &handler_instance, &prop_name, &value_ref, false)?;
@@ -174,7 +197,9 @@ impl GetSetBytecodeHandler {
     pub async fn set_obj_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id).to_owned();
         let (value, obj_datum_ref) = reserve_player_mut(|player| {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -189,7 +214,9 @@ impl GetSetBytecodeHandler {
     pub fn get_obj_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id).to_owned();
         reserve_player_mut(|player| {
             // Pop the object reference from the stack
@@ -222,7 +249,9 @@ impl GetSetBytecodeHandler {
     pub fn get_movie_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let result_ref = player.get_movie_prop(prop_name)?;
@@ -264,11 +293,17 @@ impl GetSetBytecodeHandler {
                         scope.stack.pop().unwrap()
                     };
                     let channel_num = player.get_datum(&channel_num_ref).int_value()?;
-                    
+
                     // Create a SoundChannel datum with the channel number
-                    let sound_channel_datum = player.alloc_datum(Datum::SoundChannel(channel_num as u16));
-                    
-                    SoundChannelDatumHandlers::set_prop(player, &sound_channel_datum, &prop_name, &value_ref)?;
+                    let sound_channel_datum =
+                        player.alloc_datum(Datum::SoundChannel(channel_num as u16));
+
+                    SoundChannelDatumHandlers::set_prop(
+                        player,
+                        &sound_channel_datum,
+                        &prop_name,
+                        &value_ref,
+                    )?;
                     Ok(HandlerExecutionResult::Advance)
                 }
                 0x06 => {
@@ -354,7 +389,10 @@ impl GetSetBytecodeHandler {
                             Ok(HandlerExecutionResult::Advance)
                         }
                         None => {
-                            warn!("set cast member chunk prop '{}': member not found", prop_name);
+                            warn!(
+                                "set cast member chunk prop '{}': member not found",
+                                prop_name
+                            );
                             Ok(HandlerExecutionResult::Advance)
                         }
                     }
@@ -401,7 +439,9 @@ impl GetSetBytecodeHandler {
                     let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                     // Pop: cast_lib(0), member_name, chunk_type(0), chunk_num(1), and 6 zeros
                     for _ in 0..10 {
-                        if scope.stack.is_empty() { break; }
+                        if scope.stack.is_empty() {
+                            break;
+                        }
                         scope.stack.pop();
                     }
                     warn!("kOpSet 0x0a (string chunk of member) not fully implemented, ignoring");
@@ -416,7 +456,9 @@ impl GetSetBytecodeHandler {
     }
 
     pub fn get_global(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let value_ref = player
@@ -431,7 +473,9 @@ impl GetSetBytecodeHandler {
     }
 
     pub fn set_global(ctx: &BytecodeHandlerContext) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let value_ref = {
@@ -580,7 +624,9 @@ impl GetSetBytecodeHandler {
     pub fn set_movie_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -594,7 +640,9 @@ impl GetSetBytecodeHandler {
     pub fn the_built_in(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let result_id = GetSetUtils::get_the_built_in_prop(player, ctx, prop_name)?;
@@ -609,7 +657,9 @@ impl GetSetBytecodeHandler {
     pub fn get_chained_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id).to_owned();
         reserve_player_mut(|player| {
             let obj_ref = {
@@ -627,7 +677,7 @@ impl GetSetBytecodeHandler {
                 crate::director::lingo::datum::DatumType::SpriteRef => {
                     // Handle sprite references
                     let sprite_num = player.get_datum(&obj_ref).to_sprite_ref()?;
-                    
+
                     // Try built-in sprite properties FIRST
                     // This ensures properties like 'visible', 'loc', etc. work correctly
                     match crate::player::score::sprite_get_prop(
@@ -636,7 +686,9 @@ impl GetSetBytecodeHandler {
                         &prop_name,
                     ) {
                         Ok(datum) => {
-                            let result = player.last_sprite_prop_ref.take()
+                            let result = player
+                                .last_sprite_prop_ref
+                                .take()
                                 .unwrap_or_else(|| player.alloc_datum(datum));
                             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                             scope.stack.push(result);
@@ -647,7 +699,9 @@ impl GetSetBytecodeHandler {
                             // Clone the script instance list to avoid borrow issues
                             let instance_refs = {
                                 let sprite = player.movie.score.get_sprite(sprite_num);
-                                sprite.map(|s| s.script_instance_list.clone()).unwrap_or_default()
+                                sprite
+                                    .map(|s| s.script_instance_list.clone())
+                                    .unwrap_or_default()
                             };
 
                             // Try to get the property from script instances
@@ -662,7 +716,7 @@ impl GetSetBytecodeHandler {
                                     return Ok(HandlerExecutionResult::Advance);
                                 }
                             }
-                            
+
                             // Property not found anywhere
                             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
                             scope.stack.push(DatumRef::Void);
@@ -704,7 +758,9 @@ impl GetSetBytecodeHandler {
                         let chunk_type = StringChunkType::from(prop_name.as_str());
                         let delim = player.movie.item_delimiter;
                         let count = StringChunkUtils::resolve_chunk_count(
-                            &s_clone, chunk_type.clone(), delim,
+                            &s_clone,
+                            chunk_type.clone(),
+                            delim,
                         )? as i32;
                         let chunk_expr = StringChunkExpr {
                             chunk_type,
@@ -724,15 +780,28 @@ impl GetSetBytecodeHandler {
                         let result = get_obj_prop(player, &obj_ref, &prop_name.to_owned())?;
                         // Track sub-property refs for Transform3D compound assignment
                         // (e.g., transform.position.z = value needs to write back to transform)
-                        let is_transform = matches!(obj_type, crate::director::lingo::datum::DatumType::Transform3d);
-                        let is_sub_prop = matches!(prop_name.as_str(), "position" | "rotation" | "scale" | "x" | "y" | "z");
+                        let is_transform = matches!(
+                            obj_type,
+                            crate::director::lingo::datum::DatumType::Transform3d
+                        );
+                        let is_sub_prop = matches!(
+                            prop_name.as_str(),
+                            "position" | "rotation" | "scale" | "x" | "y" | "z"
+                        );
                         if is_transform && is_sub_prop {
                             let result_type = player.get_datum(&result).type_enum();
-                            if matches!(result_type, crate::director::lingo::datum::DatumType::Vector) {
+                            if matches!(
+                                result_type,
+                                crate::director::lingo::datum::DatumType::Vector
+                            ) {
                                 if player.transform_sub_refs.len() > 32 {
                                     player.transform_sub_refs.drain(0..16);
                                 }
-                                player.transform_sub_refs.push((result.clone(), obj_ref.clone(), prop_name.clone()));
+                                player.transform_sub_refs.push((
+                                    result.clone(),
+                                    obj_ref.clone(),
+                                    prop_name.clone(),
+                                ));
                             }
                         }
                         result
@@ -819,19 +888,29 @@ impl GetSetBytecodeHandler {
                     let result = get_obj_prop(player, &obj_ref, &prop_name.to_owned())?;
                     // Track sub-property refs for Transform3D compound assignment
                     // (e.g., transform.position.z = value needs to write back to transform)
-                    if matches!(obj_type, crate::director::lingo::datum::DatumType::Transform3d) {
+                    if matches!(
+                        obj_type,
+                        crate::director::lingo::datum::DatumType::Transform3d
+                    ) {
                         if matches!(prop_name.as_str(), "position" | "rotation" | "scale") {
                             let result_type = player.get_datum(&result).type_enum();
-                            if matches!(result_type, crate::director::lingo::datum::DatumType::Vector) {
+                            if matches!(
+                                result_type,
+                                crate::director::lingo::datum::DatumType::Vector
+                            ) {
                                 if player.transform_sub_refs.len() > 32 {
                                     player.transform_sub_refs.drain(0..16);
                                 }
-                                player.transform_sub_refs.push((result.clone(), obj_ref.clone(), prop_name.clone()));
+                                player.transform_sub_refs.push((
+                                    result.clone(),
+                                    obj_ref.clone(),
+                                    prop_name.clone(),
+                                ));
                             }
                         }
                     }
                     result
-                },
+                }
             };
 
             let scope = player.scopes.get_mut(ctx.scope_ref).unwrap();
@@ -879,7 +958,9 @@ impl GetSetBytecodeHandler {
                     };
                     let sprite_num = player.get_datum(&datum_ref).int_value()?;
                     let result = sprite_get_prop(player, sprite_num as i16, prop_name.unwrap())?;
-                    Ok(player.last_sprite_prop_ref.take()
+                    Ok(player
+                        .last_sprite_prop_ref
+                        .take()
                         .unwrap_or_else(|| player.alloc_datum(result)))
                 } else {
                     Err(ScriptError::new(format!(
@@ -950,7 +1031,8 @@ impl GetSetBytecodeHandler {
                 )?;
                 match member_ref {
                     Some(member_ref) => {
-                        let result = CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
+                        let result =
+                            CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
                         Ok(player.alloc_datum(result))
                     }
                     None => {
@@ -990,11 +1072,15 @@ impl GetSetBytecodeHandler {
                 )?;
                 match member_ref {
                     Some(member_ref) => {
-                        let result = CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
+                        let result =
+                            CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
                         Ok(player.alloc_datum(result))
                     }
                     None => {
-                        warn!("get cast member chunk prop '{}': member not found", prop_name);
+                        warn!(
+                            "get cast member chunk prop '{}': member not found",
+                            prop_name
+                        );
                         Ok(player.alloc_datum(Datum::Void))
                     }
                 }
@@ -1022,7 +1108,8 @@ impl GetSetBytecodeHandler {
                 )?;
                 match member_ref {
                     Some(member_ref) => {
-                        let result = CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
+                        let result =
+                            CastMemberRefHandlers::get_prop(player, &member_ref, &prop_name)?;
                         Ok(player.alloc_datum(result))
                     }
                     None => {
@@ -1060,7 +1147,9 @@ impl GetSetBytecodeHandler {
     pub fn get_top_level_prop(
         ctx: &BytecodeHandlerContext,
     ) -> Result<HandlerExecutionResult, ScriptError> {
-        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }.get_ctx_current_bytecode(ctx).obj as u16;
+        let name_id = unsafe { PLAYER_OPT.as_ref().unwrap() }
+            .get_ctx_current_bytecode(ctx)
+            .obj as u16;
         let prop_name = ctx.get_name(name_id);
         reserve_player_mut(|player| {
             let result = GetSetUtils::get_top_level_prop(player, prop_name)?;

@@ -4,6 +4,9 @@ pub mod cast_member;
 pub mod cast_member_ref;
 pub mod color;
 pub mod date;
+pub mod flash_object;
+pub mod float;
+pub mod havok_object;
 pub mod int;
 pub mod list_handlers;
 pub mod math;
@@ -13,23 +16,20 @@ pub mod prop_list;
 pub mod rect;
 pub mod script;
 pub mod script_instance;
+pub mod shockwave3d_object;
 pub mod sound_channel;
 pub mod sprite;
 pub mod string;
 pub mod string_chunk;
 pub mod symbol;
 pub mod timeout;
+pub mod transform3d;
 pub mod vector;
 pub mod void;
 pub mod xml;
-pub mod flash_object;
-pub mod float;
-pub mod shockwave3d_object;
-pub mod transform3d;
-pub mod havok_object;
 
-use player::PlayerDatumHandlers;
 use self::flash_object::FlashObjectDatumHandlers;
+use player::PlayerDatumHandlers;
 
 use self::cast_lib::CastLibDatumHandlers;
 use self::date::DateDatumHandlers;
@@ -48,12 +48,12 @@ use std::collections::VecDeque;
 use crate::{
     director::lingo::datum::DatumType,
     player::{
-        format_datum, reserve_player_mut, reserve_player_ref,
+        DatumRef, ScriptError, ScriptErrorCode, format_datum, reserve_player_mut,
+        reserve_player_ref,
         xtra::manager::{
             call_xtra_instance_async_handler, call_xtra_instance_handler,
             has_xtra_instance_async_handler,
         },
-        DatumRef, ScriptError, ScriptErrorCode,
     },
 };
 
@@ -66,7 +66,7 @@ pub async fn player_call_datum_handler(
     reserve_player_mut(|player| {
         player.handler_stack_depth += 1;
     });
-   
+
     // Block recursive getPropertyDescriptionList calls
     if handler_name == "getPropertyDescriptionList" {
         let should_skip = reserve_player_mut(|player| {
@@ -78,17 +78,22 @@ pub async fn player_call_datum_handler(
                 false
             }
         });
-        
+
         if should_skip {
             // Decrement handler depth before returning
             reserve_player_mut(|player| {
                 player.handler_stack_depth = player.handler_stack_depth.saturating_sub(1);
             });
-            
+
             // Return empty property list
             web_sys::console::warn_1(&"Returning empty property list to prevent recursion".into());
             return reserve_player_mut(|player| {
-                Ok(player.alloc_datum(crate::director::lingo::datum::Datum::PropList(VecDeque::new(), false)))
+                Ok(
+                    player.alloc_datum(crate::director::lingo::datum::Datum::PropList(
+                        VecDeque::new(),
+                        false,
+                    )),
+                )
             });
         }
     }
@@ -133,7 +138,8 @@ pub async fn player_call_datum_handler(
         }
         DatumType::CastMemberRef => {
             if cast_member_ref::CastMemberRefHandlers::has_async_handler(obj_ref, handler_name) {
-                cast_member_ref::CastMemberRefHandlers::call_async(obj_ref, handler_name, args).await
+                cast_member_ref::CastMemberRefHandlers::call_async(obj_ref, handler_name, args)
+                    .await
             } else {
                 cast_member_ref::CastMemberRefHandlers::call(obj_ref, handler_name, args)
             }
@@ -153,7 +159,10 @@ pub async fn player_call_datum_handler(
             if handler_name == "new" {
                 let mut full_args = vec![obj_ref.clone()];
                 full_args.extend(args.iter().cloned());
-                Box::pin(crate::player::handlers::types::TypeHandlers::new(&full_args)).await
+                Box::pin(crate::player::handlers::types::TypeHandlers::new(
+                    &full_args,
+                ))
+                .await
             } else {
                 Err(ScriptError::new_code(
                     ScriptErrorCode::HandlerNotFound,
@@ -186,24 +195,23 @@ pub async fn player_call_datum_handler(
         DatumType::MovieRef => {
             match handler_name {
                 "newMember" => {
-                    Box::pin(crate::player::handlers::types::TypeHandlers::new(&args.clone())).await
+                    Box::pin(crate::player::handlers::types::TypeHandlers::new(
+                        &args.clone(),
+                    ))
+                    .await
                 }
-                "go" => {
-                    Box::pin(crate::player::handlers::movie::MovieHandlers::go(&args)).await
-                }
-                "count" => {
-                    reserve_player_mut(|player| {
-                        use crate::director::lingo::datum::Datum;
-                        let prop_name = player.get_datum(&args[0]).string_value()?;
-                        let prop_datum = player.movie.get_prop(&prop_name)?;
-                        let count = match &prop_datum {
-                            Datum::List(_, items, _) => items.len() as i32,
-                            Datum::PropList(items, _) => items.len() as i32,
-                            _ => 0,
-                        };
-                        Ok(player.alloc_datum(Datum::Int(count)))
-                    })
-                }
+                "go" => Box::pin(crate::player::handlers::movie::MovieHandlers::go(&args)).await,
+                "count" => reserve_player_mut(|player| {
+                    use crate::director::lingo::datum::Datum;
+                    let prop_name = player.get_datum(&args[0]).string_value()?;
+                    let prop_datum = player.movie.get_prop(&prop_name)?;
+                    let count = match &prop_datum {
+                        Datum::List(_, items, _) => items.len() as i32,
+                        Datum::PropList(items, _) => items.len() as i32,
+                        _ => 0,
+                    };
+                    Ok(player.alloc_datum(Datum::Int(count)))
+                }),
                 "getProp" | "getAt" | "getPropRef" => {
                     // _system.desktopRectList[1] → getProp(desktopRectList, 1)
                     reserve_player_mut(|player| {
@@ -223,7 +231,7 @@ pub async fn player_call_datum_handler(
                                         Ok(DatumRef::Void)
                                     }
                                 }
-                                _ => Ok(prop_ref)
+                                _ => Ok(prop_ref),
                             }
                         } else {
                             Ok(prop_ref)
@@ -237,9 +245,15 @@ pub async fn player_call_datum_handler(
             }
         }
         DatumType::FlashObjectRef => FlashObjectDatumHandlers::call(obj_ref, handler_name, args),
-        DatumType::Shockwave3dObjectRef => shockwave3d_object::Shockwave3dObjectDatumHandlers::call(obj_ref, handler_name, args),
-        DatumType::Transform3d => transform3d::Transform3dDatumHandlers::call(obj_ref, handler_name, args),
-        DatumType::HavokObjectRef => havok_object::HavokObjectDatumHandlers::call(obj_ref, handler_name, args),
+        DatumType::Shockwave3dObjectRef => {
+            shockwave3d_object::Shockwave3dObjectDatumHandlers::call(obj_ref, handler_name, args)
+        }
+        DatumType::Transform3d => {
+            transform3d::Transform3dDatumHandlers::call(obj_ref, handler_name, args)
+        }
+        DatumType::HavokObjectRef => {
+            havok_object::HavokObjectDatumHandlers::call(obj_ref, handler_name, args)
+        }
         DatumType::Void => {
             // Try VoidDatumHandlers first for specific methods that should return VOID gracefully
             match VoidDatumHandlers::call(obj_ref.clone(), handler_name, args) {
@@ -255,8 +269,7 @@ pub async fn player_call_datum_handler(
                         ScriptErrorCode::HandlerNotFound,
                         format!(
                             "Cannot call {}({}) on VOID - a variable or property that should contain an object is uninitialized or returned VOID",
-                            handler_name,
-                            args_formatted
+                            handler_name, args_formatted
                         ),
                     ))
                 }
@@ -275,7 +288,7 @@ pub async fn player_call_datum_handler(
                 );
                 Ok(DatumRef::Void)
             })
-        },
+        }
     };
 
     if handler_name == "getPropertyDescriptionList" {

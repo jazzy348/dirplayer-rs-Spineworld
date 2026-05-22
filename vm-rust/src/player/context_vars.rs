@@ -1,14 +1,17 @@
-use log::{debug, error};
 use super::{
-    bytecode::handler_manager::BytecodeHandlerContext,
-    scope::ScopeRef,
-    ci_string::{CiStr, CiString},
-    script::{get_current_handler_def, get_current_script, get_current_variable_multiplier, get_name, script_get_prop, script_set_prop},
     DatumRef, DirPlayer, ScriptError,
+    bytecode::handler_manager::BytecodeHandlerContext,
+    ci_string::{CiStr, CiString},
+    scope::ScopeRef,
+    script::{
+        get_current_handler_def, get_current_script, get_current_variable_multiplier, get_name,
+        script_get_prop, script_set_prop,
+    },
 };
 use crate::director::lingo::datum::Datum;
 use crate::player::bytecode::string::PutType;
 use crate::player::cast_member::CastMemberType;
+use log::{debug, error};
 use web_sys::console;
 
 pub fn read_context_var_args(
@@ -73,9 +76,16 @@ pub fn player_get_context_var(
                 script_get_prop(player, &instance_ref, &prop_name)
             } else {
                 // Static property on script
-                let script_rc = player.movie.cast_manager.get_script_by_ref(&script_ref).unwrap();
+                let script_rc = player
+                    .movie
+                    .cast_manager
+                    .get_script_by_ref(&script_ref)
+                    .unwrap();
                 let properties = script_rc.properties.borrow();
-                Ok(properties.get(CiStr::new(&prop_name)).unwrap_or(&DatumRef::Void).clone())
+                Ok(properties
+                    .get(CiStr::new(&prop_name))
+                    .unwrap_or(&DatumRef::Void)
+                    .clone())
             }
         }
         0x4 => {
@@ -92,11 +102,18 @@ pub fn player_get_context_var(
             let name_id = if let Datum::Symbol(name) = id {
                 // Find the name_id matching the symbol name
                 let found = local_name_ids.iter().find(|&&nid| {
-                    get_name(player, ctx, nid).map(|n| n.eq_ignore_ascii_case(&name)).unwrap_or(false)
+                    get_name(player, ctx, nid)
+                        .map(|n| n.eq_ignore_ascii_case(&name))
+                        .unwrap_or(false)
                 });
                 match found {
                     Some(&nid) => nid,
-                    None => return Err(ScriptError::new(format!("Local variable '{}' not found", name))),
+                    None => {
+                        return Err(ScriptError::new(format!(
+                            "Local variable '{}' not found",
+                            name
+                        )));
+                    }
                 }
             } else {
                 let local_index = (id.int_value()? / variable_multiplier as i32) as usize;
@@ -174,7 +191,11 @@ pub fn player_set_context_var(
             } else {
                 let scope = player.scopes.get(ctx.scope_ref).unwrap();
                 let script_ref = scope.script_ref.clone();
-                let script_rc = player.movie.cast_manager.get_script_by_ref(&script_ref).unwrap();
+                let script_rc = player
+                    .movie
+                    .cast_manager
+                    .get_script_by_ref(&script_ref)
+                    .unwrap();
                 let mut properties = script_rc.properties.borrow_mut();
                 properties.insert(CiString::from(prop_name), value_ref.clone());
                 Ok(())
@@ -193,11 +214,18 @@ pub fn player_set_context_var(
             let local_name_ids = &handler.local_name_ids;
             let name_id = if let Datum::Symbol(name) = id_datum {
                 let found = local_name_ids.iter().find(|&&nid| {
-                    get_name(player, ctx, nid).map(|n| n.eq_ignore_ascii_case(&name)).unwrap_or(false)
+                    get_name(player, ctx, nid)
+                        .map(|n| n.eq_ignore_ascii_case(&name))
+                        .unwrap_or(false)
                 });
                 match found {
                     Some(&nid) => nid,
-                    None => return Err(ScriptError::new(format!("Local variable '{}' not found", name))),
+                    None => {
+                        return Err(ScriptError::new(format!(
+                            "Local variable '{}' not found",
+                            name
+                        )));
+                    }
                 }
             } else {
                 let local_index = (id_datum.int_value()? / variable_multiplier as i32) as usize;
@@ -294,7 +322,10 @@ pub fn player_set_context_var(
                         Ok(())
                     }
                     other => {
-                        debug!("Member exists but is not a Field, Text, or Button: {:?}", other);
+                        debug!(
+                            "Member exists but is not a Field, Text, or Button: {:?}",
+                            other
+                        );
                         Err(ScriptError::new(
                             "Cast member exists but is not a Field, Text, or Button".to_string(),
                         ))

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     director::lingo::datum::Datum,
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
 
 pub struct VoidDatumHandlers {}
@@ -72,7 +72,9 @@ impl VoidDatumHandlers {
             "ilk" => Ok(player.alloc_datum(Datum::Symbol("void".to_owned()))),
             "count" | "length" => Ok(player.alloc_datum(Datum::Int(0))),
             "x" | "y" | "z" | "magnitude" => Ok(player.alloc_datum(Datum::Float(0.0))),
-            "position" | "rotation" | "scale" => Ok(player.alloc_datum(Datum::Vector([0.0, 0.0, 0.0]))),
+            "position" | "rotation" | "scale" => {
+                Ok(player.alloc_datum(Datum::Vector([0.0, 0.0, 0.0])))
+            }
             "string" => Ok(player.alloc_datum(Datum::String("".to_owned()))),
             // XML-related properties on Void should return empty/void values
             "childNodes" => {
@@ -97,14 +99,10 @@ impl VoidDatumHandlers {
             }
             // Common properties that scripts may access on VOID results
             // (e.g., out-of-bounds 3D collection access). Director returns VOID silently.
-            "name" | "type" | "number" | "member" | "count"
-            | "transform" | "parent" | "shader" | "shaderList"
-            | "visibility" | "visible" | "blend" | "resource"
-            | "texture" | "textureList" | "renderFormat"
-            | "position" | "rotation" | "scale"
-            | "x" | "y" | "z" | "locH" | "locV" => {
-                Ok(player.alloc_datum(Datum::Void))
-            }
+            "name" | "type" | "number" | "member" | "count" | "transform" | "parent" | "shader"
+            | "shaderList" | "visibility" | "visible" | "blend" | "resource" | "texture"
+            | "textureList" | "renderFormat" | "position" | "rotation" | "scale" | "x" | "y"
+            | "z" | "locH" | "locV" => Ok(player.alloc_datum(Datum::Void)),
             // String slice operations on VOID should return empty string
             "char" | "word" | "line" | "item" => {
                 Ok(player.alloc_datum(Datum::String("".to_owned())))
@@ -119,9 +117,7 @@ impl VoidDatumHandlers {
             // `oIsoScene.oInfoStand.display(...)`). Real Director silently
             // returns void for these so the surrounding voidp(...) checks
             // skip the body.
-            "oAvatars" | "oInfoStand" | "oSelectedItem" => {
-                Ok(player.alloc_datum(Datum::Void))
-            }
+            "oAvatars" | "oInfoStand" | "oSelectedItem" => Ok(player.alloc_datum(Datum::Void)),
             _ => Err(ScriptError::new(format!(
                 "Cannot get property '{}' on VOID - a variable or property that should contain an object is uninitialized",
                 prop

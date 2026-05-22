@@ -10,7 +10,7 @@ import * as wasm from "vm-rust";
 import { initVmCallbacks } from "../vm/callbacks";
 import { JsBridgeBreakpoint } from "dirplayer-js-api";
 import { getFullPathFromOrigin } from "../utils/path";
-import { initAudioContext, initAudioBackend } from "../audio/audioInit";
+import { initAudioContext, setupAudioOnUserGesture } from "../audio/audioInit";
 import { useDispatch } from "react-redux";
 import { ready } from "../store/vmSlice";
 import { isElectron } from "../utils/electron";
@@ -113,17 +113,11 @@ export default function VMProvider({ children, systemFontPath, wasmUrl }: VMProv
       }
     };
 
-    const initAudioOnUserGesture = () => {
-      // Initialize audio backend on first user gesture
-      initAudioBackend();
-      document.removeEventListener("click", initAudioOnUserGesture);
-    };
-
     // Initialize VM immediately
     initVM();
 
     // Setup audio initialization on first user gesture (autoplay policy)
-    document.addEventListener("click", initAudioOnUserGesture, { once: true });
+    setupAudioOnUserGesture();
   }, [dispatch, systemFontPath, wasmUrl]);
   return (
     <div>

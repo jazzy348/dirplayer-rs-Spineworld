@@ -1,6 +1,6 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{cast_lib::CastMemberRef, reserve_player_mut, DirPlayer, ScriptError},
+    player::{DirPlayer, ScriptError, cast_lib::CastMemberRef, reserve_player_mut},
 };
 
 pub struct SoundMemberHandlers {}
@@ -46,8 +46,9 @@ impl SoundMemberHandlers {
                         .cast_manager
                         .find_mut_member_by_ref(member_ref)
                         .ok_or_else(|| ScriptError::new("Cast member not found".to_string()))?;
-                    let sound = member.member_type.as_sound_mut()
-                        .ok_or_else(|| ScriptError::new("Cast member is not a sound".to_string()))?;
+                    let sound = member.member_type.as_sound_mut().ok_or_else(|| {
+                        ScriptError::new("Cast member is not a sound".to_string())
+                    })?;
                     sound.info.loop_enabled = loop_enabled;
                     Ok(())
                 })

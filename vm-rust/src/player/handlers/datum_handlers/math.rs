@@ -1,6 +1,6 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
 
 use std::f64::consts::PI;
@@ -74,7 +74,7 @@ impl MathDatumHandlers {
                     return Err(ScriptError::new(format!(
                         "Unknown math function '{}'",
                         handler_name
-                    )))
+                    )));
                 }
             };
 

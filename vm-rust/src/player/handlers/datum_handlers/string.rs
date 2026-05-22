@@ -6,7 +6,10 @@ use crate::{
     director::lingo::datum::{
         Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType,
     },
-    player::{eval::try_eval_lingo_expr_static, reserve_player_ref, reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{
+        DatumRef, DirPlayer, ScriptError, eval::try_eval_lingo_expr_static, reserve_player_mut,
+        reserve_player_ref,
+    },
 };
 
 use super::string_chunk::StringChunkUtils;
@@ -213,11 +216,7 @@ impl StringDatumHandlers {
     }
 }
 
-pub fn string_get_count(
-    value: &str,
-    operand: &str,
-    delimiter: char,
-) -> Result<u32, ScriptError> {
+pub fn string_get_count(value: &str, operand: &str, delimiter: char) -> Result<u32, ScriptError> {
     match operand {
         "char" | "chars" => Ok(value.chars().count() as u32),
         "item" | "items" => Ok(string_get_items(value, delimiter).len() as u32),
@@ -291,7 +290,9 @@ fn trim_unbalanced_brackets(input: &str) -> String {
 
     for (i, ch) in input.char_indices() {
         if in_string {
-            if ch == '"' { in_string = false; }
+            if ch == '"' {
+                in_string = false;
+            }
         } else {
             match ch {
                 '"' => in_string = true,

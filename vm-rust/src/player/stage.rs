@@ -1,8 +1,13 @@
-use crate::{director::lingo::datum::Datum, player::bitmap::bitmap::PaletteRef, rendering::{render_stage_to_bitmap, with_renderer_mut}, rendering_gpu::Renderer};
+use crate::{
+    director::lingo::datum::Datum,
+    player::bitmap::bitmap::PaletteRef,
+    rendering::{render_stage_to_bitmap, with_renderer_mut},
+    rendering_gpu::Renderer,
+};
 
 use super::{
-    bitmap::bitmap::{get_system_default_palette, Bitmap},
     DatumRef, DirPlayer, ScriptError,
+    bitmap::bitmap::{Bitmap, get_system_default_palette},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,7 +73,10 @@ fn compute_stage_layout(
 
     match style {
         StretchStyle::Meet => {
-            let scale = f64::min(stage_width as f64 / movie_width, stage_height as f64 / movie_height);
+            let scale = f64::min(
+                stage_width as f64 / movie_width,
+                stage_height as f64 / movie_height,
+            );
             let draw_width = movie_width * scale;
             let draw_height = movie_height * scale;
             let left = ((stage_width as f64 - draw_width) / 2.0).max(0.0);
@@ -135,7 +143,9 @@ pub fn stage_scale(player: &DirPlayer) -> (f64, f64) {
     let layout = stage_layout(player);
     let movie_w = player.movie.rect.width() as f64;
     let movie_h = player.movie.rect.height() as f64;
-    if movie_w <= 0.0 || movie_h <= 0.0 { return (1.0, 1.0); }
+    if movie_w <= 0.0 || movie_h <= 0.0 {
+        return (1.0, 1.0);
+    }
     let sx = layout.scale_x(movie_w);
     let sy = layout.scale_y(movie_h);
     if (sx - 1.0).abs() < 1e-3 && (sy - 1.0).abs() < 1e-3 {
@@ -174,9 +184,7 @@ pub fn canvas_to_movie_coords(player: &DirPlayer, x: f64, y: f64) -> (f64, f64) 
     let draw_h = (layout.draw_rect[3] - layout.draw_rect[1]).max(1.0);
     let movie_w = player.movie.rect.width() as f64;
     let movie_h = player.movie.rect.height() as f64;
-    if draw_w > 0.0 && draw_h > 0.0
-        && movie_w > 0.0 && movie_h > 0.0
-    {
+    if draw_w > 0.0 && draw_h > 0.0 && movie_w > 0.0 && movie_h > 0.0 {
         (
             (x - layout.draw_rect[0]) * movie_w / draw_w,
             (y - layout.draw_rect[1]) * movie_h / draw_h,
@@ -192,7 +200,15 @@ pub fn get_stage_prop(player: &mut DirPlayer, prop: &str) -> Result<Datum, Scrip
         "drawRect" => Ok(Datum::Rect(stage_layout(player).draw_rect, 0)),
         "sourceRect" => {
             // TODO where does this come from?
-            Ok(Datum::Rect([0.0, 0.0, player.movie.rect.width() as f64, player.movie.rect.height() as f64], 0))
+            Ok(Datum::Rect(
+                [
+                    0.0,
+                    0.0,
+                    player.movie.rect.width() as f64,
+                    player.movie.rect.height() as f64,
+                ],
+                0,
+            ))
         }
         "bgColor" => Ok(Datum::ColorRef(player.bg_color.clone())),
         "image" => {
@@ -285,14 +301,14 @@ pub fn set_stage_prop(
             return Err(ScriptError::new(format!(
                 "Cannot set stage property {}",
                 prop
-            )))
+            )));
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_stage_layout, StretchStyle};
+    use super::{StretchStyle, compute_stage_layout};
 
     #[test]
     fn stretch_meet_letterboxes_inside_stage() {

@@ -84,8 +84,16 @@ pub fn screen_to_ray_shockwave(
     let half_fov_rad = (fov_degrees * 0.5).to_radians();
     let dist_to_proj = (height * 0.5) / half_fov_rad.tan();
     // Pixel aspect corrects for non-square pixels when viewport aspect ≠ original aspect
-    let orig_aspect = if original_height > 0.0 { original_width / original_height } else { 1.0 };
-    let pixel_aspect = if orig_aspect > 0.0 { (width / height) / orig_aspect } else { 1.0 };
+    let orig_aspect = if original_height > 0.0 {
+        original_width / original_height
+    } else {
+        1.0
+    };
+    let pixel_aspect = if orig_aspect > 0.0 {
+        (width / height) / orig_aspect
+    } else {
+        1.0
+    };
 
     let film_x = (screen_x - (width - 1.0) * 0.5) * pixel_aspect;
     let film_y = (height - 1.0) * 0.5 - screen_y;
@@ -108,16 +116,17 @@ pub fn screen_to_ray_shockwave(
         world_point[2] - origin[2],
     ]);
 
-    Ray { origin, direction: dir }
+    Ray {
+        origin,
+        direction: dir,
+    }
 }
 
 /// Test ray against all meshes in a scene, returning hits sorted by distance.
-pub fn raycast_scene(
-    ray: &Ray,
-    scene: &W3dScene,
-    max_dist: f32,
-) -> Option<RayHit> {
-    raycast_scene_multi(ray, scene, max_dist, 1, None, None).into_iter().next()
+pub fn raycast_scene(ray: &Ray, scene: &W3dScene, max_dist: f32) -> Option<RayHit> {
+    raycast_scene_multi(ray, scene, max_dist, 1, None, None)
+        .into_iter()
+        .next()
 }
 
 /// Test ray against all meshes in a scene, returning up to max_hits sorted by distance.
@@ -134,10 +143,16 @@ pub fn raycast_scene_multi(
     let mut all_hits: Vec<RayHit> = Vec::new();
 
     // For each model node, find its mesh data and test
-    for node in scene.nodes.iter().filter(|n| n.node_type == W3dNodeType::Model) {
+    for node in scene
+        .nodes
+        .iter()
+        .filter(|n| n.node_type == W3dNodeType::Model)
+    {
         // Skip excluded nodes (invisible or detached models)
         if let Some(excluded) = excluded_nodes {
-            if excluded.contains(&node.name) { continue; }
+            if excluded.contains(&node.name) {
+                continue;
+            }
         }
         let resource = if !node.model_resource_name.is_empty() {
             &node.model_resource_name
@@ -148,10 +163,13 @@ pub fn raycast_scene_multi(
         // Get model WORLD transform by accumulating parent chain
         let world_transform = {
             let local = if let Some(nt) = node_transforms {
-                nt.get(&node.name).cloned()
+                nt.get(&node.name)
+                    .cloned()
                     .or_else(|| {
                         // Case-insensitive fallback
-                        nt.iter().find(|(k, _)| k.eq_ignore_ascii_case(&node.name)).map(|(_, v)| *v)
+                        nt.iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case(&node.name))
+                            .map(|(_, v)| *v)
                     })
                     .unwrap_or(node.transform)
             } else {
@@ -161,18 +179,31 @@ pub fn raycast_scene_multi(
             let mut result = local;
             let mut current_parent = &node.parent_name;
             for _ in 0..20 {
-                if current_parent.is_empty() || current_parent.eq_ignore_ascii_case("World") { break; }
-                if let Some(pn) = scene.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(current_parent)) {
+                if current_parent.is_empty() || current_parent.eq_ignore_ascii_case("World") {
+                    break;
+                }
+                if let Some(pn) = scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.name.eq_ignore_ascii_case(current_parent))
+                {
                     let pt = if let Some(nt) = node_transforms {
-                        nt.get(&pn.name).cloned()
-                            .or_else(|| nt.iter().find(|(k, _)| k.eq_ignore_ascii_case(&pn.name)).map(|(_, v)| *v))
+                        nt.get(&pn.name)
+                            .cloned()
+                            .or_else(|| {
+                                nt.iter()
+                                    .find(|(k, _)| k.eq_ignore_ascii_case(&pn.name))
+                                    .map(|(_, v)| *v)
+                            })
                             .unwrap_or(pn.transform)
                     } else {
                         pn.transform
                     };
                     result = multiply_4x4(&pt, &result);
                     current_parent = &pn.parent_name;
-                } else { break; }
+                } else {
+                    break;
+                }
             }
             result
         };
@@ -182,18 +213,36 @@ pub fn raycast_scene_multi(
             if MA_LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 1 {
                 debug!(
                     "[RAYCAST] MainA xform: pos=({:.1},{:.1},{:.1}) X=({:.4},{:.4},{:.4}) Y=({:.4},{:.4},{:.4}) Z=({:.4},{:.4},{:.4}) parent='{}'",
-                    world_transform[12], world_transform[13], world_transform[14],
-                    world_transform[0], world_transform[1], world_transform[2],
-                    world_transform[4], world_transform[5], world_transform[6],
-                    world_transform[8], world_transform[9], world_transform[10],
+                    world_transform[12],
+                    world_transform[13],
+                    world_transform[14],
+                    world_transform[0],
+                    world_transform[1],
+                    world_transform[2],
+                    world_transform[4],
+                    world_transform[5],
+                    world_transform[6],
+                    world_transform[8],
+                    world_transform[9],
+                    world_transform[10],
                     node.parent_name
                 );
             }
         }
         let inv_transform = invert_4x4(&world_transform);
         let local_ray = Ray {
-            origin: transform_point_4x4(&inv_transform, ray.origin[0], ray.origin[1], ray.origin[2]),
-            direction: transform_dir_4x4(&inv_transform, ray.direction[0], ray.direction[1], ray.direction[2]),
+            origin: transform_point_4x4(
+                &inv_transform,
+                ray.origin[0],
+                ray.origin[1],
+                ray.origin[2],
+            ),
+            direction: transform_dir_4x4(
+                &inv_transform,
+                ray.direction[0],
+                ray.direction[1],
+                ray.direction[2],
+            ),
         };
 
         // Debug: log MainA sub-mesh info and check floor face on first call
@@ -202,10 +251,17 @@ pub fn raycast_scene_multi(
             if MA_MESH_LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 1 {
                 if let Some(meshes) = scene.clod_meshes.get(resource.as_str()) {
                     for (mi, m) in meshes.iter().enumerate() {
-                        let v0z = if !m.positions.is_empty() { m.positions[0][2] } else { -999.0 };
+                        let v0z = if !m.positions.is_empty() {
+                            m.positions[0][2]
+                        } else {
+                            -999.0
+                        };
                         debug!(
                             "[RAYCAST-MESH] MainA sub[{}]: {} verts, {} faces, v0z={:.1}",
-                            mi, m.positions.len(), m.faces.len(), v0z
+                            mi,
+                            m.positions.len(),
+                            m.faces.len(),
+                            v0z
                         );
                     }
                     // Check sub[4] face 35 specifically (should be the floor)
@@ -214,16 +270,21 @@ pub fn raycast_scene_multi(
                         let m = &meshes[4];
                         debug!(
                             "[FLOOR-FACE] sub[4] face35=[{},{},{}] v{}=({:.1},{:.1},{:.1}) v{}=({:.1},{:.1},{:.1}) v{}=({:.1},{:.1},{:.1})",
-                            f[0], f[1], f[2],
-                            f[0], m.positions.get(f[0] as usize).map(|p| p[0]).unwrap_or(-1.0),
-                                  m.positions.get(f[0] as usize).map(|p| p[1]).unwrap_or(-1.0),
-                                  m.positions.get(f[0] as usize).map(|p| p[2]).unwrap_or(-1.0),
-                            f[1], m.positions.get(f[1] as usize).map(|p| p[0]).unwrap_or(-1.0),
-                                  m.positions.get(f[1] as usize).map(|p| p[1]).unwrap_or(-1.0),
-                                  m.positions.get(f[1] as usize).map(|p| p[2]).unwrap_or(-1.0),
-                            f[2], m.positions.get(f[2] as usize).map(|p| p[0]).unwrap_or(-1.0),
-                                  m.positions.get(f[2] as usize).map(|p| p[1]).unwrap_or(-1.0),
-                                  m.positions.get(f[2] as usize).map(|p| p[2]).unwrap_or(-1.0),
+                            f[0],
+                            f[1],
+                            f[2],
+                            f[0],
+                            m.positions.get(f[0] as usize).map(|p| p[0]).unwrap_or(-1.0),
+                            m.positions.get(f[0] as usize).map(|p| p[1]).unwrap_or(-1.0),
+                            m.positions.get(f[0] as usize).map(|p| p[2]).unwrap_or(-1.0),
+                            f[1],
+                            m.positions.get(f[1] as usize).map(|p| p[0]).unwrap_or(-1.0),
+                            m.positions.get(f[1] as usize).map(|p| p[1]).unwrap_or(-1.0),
+                            m.positions.get(f[1] as usize).map(|p| p[2]).unwrap_or(-1.0),
+                            f[2],
+                            m.positions.get(f[2] as usize).map(|p| p[0]).unwrap_or(-1.0),
+                            m.positions.get(f[2] as usize).map(|p| p[1]).unwrap_or(-1.0),
+                            m.positions.get(f[2] as usize).map(|p| p[2]).unwrap_or(-1.0),
                         );
                         // Test ray intersection manually
                         let lo = [3428.0f32, -5878.0, 219.0]; // local ray origin
@@ -232,7 +293,13 @@ pub fn raycast_scene_multi(
                         let p1 = m.positions[f[1] as usize];
                         let p2 = m.positions[f[2] as usize];
                         if let Some((t, _, _)) = ray_triangle_intersect(
-                            &Ray { origin: lo, direction: ld }, &p0, &p1, &p2
+                            &Ray {
+                                origin: lo,
+                                direction: ld,
+                            },
+                            &p0,
+                            &p1,
+                            &p2,
                         ) {
                             debug!("[FLOOR-FACE] ray hit! t={:.2}", t);
                         } else {
@@ -246,21 +313,37 @@ pub fn raycast_scene_multi(
         // Test CLOD meshes
         if let Some(meshes) = scene.clod_meshes.get(resource.as_str()) {
             // Log local ray for MainA sub[4] on first downward ray
-            if node.name == "MainA" && ray.direction[2] < -0.9 && ray.direction[0].abs() < 0.1 && ray.origin[2] > 300.0 {
+            if node.name == "MainA"
+                && ray.direction[2] < -0.9
+                && ray.direction[0].abs() < 0.1
+                && ray.origin[2] > 300.0
+            {
                 static LR_LOG: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
                 if LR_LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 2 {
                     debug!(
                         "[LOCAL-RAY] MainA: world_orig=({:.1},{:.1},{:.1}) local_orig=({:.1},{:.1},{:.1}) local_dir=({:.4},{:.4},{:.4})",
-                        ray.origin[0], ray.origin[1], ray.origin[2],
-                        local_ray.origin[0], local_ray.origin[1], local_ray.origin[2],
-                        local_ray.direction[0], local_ray.direction[1], local_ray.direction[2],
+                        ray.origin[0],
+                        ray.origin[1],
+                        ray.origin[2],
+                        local_ray.origin[0],
+                        local_ray.origin[1],
+                        local_ray.origin[2],
+                        local_ray.direction[0],
+                        local_ray.direction[1],
+                        local_ray.direction[2],
                     );
                 }
             }
             for (mi, mesh) in meshes.iter().enumerate() {
                 // Debug: for MainA sub[4], manually test face 35 inside the real raycast flow
-                if node.name == "MainA" && mi == 4 && ray.direction[2] < -0.9 && ray.direction[0].abs() < 0.1 && ray.origin[2] > 300.0 {
-                    static F35_LOG: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                if node.name == "MainA"
+                    && mi == 4
+                    && ray.direction[2] < -0.9
+                    && ray.direction[0].abs() < 0.1
+                    && ray.origin[2] > 300.0
+                {
+                    static F35_LOG: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(0);
                     if F35_LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 3 {
                         let f = &mesh.faces[35];
                         let p0 = mesh.positions[f[0] as usize];
@@ -269,24 +352,51 @@ pub fn raycast_scene_multi(
                         let result = ray_triangle_intersect(&local_ray, &p0, &p1, &p2);
                         debug!(
                             "[SUB4-F35] local_orig=({:.1},{:.1},{:.1}) dir=({:.4},{:.4},{:.4}) face=[{},{},{}] hit={:?} nfaces={}",
-                            local_ray.origin[0], local_ray.origin[1], local_ray.origin[2],
-                            local_ray.direction[0], local_ray.direction[1], local_ray.direction[2],
-                            f[0], f[1], f[2], result, mesh.faces.len()
+                            local_ray.origin[0],
+                            local_ray.origin[1],
+                            local_ray.origin[2],
+                            local_ray.direction[0],
+                            local_ray.direction[1],
+                            local_ray.direction[2],
+                            f[0],
+                            f[1],
+                            f[2],
+                            result,
+                            mesh.faces.len()
                         );
                     }
                 }
                 let tc = mesh.tex_coords.first().map(|v| v.as_slice());
-                if let Some(mut hit) = raycast_mesh(&local_ray, &mesh.positions, &mesh.normals, &mesh.faces, tc, &node.name, (mi + 1) as u32, max_dist) {
+                if let Some(mut hit) = raycast_mesh(
+                    &local_ray,
+                    &mesh.positions,
+                    &mesh.normals,
+                    &mesh.faces,
+                    tc,
+                    &node.name,
+                    (mi + 1) as u32,
+                    max_dist,
+                ) {
                     // Transform hit position and vertices back to world space
-                    hit.position = transform_point_4x4(&world_transform, hit.position[0], hit.position[1], hit.position[2]);
-                    hit.normal = transform_dir_4x4(&world_transform, hit.normal[0], hit.normal[1], hit.normal[2]);
+                    hit.position = transform_point_4x4(
+                        &world_transform,
+                        hit.position[0],
+                        hit.position[1],
+                        hit.position[2],
+                    );
+                    hit.normal = transform_dir_4x4(
+                        &world_transform,
+                        hit.normal[0],
+                        hit.normal[1],
+                        hit.normal[2],
+                    );
                     for v in &mut hit.vertices {
                         *v = transform_point_4x4(&world_transform, v[0], v[1], v[2]);
                     }
                     let dx = hit.position[0] - ray.origin[0];
                     let dy = hit.position[1] - ray.origin[1];
                     let dz = hit.position[2] - ray.origin[2];
-                    hit.distance = (dx*dx + dy*dy + dz*dz).sqrt();
+                    hit.distance = (dx * dx + dy * dy + dz * dz).sqrt();
                     if hit.distance <= max_dist {
                         all_hits.push(hit);
                     }
@@ -297,17 +407,40 @@ pub fn raycast_scene_multi(
         // Test raw meshes
         for (mi, mesh) in scene.raw_meshes.iter().enumerate() {
             if mesh.name == *resource {
-                let tc = if !mesh.tex_coords.is_empty() { Some(mesh.tex_coords.as_slice()) } else { None };
-                if let Some(mut hit) = raycast_mesh(&local_ray, &mesh.positions, &mesh.normals, &mesh.faces, tc, &node.name, (mi + 1) as u32, max_dist) {
-                    hit.position = transform_point_4x4(&world_transform, hit.position[0], hit.position[1], hit.position[2]);
-                    hit.normal = transform_dir_4x4(&world_transform, hit.normal[0], hit.normal[1], hit.normal[2]);
+                let tc = if !mesh.tex_coords.is_empty() {
+                    Some(mesh.tex_coords.as_slice())
+                } else {
+                    None
+                };
+                if let Some(mut hit) = raycast_mesh(
+                    &local_ray,
+                    &mesh.positions,
+                    &mesh.normals,
+                    &mesh.faces,
+                    tc,
+                    &node.name,
+                    (mi + 1) as u32,
+                    max_dist,
+                ) {
+                    hit.position = transform_point_4x4(
+                        &world_transform,
+                        hit.position[0],
+                        hit.position[1],
+                        hit.position[2],
+                    );
+                    hit.normal = transform_dir_4x4(
+                        &world_transform,
+                        hit.normal[0],
+                        hit.normal[1],
+                        hit.normal[2],
+                    );
                     for v in &mut hit.vertices {
                         *v = transform_point_4x4(&world_transform, v[0], v[1], v[2]);
                     }
                     let dx = hit.position[0] - ray.origin[0];
                     let dy = hit.position[1] - ray.origin[1];
                     let dz = hit.position[2] - ray.origin[2];
-                    hit.distance = (dx*dx + dy*dy + dz*dz).sqrt();
+                    hit.distance = (dx * dx + dy * dy + dz * dz).sqrt();
                     if hit.distance <= max_dist {
                         all_hits.push(hit);
                     }
@@ -317,7 +450,11 @@ pub fn raycast_scene_multi(
     }
 
     // Sort by distance, take max_hits
-    all_hits.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+    all_hits.sort_by(|a, b| {
+        a.distance
+            .partial_cmp(&b.distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     all_hits.truncate(max_hits);
     all_hits
 }
@@ -356,8 +493,12 @@ fn raycast_mesh(
         let i0 = face[0] as usize;
         let i1 = face[1] as usize;
         let i2 = face[2] as usize;
-        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() { continue; }
-        if let Some((t, u, v)) = ray_triangle_intersect(ray, &positions[i0], &positions[i1], &positions[i2]) {
+        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+            continue;
+        }
+        if let Some((t, u, v)) =
+            ray_triangle_intersect(ray, &positions[i0], &positions[i1], &positions[i2])
+        {
             // No backface culling - Director's modelsUnderRay tests both sides
             let edge1 = sub(positions[i1], positions[i0]);
             let edge2 = sub(positions[i2], positions[i0]);
@@ -422,11 +563,7 @@ fn ray_triangle_intersect(
     }
 
     let t = f * dot(edge2, q);
-    if t > 1e-6 {
-        Some((t, u, v))
-    } else {
-        None
-    }
+    if t > 1e-6 { Some((t, u, v)) } else { None }
 }
 
 // ─── AABB BVH for accelerated ray casting ───
@@ -446,15 +583,23 @@ impl Aabb {
 
     fn expand_point(&mut self, p: &[f32; 3]) {
         for i in 0..3 {
-            if p[i] < self.min[i] { self.min[i] = p[i]; }
-            if p[i] > self.max[i] { self.max[i] = p[i]; }
+            if p[i] < self.min[i] {
+                self.min[i] = p[i];
+            }
+            if p[i] > self.max[i] {
+                self.max[i] = p[i];
+            }
         }
     }
 
     fn merge(&mut self, other: &Aabb) {
         for i in 0..3 {
-            if other.min[i] < self.min[i] { self.min[i] = other.min[i]; }
-            if other.max[i] > self.max[i] { self.max[i] = other.max[i]; }
+            if other.min[i] < self.min[i] {
+                self.min[i] = other.min[i];
+            }
+            if other.max[i] > self.max[i] {
+                self.max[i] = other.max[i];
+            }
         }
     }
 
@@ -462,7 +607,13 @@ impl Aabb {
         let dx = self.max[0] - self.min[0];
         let dy = self.max[1] - self.min[1];
         let dz = self.max[2] - self.min[2];
-        if dx >= dy && dx >= dz { 0 } else if dy >= dz { 1 } else { 2 }
+        if dx >= dy && dx >= dz {
+            0
+        } else if dy >= dz {
+            1
+        } else {
+            2
+        }
     }
 
     fn centroid(&self) -> [f32; 3] {
@@ -478,21 +629,39 @@ impl Aabb {
         let mut tmin = 0.0f32;
         let mut tmax = max_dist;
         for i in 0..3 {
-            let inv_d = if ray.direction[i].abs() > 1e-12 { 1.0 / ray.direction[i] } else { 1e12 };
+            let inv_d = if ray.direction[i].abs() > 1e-12 {
+                1.0 / ray.direction[i]
+            } else {
+                1e12
+            };
             let mut t0 = (self.min[i] - ray.origin[i]) * inv_d;
             let mut t1 = (self.max[i] - ray.origin[i]) * inv_d;
-            if inv_d < 0.0 { std::mem::swap(&mut t0, &mut t1); }
-            if t0 > tmin { tmin = t0; }
-            if t1 < tmax { tmax = t1; }
-            if tmax < tmin { return false; }
+            if inv_d < 0.0 {
+                std::mem::swap(&mut t0, &mut t1);
+            }
+            if t0 > tmin {
+                tmin = t0;
+            }
+            if t1 < tmax {
+                tmax = t1;
+            }
+            if tmax < tmin {
+                return false;
+            }
         }
         true
     }
 }
 
 enum BvhNode {
-    Leaf { face_indices: Vec<usize> },
-    Inner { bounds: Aabb, left: Box<BvhNode>, right: Box<BvhNode> },
+    Leaf {
+        face_indices: Vec<usize>,
+    },
+    Inner {
+        bounds: Aabb,
+        left: Box<BvhNode>,
+        right: Box<BvhNode>,
+    },
 }
 
 /// Build a BVH from face centroids using top-down median split.
@@ -500,7 +669,9 @@ fn build_bvh(positions: &[[f32; 3]], faces: &[[u32; 3]], indices: &mut [usize]) 
     const MAX_LEAF_SIZE: usize = 8;
 
     if indices.len() <= MAX_LEAF_SIZE {
-        return BvhNode::Leaf { face_indices: indices.to_vec() };
+        return BvhNode::Leaf {
+            face_indices: indices.to_vec(),
+        };
     }
 
     // Compute bounds of all face centroids
@@ -520,7 +691,9 @@ fn build_bvh(positions: &[[f32; 3]], faces: &[[u32; 3]], indices: &mut [usize]) 
     indices.sort_by(|&a, &b| {
         let ca = face_centroid(positions, &faces[a]);
         let cb = face_centroid(positions, &faces[b]);
-        ca[axis].partial_cmp(&cb[axis]).unwrap_or(std::cmp::Ordering::Equal)
+        ca[axis]
+            .partial_cmp(&cb[axis])
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     let mid = indices.len() / 2;
@@ -569,12 +742,18 @@ fn raycast_bvh(
                 let i0 = face[0] as usize;
                 let i1 = face[1] as usize;
                 let i2 = face[2] as usize;
-                if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() { continue; }
-                if let Some((t, u, v)) = ray_triangle_intersect(ray, &positions[i0], &positions[i1], &positions[i2]) {
+                if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+                    continue;
+                }
+                if let Some((t, u, v)) =
+                    ray_triangle_intersect(ray, &positions[i0], &positions[i1], &positions[i2])
+                {
                     let edge1 = sub(positions[i1], positions[i0]);
                     let edge2 = sub(positions[i2], positions[i0]);
                     let normal = normalize(cross(edge1, edge2));
-                    if dot(normal, ray.direction) > 0.0 { continue; }
+                    if dot(normal, ray.direction) > 0.0 {
+                        continue;
+                    }
 
                     let cdist = closest.as_ref().map(|c| c.distance).unwrap_or(max_dist);
                     if t > 0.0 && t < cdist {
@@ -599,16 +778,30 @@ fn raycast_bvh(
             }
             closest
         }
-        BvhNode::Inner { bounds, left, right } => {
+        BvhNode::Inner {
+            bounds,
+            left,
+            right,
+        } => {
             if !bounds.ray_intersect(ray, max_dist) {
                 return None;
             }
-            let hit_left = raycast_bvh(ray, left, positions, faces, tex_coords, model_name, mesh_id, max_dist);
+            let hit_left = raycast_bvh(
+                ray, left, positions, faces, tex_coords, model_name, mesh_id, max_dist,
+            );
             let new_max = hit_left.as_ref().map(|h| h.distance).unwrap_or(max_dist);
-            let hit_right = raycast_bvh(ray, right, positions, faces, tex_coords, model_name, mesh_id, new_max);
+            let hit_right = raycast_bvh(
+                ray, right, positions, faces, tex_coords, model_name, mesh_id, new_max,
+            );
 
             match (hit_left, hit_right) {
-                (Some(l), Some(r)) => if l.distance <= r.distance { Some(l) } else { Some(r) },
+                (Some(l), Some(r)) => {
+                    if l.distance <= r.distance {
+                        Some(l)
+                    } else {
+                        Some(r)
+                    }
+                }
                 (Some(h), None) | (None, Some(h)) => Some(h),
                 (None, None) => None,
             }
@@ -618,7 +811,14 @@ fn raycast_bvh(
 
 /// Interpolate UV coordinates using barycentric coords (u, v) from ray-triangle intersection.
 /// The barycentric weights are: w0 = 1-u-v, w1 = u, w2 = v.
-fn interpolate_uv(tex_coords: Option<&[[f32; 2]]>, i0: usize, i1: usize, i2: usize, u: f32, v: f32) -> [f32; 2] {
+fn interpolate_uv(
+    tex_coords: Option<&[[f32; 2]]>,
+    i0: usize,
+    i1: usize,
+    i2: usize,
+    u: f32,
+    v: f32,
+) -> [f32; 2] {
     if let Some(tc) = tex_coords {
         if i0 < tc.len() && i1 < tc.len() && i2 < tc.len() {
             let w0 = 1.0 - u - v;
@@ -651,7 +851,11 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 
 fn normalize(v: [f32; 3]) -> [f32; 3] {
     let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if len > 1e-8 { [v[0] / len, v[1] / len, v[2] / len] } else { [0.0, 0.0, 1.0] }
+    if len > 1e-8 {
+        [v[0] / len, v[1] / len, v[2] / len]
+    } else {
+        [0.0, 0.0, 1.0]
+    }
 }
 
 fn transform_point_4x4(m: &[f32; 16], x: f32, y: f32, z: f32) -> [f32; 3] {
@@ -671,11 +875,10 @@ fn multiply_4x4(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut r = [0.0f32; 16];
     for col in 0..4 {
         for row in 0..4 {
-            r[col * 4 + row] =
-                a[0 * 4 + row] * b[col * 4 + 0] +
-                a[1 * 4 + row] * b[col * 4 + 1] +
-                a[2 * 4 + row] * b[col * 4 + 2] +
-                a[3 * 4 + row] * b[col * 4 + 3];
+            r[col * 4 + row] = a[0 * 4 + row] * b[col * 4 + 0]
+                + a[1 * 4 + row] * b[col * 4 + 1]
+                + a[2 * 4 + row] * b[col * 4 + 2]
+                + a[3 * 4 + row] * b[col * 4 + 3];
         }
     }
     r
@@ -684,30 +887,75 @@ fn multiply_4x4(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
 fn invert_4x4(m: &[f32; 16]) -> [f32; 16] {
     let mut inv = [0.0f32; 16];
 
-    inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
-    inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
-    inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
-    inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
-    inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
-    inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
-    inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
-    inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
-    inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
-    inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
-    inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
-    inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
-    inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
-    inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
-    inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
-    inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
+    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15]
+        + m[9] * m[7] * m[14]
+        + m[13] * m[6] * m[11]
+        - m[13] * m[7] * m[10];
+    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15]
+        - m[8] * m[7] * m[14]
+        - m[12] * m[6] * m[11]
+        + m[12] * m[7] * m[10];
+    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15]
+        + m[8] * m[7] * m[13]
+        + m[12] * m[5] * m[11]
+        - m[12] * m[7] * m[9];
+    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14]
+        - m[8] * m[6] * m[13]
+        - m[12] * m[5] * m[10]
+        + m[12] * m[6] * m[9];
+    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15]
+        - m[9] * m[3] * m[14]
+        - m[13] * m[2] * m[11]
+        + m[13] * m[3] * m[10];
+    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15]
+        + m[8] * m[3] * m[14]
+        + m[12] * m[2] * m[11]
+        - m[12] * m[3] * m[10];
+    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15]
+        - m[8] * m[3] * m[13]
+        - m[12] * m[1] * m[11]
+        + m[12] * m[3] * m[9];
+    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14]
+        + m[8] * m[2] * m[13]
+        + m[12] * m[1] * m[10]
+        - m[12] * m[2] * m[9];
+    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15]
+        + m[5] * m[3] * m[14]
+        + m[13] * m[2] * m[7]
+        - m[13] * m[3] * m[6];
+    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15]
+        - m[4] * m[3] * m[14]
+        - m[12] * m[2] * m[7]
+        + m[12] * m[3] * m[6];
+    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15]
+        + m[4] * m[3] * m[13]
+        + m[12] * m[1] * m[7]
+        - m[12] * m[3] * m[5];
+    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14]
+        - m[4] * m[2] * m[13]
+        - m[12] * m[1] * m[6]
+        + m[12] * m[2] * m[5];
+    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11]
+        - m[5] * m[3] * m[10]
+        - m[9] * m[2] * m[7]
+        + m[9] * m[3] * m[6];
+    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11]
+        + m[4] * m[3] * m[10]
+        + m[8] * m[2] * m[7]
+        - m[8] * m[3] * m[6];
+    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11]
+        - m[4] * m[3] * m[9]
+        - m[8] * m[1] * m[7]
+        + m[8] * m[3] * m[5];
+    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10]
+        + m[4] * m[2] * m[9]
+        + m[8] * m[1] * m[6]
+        - m[8] * m[2] * m[5];
 
-    let det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+    let det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
     if det.abs() < 1e-10 {
         return [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
     }
 

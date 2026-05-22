@@ -1,2 +1,2 @@
-mod rw_flag;
 mod figure8;
+mod rw_flag;

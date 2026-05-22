@@ -6,18 +6,14 @@
 use std::collections::HashMap;
 use wasm_bindgen::JsValue;
 use web_sys::{
-    WebGl2RenderingContext, WebGlFramebuffer, WebGlProgram, WebGlTexture,
-    WebGlUniformLocation,
+    WebGl2RenderingContext, WebGlFramebuffer, WebGlProgram, WebGlTexture, WebGlUniformLocation,
 };
 
 use log::debug;
 
 use super::context::WebGL2Context;
 use super::mesh3d::Mesh3dBuffers;
-use crate::{
-    director::chunks::w3d::types::*,
-    console_warn,
-};
+use crate::{console_warn, director::chunks::w3d::types::*};
 
 const SCENE3D_LOG: bool = false;
 
@@ -111,15 +107,15 @@ struct Shader3d {
 /// Result of resolving texture layers for a shader
 struct TextureLayerBinding<'a> {
     tex: &'a WebGlTexture,
-    blend: i32,       // 1=multiply, 2=add, 3=replace, 4=decal
+    blend: i32, // 1=multiply, 2=add, 3=replace, 4=decal
     intensity: f32,
-    wrap: (u8, u8),   // (repeat_s, repeat_t): 0=clamp, 1=repeat
+    wrap: (u8, u8), // (repeat_s, repeat_t): 0=clamp, 1=repeat
 }
 
 struct TextureBindResult<'a> {
     diffuse: Option<&'a WebGlTexture>,
     diffuse_tex_transform: [f32; 16], // texture coordinate transform for diffuse layer
-    diffuse_wrap: (u8, u8), // (repeat_s, repeat_t) for diffuse: 0=clamp, 1=repeat
+    diffuse_wrap: (u8, u8),           // (repeat_s, repeat_t) for diffuse: 0=clamp, 1=repeat
     extra_layers: Vec<TextureLayerBinding<'a>>, // up to 2 extra layers (layer1 + layer2)
     specular: Option<&'a WebGlTexture>,
 }
@@ -204,25 +200,49 @@ pub struct Scene3dRenderer {
 
 /// Director's default checkerboard texture: 2×2 pink-red / white pattern.
 const CHECKER_PIXELS: [u8; 16] = [
-    255, 255, 255, 255,   204, 102, 102, 255,  // row 0: white, pink-red
-    204, 102, 102, 255,   255, 255, 255, 255,  // row 1: pink-red, white
+    255, 255, 255, 255, 204, 102, 102, 255, // row 0: white, pink-red
+    204, 102, 102, 255, 255, 255, 255, 255, // row 1: pink-red, white
 ];
 
 impl Scene3dRenderer {
     /// Create the default checker texture if it doesn't exist yet.
     fn ensure_checker_texture(&mut self, gl: &WebGl2RenderingContext) {
-        if self.default_checker_texture.is_some() { return; }
+        if self.default_checker_texture.is_some() {
+            return;
+        }
         if let Some(tex) = gl.create_texture() {
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&tex));
             let _ = gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-                WebGl2RenderingContext::TEXTURE_2D, 0,
-                WebGl2RenderingContext::RGBA as i32, 2, 2, 0,
-                WebGl2RenderingContext::RGBA, WebGl2RenderingContext::UNSIGNED_BYTE, Some(&CHECKER_PIXELS),
+                WebGl2RenderingContext::TEXTURE_2D,
+                0,
+                WebGl2RenderingContext::RGBA as i32,
+                2,
+                2,
+                0,
+                WebGl2RenderingContext::RGBA,
+                WebGl2RenderingContext::UNSIGNED_BYTE,
+                Some(&CHECKER_PIXELS),
             );
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::REPEAT as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::REPEAT as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::NEAREST as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::NEAREST as i32);
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_S,
+                WebGl2RenderingContext::REPEAT as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_T,
+                WebGl2RenderingContext::REPEAT as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::NEAREST as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                WebGl2RenderingContext::NEAREST as i32,
+            );
             self.default_checker_texture = Some(tex);
         }
     }
@@ -754,25 +774,42 @@ void main() {
 
         // Extract camera right/up from view matrix (inverse of view = camera world)
         // View matrix columns 0,1 in row-major = camera right, up in world space
-        gl.uniform3f(shader.u_camera_right.as_ref(), view_matrix[0], view_matrix[4], view_matrix[8]);
-        gl.uniform3f(shader.u_camera_up.as_ref(), view_matrix[1], view_matrix[5], view_matrix[9]);
+        gl.uniform3f(
+            shader.u_camera_right.as_ref(),
+            view_matrix[0],
+            view_matrix[4],
+            view_matrix[8],
+        );
+        gl.uniform3f(
+            shader.u_camera_up.as_ref(),
+            view_matrix[1],
+            view_matrix[5],
+            view_matrix[9],
+        );
 
         // Enable additive blending for particles
-        gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE);
+        gl.blend_func(
+            WebGl2RenderingContext::SRC_ALPHA,
+            WebGl2RenderingContext::ONE,
+        );
         gl.disable(WebGl2RenderingContext::CULL_FACE);
         gl.depth_mask(false); // Don't write to depth buffer
 
         for (_name, ps) in &rs.particles {
-            if ps.positions.is_empty() { continue; }
+            if ps.positions.is_empty() {
+                continue;
+            }
 
             gl.uniform1f(shader.u_size.as_ref(), ps.particle_size);
             gl.uniform1f(shader.u_lifetime.as_ref(), ps.lifetime);
             gl.uniform3f(shader.u_color_start.as_ref(), 1.0, 1.0, 0.5); // yellow-ish
-            gl.uniform3f(shader.u_color_end.as_ref(), 1.0, 0.2, 0.0);   // red-ish
+            gl.uniform3f(shader.u_color_end.as_ref(), 1.0, 0.2, 0.0); // red-ish
 
             // Build billboard quad vertex data: 4 verts per particle (center + age + corner)
             let alive_count = ps.alive.iter().filter(|&&a| a).count();
-            if alive_count == 0 { continue; }
+            if alive_count == 0 {
+                continue;
+            }
 
             let mut vertices: Vec<f32> = Vec::with_capacity(alive_count * 4 * 6); // 4 verts * 6 floats
             let mut indices: Vec<u32> = Vec::with_capacity(alive_count * 6);
@@ -781,14 +818,16 @@ void main() {
             let corners: [[f32; 2]; 4] = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
             for i in 0..ps.max_particles.min(ps.positions.len()) {
-                if !ps.alive[i] { continue; }
+                if !ps.alive[i] {
+                    continue;
+                }
                 let pos = ps.positions[i];
                 let age = ps.ages[i];
 
                 for corner in &corners {
-                    vertices.extend_from_slice(&pos);    // center (3 floats)
-                    vertices.push(age);                   // age (1 float)
-                    vertices.extend_from_slice(corner);   // corner (2 floats)
+                    vertices.extend_from_slice(&pos); // center (3 floats)
+                    vertices.push(age); // age (1 float)
+                    vertices.extend_from_slice(corner); // corner (2 floats)
                 }
 
                 indices.push(vert_idx);
@@ -800,7 +839,9 @@ void main() {
                 vert_idx += 4;
             }
 
-            if indices.is_empty() { continue; }
+            if indices.is_empty() {
+                continue;
+            }
 
             // Upload to temporary buffers
             let vao = context.create_vertex_array()?;
@@ -811,7 +852,8 @@ void main() {
             unsafe {
                 let array = js_sys::Float32Array::view(&vertices);
                 gl.buffer_data_with_array_buffer_view(
-                    WebGl2RenderingContext::ARRAY_BUFFER, &array,
+                    WebGl2RenderingContext::ARRAY_BUFFER,
+                    &array,
                     WebGl2RenderingContext::DYNAMIC_DRAW,
                 );
             }
@@ -819,20 +861,42 @@ void main() {
             let stride = 6 * 4; // 6 floats * 4 bytes
             // a_center (location 0) - vec3
             gl.enable_vertex_attrib_array(0);
-            gl.vertex_attrib_pointer_with_i32(0, 3, WebGl2RenderingContext::FLOAT, false, stride, 0);
+            gl.vertex_attrib_pointer_with_i32(
+                0,
+                3,
+                WebGl2RenderingContext::FLOAT,
+                false,
+                stride,
+                0,
+            );
             // a_age (location 1) - float
             gl.enable_vertex_attrib_array(1);
-            gl.vertex_attrib_pointer_with_i32(1, 1, WebGl2RenderingContext::FLOAT, false, stride, 12);
+            gl.vertex_attrib_pointer_with_i32(
+                1,
+                1,
+                WebGl2RenderingContext::FLOAT,
+                false,
+                stride,
+                12,
+            );
             // a_corner (location 2) - vec2
             gl.enable_vertex_attrib_array(2);
-            gl.vertex_attrib_pointer_with_i32(2, 2, WebGl2RenderingContext::FLOAT, false, stride, 16);
+            gl.vertex_attrib_pointer_with_i32(
+                2,
+                2,
+                WebGl2RenderingContext::FLOAT,
+                false,
+                stride,
+                16,
+            );
 
             let ibo = context.create_buffer()?;
             gl.bind_buffer(WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER, Some(&ibo));
             unsafe {
                 let array = js_sys::Uint32Array::view(&indices);
                 gl.buffer_data_with_array_buffer_view(
-                    WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER, &array,
+                    WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
+                    &array,
                     WebGl2RenderingContext::DYNAMIC_DRAW,
                 );
             }
@@ -853,13 +917,21 @@ void main() {
         // Restore state
         gl.depth_mask(true);
         gl.enable(WebGl2RenderingContext::CULL_FACE);
-        gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA);
+        gl.blend_func(
+            WebGl2RenderingContext::SRC_ALPHA,
+            WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA,
+        );
 
         Ok(())
     }
 
     /// Ensure FBO exists at the right size
-    fn ensure_fbo(&mut self, context: &WebGL2Context, width: u32, height: u32) -> Result<(), JsValue> {
+    fn ensure_fbo(
+        &mut self,
+        context: &WebGL2Context,
+        width: u32,
+        height: u32,
+    ) -> Result<(), JsValue> {
         if self.fbo.is_some() && self.fbo_width == width && self.fbo_height == height {
             return Ok(());
         }
@@ -880,13 +952,30 @@ void main() {
             WebGl2RenderingContext::UNSIGNED_BYTE,
             None,
         )?;
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR as i32);
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_S,
+            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_T,
+            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+        );
 
         // Create depth renderbuffer
-        let depth_rb = gl.create_renderbuffer()
+        let depth_rb = gl
+            .create_renderbuffer()
             .ok_or_else(|| JsValue::from_str("Failed to create renderbuffer"))?;
         gl.bind_renderbuffer(WebGl2RenderingContext::RENDERBUFFER, Some(&depth_rb));
         gl.renderbuffer_storage(
@@ -934,7 +1023,12 @@ void main() {
         key: (i32, i32),
         scene: &W3dScene,
     ) -> Result<(), JsValue> {
-        let current_version = (scene.nodes.len(), scene.clod_meshes.len() + scene.raw_meshes.len(), scene.texture_images.len(), scene.shaders.len());
+        let current_version = (
+            scene.nodes.len(),
+            scene.clod_meshes.len() + scene.raw_meshes.len(),
+            scene.texture_images.len(),
+            scene.shaders.len(),
+        );
         if let Some(existing) = self.member_data.get(&key) {
             if existing.scene_version == current_version
                 && existing.mesh_content_version == scene.mesh_content_version
@@ -947,9 +1041,14 @@ void main() {
             // Scene changed — remove stale data and rebuild
             log(&format!(
                 "[W3D-GPU] Rebuilding GPU data for {:?}: version {:?} → {:?} (nodes={}, clod={}, raw={}, tex={}, shaders={})",
-                key, existing.scene_version, current_version,
-                scene.nodes.len(), scene.clod_meshes.len(), scene.raw_meshes.len(),
-                scene.texture_images.len(), scene.shaders.len(),
+                key,
+                existing.scene_version,
+                current_version,
+                scene.nodes.len(),
+                scene.clod_meshes.len(),
+                scene.raw_meshes.len(),
+                scene.texture_images.len(),
+                scene.shaders.len(),
             ));
             self.logged_members.remove(&key);
         }
@@ -959,12 +1058,18 @@ void main() {
         let mut all_meshes = Vec::new();
 
         // Collect resource names used by LIGHT nodes (to skip their geometry)
-        let light_resources: std::collections::HashSet<&str> = scene.nodes.iter()
+        let light_resources: std::collections::HashSet<&str> = scene
+            .nodes
+            .iter()
             .filter(|n| n.node_type == W3dNodeType::Light)
             .flat_map(|n| {
                 let mut names = vec![];
-                if !n.model_resource_name.is_empty() { names.push(n.model_resource_name.as_str()); }
-                if !n.resource_name.is_empty() && n.resource_name != "." { names.push(n.resource_name.as_str()); }
+                if !n.model_resource_name.is_empty() {
+                    names.push(n.model_resource_name.as_str());
+                }
+                if !n.resource_name.is_empty() && n.resource_name != "." {
+                    names.push(n.resource_name.as_str());
+                }
                 names
             })
             .collect();
@@ -980,13 +1085,18 @@ void main() {
                     continue;
                 }
                 // Use decoded texcoords, or generate UVs based on resource UV generator mode
-                let uv_gen_mode = scene.model_resources.get(name.as_str())
+                let uv_gen_mode = scene
+                    .model_resources
+                    .get(name.as_str())
                     .and_then(|r| r.uv_gen_mode);
                 let tc_data;
                 let tc = if !mesh.tex_coords.is_empty() && !mesh.tex_coords[0].is_empty() {
                     let tcs = &mesh.tex_coords[0];
                     // Check if all texcoords are identical (needs UV generation)
-                    let all_same = tcs.len() > 1 && tcs.iter().all(|t| (t[0] - tcs[0][0]).abs() < 0.001 && (t[1] - tcs[0][1]).abs() < 0.001);
+                    let all_same = tcs.len() > 1
+                        && tcs.iter().all(|t| {
+                            (t[0] - tcs[0][0]).abs() < 0.001 && (t[1] - tcs[0][1]).abs() < 0.001
+                        });
                     if all_same && !mesh.positions.is_empty() {
                         tc_data = generate_uvs_by_mode(&mesh.positions, uv_gen_mode);
                         Some(tc_data.as_slice())
@@ -1007,33 +1117,55 @@ void main() {
                 };
                 // Pack bone data (variable-length per-vertex → fixed vec4)
                 let (bone_idx_packed, bone_wgt_packed);
-                let (bi_opt, bw_opt) = if !mesh.bone_indices.is_empty() && !mesh.bone_weights.is_empty()
+                let (bi_opt, bw_opt) = if !mesh.bone_indices.is_empty()
+                    && !mesh.bone_weights.is_empty()
                     && mesh.bone_indices.len() == mesh.positions.len()
                 {
                     bone_idx_packed = pack_bone_vec4_f32(&mesh.bone_indices);
                     bone_wgt_packed = pack_bone_weights_vec4(&mesh.bone_weights);
                     // Diagnostic: log bone data stats for first mesh with bones
                     {
-                        use std::sync::Mutex; use std::collections::HashSet;
+                        use std::collections::HashSet;
+                        use std::sync::Mutex;
                         static LOGGED_BD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
-                        if let Ok(mut g) = LOGGED_BD.lock() { let set = g.get_or_insert_with(HashSet::new);
-                        if set.insert(name.clone()) {
-                            let max_idx = bone_idx_packed.iter().flat_map(|v| v.iter()).cloned().fold(0.0f32, f32::max);
-                            let wgt_sums: Vec<f32> = bone_wgt_packed.iter().map(|w| w.iter().sum::<f32>()).collect();
-                            let min_sum = wgt_sums.iter().cloned().fold(f32::MAX, f32::min);
-                            let max_sum = wgt_sums.iter().cloned().fold(0.0f32, f32::max);
-                            let zero_wgt = wgt_sums.iter().filter(|s| **s < 0.001).count();
-                            let raw_lens: Vec<usize> = mesh.bone_indices.iter().take(3).map(|v| v.len()).collect();
-                            debug!(
-                                "[W3D-BONEDATA] mesh=\"{}\" verts={} bone_idx_count={} bone_wgt_count={} max_bone_idx={:.0} wgt_range=[{:.3},{:.3}] zero_wgt_verts={} raw_per_vert_lens={:?} first3_idx={:?} first3_wgt={:?}",
-                                name, mesh.positions.len(), mesh.bone_indices.len(), mesh.bone_weights.len(),
-                                max_idx, min_sum, max_sum, zero_wgt, raw_lens,
-                                &bone_idx_packed[..3.min(bone_idx_packed.len())],
-                                &bone_wgt_packed[..3.min(bone_wgt_packed.len())],
-                            );
-                        }}
+                        if let Ok(mut g) = LOGGED_BD.lock() {
+                            let set = g.get_or_insert_with(HashSet::new);
+                            if set.insert(name.clone()) {
+                                let max_idx = bone_idx_packed
+                                    .iter()
+                                    .flat_map(|v| v.iter())
+                                    .cloned()
+                                    .fold(0.0f32, f32::max);
+                                let wgt_sums: Vec<f32> = bone_wgt_packed
+                                    .iter()
+                                    .map(|w| w.iter().sum::<f32>())
+                                    .collect();
+                                let min_sum = wgt_sums.iter().cloned().fold(f32::MAX, f32::min);
+                                let max_sum = wgt_sums.iter().cloned().fold(0.0f32, f32::max);
+                                let zero_wgt = wgt_sums.iter().filter(|s| **s < 0.001).count();
+                                let raw_lens: Vec<usize> =
+                                    mesh.bone_indices.iter().take(3).map(|v| v.len()).collect();
+                                debug!(
+                                    "[W3D-BONEDATA] mesh=\"{}\" verts={} bone_idx_count={} bone_wgt_count={} max_bone_idx={:.0} wgt_range=[{:.3},{:.3}] zero_wgt_verts={} raw_per_vert_lens={:?} first3_idx={:?} first3_wgt={:?}",
+                                    name,
+                                    mesh.positions.len(),
+                                    mesh.bone_indices.len(),
+                                    mesh.bone_weights.len(),
+                                    max_idx,
+                                    min_sum,
+                                    max_sum,
+                                    zero_wgt,
+                                    raw_lens,
+                                    &bone_idx_packed[..3.min(bone_idx_packed.len())],
+                                    &bone_wgt_packed[..3.min(bone_wgt_packed.len())],
+                                );
+                            }
+                        }
                     }
-                    (Some(bone_idx_packed.as_slice()), Some(bone_wgt_packed.as_slice()))
+                    (
+                        Some(bone_idx_packed.as_slice()),
+                        Some(bone_wgt_packed.as_slice()),
+                    )
                 } else {
                     (None, None)
                 };
@@ -1093,7 +1225,8 @@ void main() {
                 vc_opt,
             )?;
             // Add to mesh_groups keyed by name so draw_model_node can look up by resource_name
-            mesh_groups.entry(mesh.name.clone())
+            mesh_groups
+                .entry(mesh.name.clone())
                 .or_insert_with(Vec::new)
                 .push(buffers);
         }
@@ -1104,7 +1237,9 @@ void main() {
         let mut texture_sizes: HashMap<String, (u32, u32)> = HashMap::new();
         let mut alpha_textures = std::collections::HashSet::new();
         for (tex_name, image_data) in &scene.texture_images {
-            if let Some((tex, w, h, has_alpha)) = self.decode_and_upload_texture(context, image_data) {
+            if let Some((tex, w, h, has_alpha)) =
+                self.decode_and_upload_texture(context, image_data)
+            {
                 let lower = tex_name.to_lowercase();
                 texture_sizes.insert(lower.clone(), (w, h));
                 if has_alpha {
@@ -1117,7 +1252,8 @@ void main() {
         // Pre-compute inverse bind matrices for all skeletons (cached for skinning)
         let mut inverse_bind_cache = HashMap::new();
         for skeleton in &scene.skeletons {
-            let inv_bind = crate::director::chunks::w3d::skeleton::build_inverse_bind_matrices(skeleton);
+            let inv_bind =
+                crate::director::chunks::w3d::skeleton::build_inverse_bind_matrices(skeleton);
             inverse_bind_cache.insert(skeleton.name.clone(), inv_bind);
         }
 
@@ -1128,25 +1264,45 @@ void main() {
         for (tex_name, image_data) in &scene.texture_images {
             texture_versions.insert(tex_name.to_lowercase(), image_data.len() as u64);
         }
-        self.member_data.insert(key, MemberGpuData {
-            mesh_groups, all_meshes, textures, texture_sizes, cube_maps, inverse_bind_cache,
-            scene_version: current_version,
-            mesh_content_version: scene.mesh_content_version,
-            texture_versions,
-            texture_content_version: scene.texture_content_version,
-            alpha_textures,
-        });
+        self.member_data.insert(
+            key,
+            MemberGpuData {
+                mesh_groups,
+                all_meshes,
+                textures,
+                texture_sizes,
+                cube_maps,
+                inverse_bind_cache,
+                scene_version: current_version,
+                mesh_content_version: scene.mesh_content_version,
+                texture_versions,
+                texture_content_version: scene.texture_content_version,
+                alpha_textures,
+            },
+        );
         Ok(())
     }
 
     /// Decode JPEG/PNG image data and upload as WebGL texture (delegates to free function)
-    fn decode_and_upload_texture(&self, context: &WebGL2Context, data: &[u8]) -> Option<(WebGlTexture, u32, u32, bool)> {
+    fn decode_and_upload_texture(
+        &self,
+        context: &WebGL2Context,
+        data: &[u8],
+    ) -> Option<(WebGlTexture, u32, u32, bool)> {
         decode_and_upload_texture_impl(context, data)
     }
 
     /// Incrementally re-upload only changed/new textures to GPU
-    fn update_textures_incremental(&mut self, context: &WebGL2Context, key: (i32, i32), scene: &W3dScene) {
-        let gpu_data = match self.member_data.get_mut(&key) { Some(d) => d, None => return };
+    fn update_textures_incremental(
+        &mut self,
+        context: &WebGL2Context,
+        key: (i32, i32),
+        scene: &W3dScene,
+    ) {
+        let gpu_data = match self.member_data.get_mut(&key) {
+            Some(d) => d,
+            None => return,
+        };
 
         for (tex_name, image_data) in &scene.texture_images {
             let lower = tex_name.to_lowercase();
@@ -1156,7 +1312,9 @@ void main() {
                 Some(&old_len) => old_len != data_len,
             };
             if needs_upload {
-                if let Some((tex, w, h, has_alpha)) = decode_and_upload_texture_impl(context, image_data) {
+                if let Some((tex, w, h, has_alpha)) =
+                    decode_and_upload_texture_impl(context, image_data)
+                {
                     gpu_data.texture_sizes.insert(lower.clone(), (w, h));
                     if has_alpha {
                         gpu_data.alpha_textures.insert(lower.clone());
@@ -1170,12 +1328,17 @@ void main() {
         }
 
         // Remove GPU textures no longer in the scene
-        let scene_keys: std::collections::HashSet<String> = scene.texture_images.keys()
-            .map(|k| k.to_lowercase()).collect();
+        let scene_keys: std::collections::HashSet<String> = scene
+            .texture_images
+            .keys()
+            .map(|k| k.to_lowercase())
+            .collect();
         gpu_data.textures.retain(|k, _| scene_keys.contains(k));
         gpu_data.texture_sizes.retain(|k, _| scene_keys.contains(k));
         gpu_data.alpha_textures.retain(|k| scene_keys.contains(k));
-        gpu_data.texture_versions.retain(|k, _| scene_keys.contains(k));
+        gpu_data
+            .texture_versions
+            .retain(|k, _| scene_keys.contains(k));
 
         gpu_data.texture_content_version = scene.texture_content_version;
     }
@@ -1204,7 +1367,9 @@ void main() {
         gl.clear_color(0.2, 0.2, 0.2, 1.0);
         gl.enable(WebGl2RenderingContext::DEPTH_TEST);
         gl.depth_func(WebGl2RenderingContext::LEQUAL);
-        gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT);
+        gl.clear(
+            WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+        );
 
         gl.enable(WebGl2RenderingContext::CULL_FACE);
         gl.cull_face(WebGl2RenderingContext::BACK);
@@ -1212,11 +1377,21 @@ void main() {
         gl.use_program(Some(&shader.program));
 
         let (view_matrix, camera_pos) = self.build_view_matrix(scene, runtime_state);
-        let projection_matrix = self.build_projection_matrix(scene, width as f32 / height as f32, runtime_state);
+        let projection_matrix =
+            self.build_projection_matrix(scene, width as f32 / height as f32, runtime_state);
 
         gl.uniform_matrix4fv_with_f32_array(shader.u_view.as_ref(), false, &view_matrix);
-        gl.uniform_matrix4fv_with_f32_array(shader.u_projection.as_ref(), false, &projection_matrix);
-        gl.uniform3f(shader.u_camera_pos.as_ref(), camera_pos[0], camera_pos[1], camera_pos[2]);
+        gl.uniform_matrix4fv_with_f32_array(
+            shader.u_projection.as_ref(),
+            false,
+            &projection_matrix,
+        );
+        gl.uniform3f(
+            shader.u_camera_pos.as_ref(),
+            camera_pos[0],
+            camera_pos[1],
+            camera_pos[2],
+        );
 
         self.setup_lights(gl, shader, scene, &camera_pos, runtime_state);
         gl.uniform1i(shader.u_diffuse_tex.as_ref(), 0);
@@ -1226,7 +1401,9 @@ void main() {
 
         // Draw all meshes with proper material/texture binding
         if let Some(gpu_data) = self.member_data.get(&member_key) {
-            let identity = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+            let identity = [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ];
             gl.uniform_matrix4fv_with_f32_array(shader.u_model.as_ref(), false, &identity);
 
             // Try to find and bind material + texture from scene shaders
@@ -1238,7 +1415,9 @@ void main() {
             }
 
             for w3d_shader in &scene.shaders {
-                if tex_bound { break; }
+                if tex_bound {
+                    break;
+                }
                 for layer in &w3d_shader.texture_layers {
                     if !layer.name.is_empty() {
                         if let Some(tex) = gpu_data.textures.get(&layer.name.to_lowercase()) {
@@ -1293,7 +1472,15 @@ void main() {
         height: u32,
         runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>,
     ) -> Result<Option<&WebGlTexture>, JsValue> {
-        self.render_scene_with_state_ex(context, member_key, scene, width, height, runtime_state, true)
+        self.render_scene_with_state_ex(
+            context,
+            member_key,
+            scene,
+            width,
+            height,
+            runtime_state,
+            true,
+        )
     }
 
     /// Render with optional clearing control (for multi-camera setups)
@@ -1317,18 +1504,23 @@ void main() {
             for (resource_name, mesh_group) in gpu_data.mesh_groups.iter_mut() {
                 if let Some(clod_meshes) = scene.clod_meshes.get(resource_name) {
                     for (mesh_idx, mesh_buf) in mesh_group.iter_mut().enumerate() {
-                        if mesh_buf.meshdeform_uv_synced { continue; }
+                        if mesh_buf.meshdeform_uv_synced {
+                            continue;
+                        }
                         if let Some(mesh) = clod_meshes.get(mesh_idx) {
                             if mesh.tex_coords.len() >= 2 && !mesh.tex_coords[1].is_empty() {
                                 mesh_buf.update_texcoord2(context.gl(), &mesh.tex_coords[1]);
                                 mesh_buf.meshdeform_uv_synced = true;
                                 // Log UV2 sync for MAP and Main models
-                                if resource_name.contains("MAP") || resource_name.starts_with("map")
+                                if resource_name.contains("MAP")
+                                    || resource_name.starts_with("map")
                                     || resource_name.starts_with("Main")
                                 {
                                     log(&format!(
                                         "[W3D-UV2-SYNC] resource=\"{}\" mesh={} uv2_count={}",
-                                        resource_name, mesh_idx, mesh.tex_coords[1].len()
+                                        resource_name,
+                                        mesh_idx,
+                                        mesh.tex_coords[1].len()
                                     ));
                                 }
                             }
@@ -1365,7 +1557,9 @@ void main() {
         gl.depth_func(WebGl2RenderingContext::LEQUAL);
         if clear_fbo {
             gl.clear_color(0.2, 0.2, 0.2, 1.0);
-            gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT);
+            gl.clear(
+                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+            );
         } else {
             // Only clear depth for additional cameras (so new geometry occludes properly)
             gl.clear(WebGl2RenderingContext::DEPTH_BUFFER_BIT);
@@ -1382,31 +1576,43 @@ void main() {
 
         // Set up camera
         let (view_matrix, camera_pos) = self.build_view_matrix(scene, runtime_state);
-        let projection_matrix = self.build_projection_matrix(scene, width as f32 / height as f32, runtime_state);
+        let projection_matrix =
+            self.build_projection_matrix(scene, width as f32 / height as f32, runtime_state);
 
         gl.uniform_matrix4fv_with_f32_array(shader.u_view.as_ref(), false, &view_matrix);
-        gl.uniform_matrix4fv_with_f32_array(shader.u_projection.as_ref(), false, &projection_matrix);
-        gl.uniform3f(shader.u_camera_pos.as_ref(), camera_pos[0], camera_pos[1], camera_pos[2]);
+        gl.uniform_matrix4fv_with_f32_array(
+            shader.u_projection.as_ref(),
+            false,
+            &projection_matrix,
+        );
+        gl.uniform3f(
+            shader.u_camera_pos.as_ref(),
+            camera_pos[0],
+            camera_pos[1],
+            camera_pos[2],
+        );
 
         // Set up lighting (pass camera pos for headlight direction)
         self.setup_lights(gl, shader, scene, &camera_pos, runtime_state);
 
         // Set texture samplers
-        gl.uniform1i(shader.u_diffuse_tex.as_ref(), 0);   // unit 0 = base/diffuse
-        gl.uniform1i(shader.u_lightmap_tex.as_ref(), 1);   // unit 1 = secondary layer
-        gl.uniform1i(shader.u_layer2_tex.as_ref(), 2);     // unit 2 = third layer
-        gl.uniform1i(shader.u_specular_tex.as_ref(), 3);   // unit 3 = specular map
-        gl.uniform1i(shader.u_has_lightmap.as_ref(), 0);   // default: no extra layers
+        gl.uniform1i(shader.u_diffuse_tex.as_ref(), 0); // unit 0 = base/diffuse
+        gl.uniform1i(shader.u_lightmap_tex.as_ref(), 1); // unit 1 = secondary layer
+        gl.uniform1i(shader.u_layer2_tex.as_ref(), 2); // unit 2 = third layer
+        gl.uniform1i(shader.u_specular_tex.as_ref(), 3); // unit 3 = specular map
+        gl.uniform1i(shader.u_has_lightmap.as_ref(), 0); // default: no extra layers
         gl.uniform1i(shader.u_layer2_blend.as_ref(), 0);
         gl.uniform1i(shader.u_has_specular_map.as_ref(), 0);
         gl.uniform1i(shader.u_has_env_map.as_ref(), 0);
         gl.uniform1f(shader.u_reflectivity.as_ref(), 0.0);
         // Default texture transform = identity
-        let identity = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0f32];
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0f32,
+        ];
         gl.uniform_matrix4fv_with_f32_array(shader.u_tex_transform.as_ref(), false, &identity);
         gl.uniform1i(shader.u_skinning_enabled.as_ref(), 0); // default: no skinning
-        gl.uniform1i(shader.u_shader_mode.as_ref(), 0);     // default: phong
-        gl.uniform1f(shader.u_toon_steps.as_ref(), 3.0);    // default toon steps
+        gl.uniform1i(shader.u_shader_mode.as_ref(), 0); // default: phong
+        gl.uniform1f(shader.u_toon_steps.as_ref(), 3.0); // default toon steps
 
         // Apply fog from runtime state or default off
         if let Some(rs) = runtime_state {
@@ -1414,7 +1620,12 @@ void main() {
                 gl.uniform1i(shader.u_fog_enabled.as_ref(), 1);
                 gl.uniform1f(shader.u_fog_near.as_ref(), rs.fog_near);
                 gl.uniform1f(shader.u_fog_far.as_ref(), rs.fog_far);
-                gl.uniform3f(shader.u_fog_color.as_ref(), rs.fog_color.0, rs.fog_color.1, rs.fog_color.2);
+                gl.uniform3f(
+                    shader.u_fog_color.as_ref(),
+                    rs.fog_color.0,
+                    rs.fog_color.1,
+                    rs.fog_color.2,
+                );
                 gl.uniform1i(shader.u_fog_mode.as_ref(), rs.fog_mode as i32);
             } else {
                 gl.uniform1i(shader.u_fog_enabled.as_ref(), 0);
@@ -1426,7 +1637,10 @@ void main() {
             if clear_fbo {
                 if let Some((r, g, b)) = rs.background_color {
                     gl.clear_color(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0);
-                    gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT);
+                    gl.clear(
+                        WebGl2RenderingContext::COLOR_BUFFER_BIT
+                            | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+                    );
                 }
             }
         } else {
@@ -1446,16 +1660,21 @@ void main() {
 
             // Check if active camera has a rootNode filter
             let root_node_filter: Option<String> = runtime_state.and_then(|rs| {
-                self.active_camera.as_ref()
+                self.active_camera
+                    .as_ref()
                     .and_then(|cam| rs.camera_root_nodes.get(&cam.to_ascii_lowercase()))
                     .cloned()
             });
 
-            let model_nodes: Vec<&W3dNode> = scene.nodes.iter()
+            let model_nodes: Vec<&W3dNode> = scene
+                .nodes
+                .iter()
                 .filter(|n| n.node_type == W3dNodeType::Model)
                 .filter(|n| {
                     // Skip directly detached nodes
-                    if detached_nodes.contains(n.name.as_str()) { return false; }
+                    if detached_nodes.contains(n.name.as_str()) {
+                        return false;
+                    }
 
                     if let Some(ref root) = root_node_filter {
                         // Camera has rootNode: only render nodes in that subtree
@@ -1474,21 +1693,37 @@ void main() {
             if !self.logged_members.contains(&member_key) {
                 self.logged_members.insert(member_key);
                 let gpu_data = self.member_data.get(&member_key);
-                let mesh_group_keys: Vec<String> = gpu_data.map(|d| d.mesh_groups.keys().cloned().collect()).unwrap_or_default();
-                let model_names: Vec<String> = model_nodes.iter().map(|n| {
-                    let res = if !n.model_resource_name.is_empty() { &n.model_resource_name } else { &n.resource_name };
-                    format!("{}→{}", n.name, res)
-                }).collect();
+                let mesh_group_keys: Vec<String> = gpu_data
+                    .map(|d| d.mesh_groups.keys().cloned().collect())
+                    .unwrap_or_default();
+                let model_names: Vec<String> = model_nodes
+                    .iter()
+                    .map(|n| {
+                        let res = if !n.model_resource_name.is_empty() {
+                            &n.model_resource_name
+                        } else {
+                            &n.resource_name
+                        };
+                        format!("{}→{}", n.name, res)
+                    })
+                    .collect();
                 log(&format!(
                     "[3D] Scene {:?}: {} model_nodes={:?}, mesh_groups={:?}, textures={}",
-                    member_key, model_nodes.len(), model_names, mesh_group_keys,
+                    member_key,
+                    model_nodes.len(),
+                    model_names,
+                    mesh_group_keys,
                     gpu_data.map(|d| d.textures.len()).unwrap_or(0)
                 ));
                 // Log motion summary (count only, not per-track)
                 log(&format!(
                     "[3D] {} motions, skeletons={:?}",
                     scene.motions.len(),
-                    scene.skeletons.iter().map(|s| format!("{}({}b)", s.name, s.bones.len())).collect::<Vec<_>>(),
+                    scene
+                        .skeletons
+                        .iter()
+                        .map(|s| format!("{}({}b)", s.name, s.bones.len()))
+                        .collect::<Vec<_>>(),
                 ));
             }
 
@@ -1500,8 +1735,12 @@ void main() {
                 let play_rate = runtime_state.map(|rs| rs.play_rate).unwrap_or(1.0);
                 let anim_scale = runtime_state.map(|rs| rs.animation_scale).unwrap_or(1.0);
                 let is_loop = runtime_state.map(|rs| rs.animation_loop).unwrap_or(true);
-                let start_time = runtime_state.map(|rs| rs.animation_start_time).unwrap_or(0.0);
-                let end_time = runtime_state.map(|rs| rs.animation_end_time).unwrap_or(-1.0);
+                let start_time = runtime_state
+                    .map(|rs| rs.animation_start_time)
+                    .unwrap_or(0.0);
+                let end_time = runtime_state
+                    .map(|rs| rs.animation_end_time)
+                    .unwrap_or(-1.0);
 
                 let current_motion_name = runtime_state.and_then(|rs| rs.current_motion.as_deref());
 
@@ -1538,7 +1777,11 @@ void main() {
                 if let Some(motion) = motion {
                     let duration = motion.duration();
                     // Effective end time: use end_time if specified, else full duration
-                    let eff_end = if end_time >= 0.0 { (end_time / 1.0).min(duration) } else { duration };
+                    let eff_end = if end_time >= 0.0 {
+                        (end_time / 1.0).min(duration)
+                    } else {
+                        duration
+                    };
                     let eff_start = start_time.min(eff_end);
                     let range = eff_end - eff_start;
 
@@ -1552,9 +1795,15 @@ void main() {
 
                         for track in &motion.tracks {
                             let mut kf = track.evaluate(t);
-                            if kf.scale_x.abs() < 1e-6 { kf.scale_x = 1.0; }
-                            if kf.scale_y.abs() < 1e-6 { kf.scale_y = 1.0; }
-                            if kf.scale_z.abs() < 1e-6 { kf.scale_z = 1.0; }
+                            if kf.scale_x.abs() < 1e-6 {
+                                kf.scale_x = 1.0;
+                            }
+                            if kf.scale_y.abs() < 1e-6 {
+                                kf.scale_y = 1.0;
+                            }
+                            if kf.scale_z.abs() < 1e-6 {
+                                kf.scale_z = 1.0;
+                            }
                             let m = keyframe_to_column_major_matrix(&kf);
                             self.motion_transforms.insert(track.bone_name.clone(), m);
                         }
@@ -1577,58 +1826,94 @@ void main() {
                 // Sort: skybox nodes first so they render before scene geometry
                 let mut sorted_model_nodes: Vec<&W3dNode> = model_nodes.iter().copied().collect();
                 sorted_model_nodes.sort_by_key(|n| {
-                    if n.name.starts_with("SB_") && n.parent_name.contains("SkyBox") { 0 } else { 1 }
+                    if n.name.starts_with("SB_") && n.parent_name.contains("SkyBox") {
+                        0
+                    } else {
+                        1
+                    }
                 });
 
                 // PASS 1: Render opaque geometry (skybox first, then scene)
                 for model_node in &sorted_model_nodes {
                     if let Some(rs) = runtime_state {
                         if let Some(&vis_mode) = rs.node_visibility.get(&model_node.name) {
-                            if vis_mode == 0 { continue; } // #none → skip
+                            if vis_mode == 0 {
+                                continue;
+                            } // #none → skip
                         }
                     }
                     // Check if this model is transparent
                     let opacity = self.get_model_opacity(scene, model_node, runtime_state);
                     // One-time log for lightbox/water/black opacity
-                    if model_node.name.contains("lightbox") || model_node.name.contains("water")
-                        || model_node.name.contains("BLACK") || model_node.name.contains("BAR_")
+                    if model_node.name.contains("lightbox")
+                        || model_node.name.contains("water")
+                        || model_node.name.contains("BLACK")
+                        || model_node.name.contains("BAR_")
                     {
-                        use std::sync::Mutex;
                         use std::collections::HashSet;
+                        use std::sync::Mutex;
                         static LOGGED_OP: Mutex<Option<HashSet<String>>> = Mutex::new(None);
                         if let Ok(mut guard) = LOGGED_OP.lock() {
                             let set = guard.get_or_insert_with(HashSet::new);
                             if set.insert(model_node.name.clone()) {
                                 log(&format!(
                                     "[W3D-OPACITY] model=\"{}\" opacity={:.3} pass={}",
-                                    model_node.name, opacity, if opacity < 0.999 { "transparent" } else { "opaque" }
+                                    model_node.name,
+                                    opacity,
+                                    if opacity < 0.999 {
+                                        "transparent"
+                                    } else {
+                                        "opaque"
+                                    }
                                 ));
                             }
                         }
                     }
-                    let has_alpha_tex = self.model_has_alpha_texture(scene, model_node, &member_key, runtime_state);
+                    let has_alpha_tex =
+                        self.model_has_alpha_texture(scene, model_node, &member_key, runtime_state);
                     if opacity < 0.999 || has_alpha_tex {
                         // Defer to transparent pass — compute distance for sorting
-                        let world_matrix = self.accumulate_transform_with_state(scene, model_node, runtime_state);
+                        let world_matrix =
+                            self.accumulate_transform_with_state(scene, model_node, runtime_state);
                         let dx = world_matrix[12] - camera_pos[0];
                         let dy = world_matrix[13] - camera_pos[1];
                         let dz = world_matrix[14] - camera_pos[2];
-                        transparent_nodes.push((model_node, dx*dx + dy*dy + dz*dz));
+                        transparent_nodes.push((model_node, dx * dx + dy * dy + dz * dz));
                         continue;
                     }
 
-                    self.draw_model_node(gl, shader, scene, model_node, &member_key, runtime_state, false);
+                    self.draw_model_node(
+                        gl,
+                        shader,
+                        scene,
+                        model_node,
+                        &member_key,
+                        runtime_state,
+                        false,
+                    );
                 }
 
                 // PASS 2: Render transparent geometry (back-to-front, no depth writes)
                 if !transparent_nodes.is_empty() {
-                    transparent_nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    transparent_nodes
+                        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                     gl.depth_mask(false); // Disable depth writes for transparent objects
                     gl.enable(WebGl2RenderingContext::BLEND);
-                    gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA);
+                    gl.blend_func(
+                        WebGl2RenderingContext::SRC_ALPHA,
+                        WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA,
+                    );
 
                     for (model_node, _dist) in &transparent_nodes {
-                        self.draw_model_node(gl, shader, scene, model_node, &member_key, runtime_state, true);
+                        self.draw_model_node(
+                            gl,
+                            shader,
+                            scene,
+                            model_node,
+                            &member_key,
+                            runtime_state,
+                            true,
+                        );
                     }
 
                     gl.depth_mask(true);
@@ -1638,7 +1923,14 @@ void main() {
         }
 
         // Render ShaderInker outlines (after geometry, before particles)
-        let _ = self.render_inker_outlines(context, scene, &member_key, &view_matrix, &projection_matrix, runtime_state);
+        let _ = self.render_inker_outlines(
+            context,
+            scene,
+            &member_key,
+            &view_matrix,
+            &projection_matrix,
+            runtime_state,
+        );
 
         // Re-activate main shader after outline pass (particles need it or their own shader)
         if let Some(ref shader) = self.shader {
@@ -1667,25 +1959,24 @@ void main() {
 
     /// Ensure overlay quad buffers exist (created once, reused every frame)
     fn ensure_overlay_quad(&mut self, gl: &WebGl2RenderingContext) {
-        if self.overlay_quad_vbo.is_some() { return; }
+        if self.overlay_quad_vbo.is_some() {
+            return;
+        }
         let verts: [f32; 36] = [
-            0.0, 0.0, 0.0,  0.0, 0.0, 1.0,
-            1.0, 0.0, 0.0,  0.0, 0.0, 1.0,
-            1.0, 1.0, 0.0,  0.0, 0.0, 1.0,
-            0.0, 0.0, 0.0,  0.0, 0.0, 1.0,
-            1.0, 1.0, 0.0,  0.0, 0.0, 1.0,
-            0.0, 1.0, 0.0,  0.0, 0.0, 1.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 1.0,
         ];
-        let uvs: [f32; 12] = [
-            0.0, 0.0,  1.0, 0.0,  1.0, 1.0,
-            0.0, 0.0,  1.0, 1.0,  0.0, 1.0,
-        ];
+        let uvs: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0];
         let vbo = gl.create_buffer();
         gl.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, vbo.as_ref());
         unsafe {
             let view = js_sys::Float32Array::view(&verts);
             gl.buffer_data_with_array_buffer_view(
-                WebGl2RenderingContext::ARRAY_BUFFER, &view, WebGl2RenderingContext::STATIC_DRAW);
+                WebGl2RenderingContext::ARRAY_BUFFER,
+                &view,
+                WebGl2RenderingContext::STATIC_DRAW,
+            );
         }
         self.overlay_quad_vbo = vbo;
 
@@ -1694,7 +1985,10 @@ void main() {
         unsafe {
             let view = js_sys::Float32Array::view(&uvs);
             gl.buffer_data_with_array_buffer_view(
-                WebGl2RenderingContext::ARRAY_BUFFER, &view, WebGl2RenderingContext::STATIC_DRAW);
+                WebGl2RenderingContext::ARRAY_BUFFER,
+                &view,
+                WebGl2RenderingContext::STATIC_DRAW,
+            );
         }
         self.overlay_quad_uv = uv_buf;
     }
@@ -1708,12 +2002,23 @@ void main() {
         width: u32,
         height: u32,
     ) {
-        if overlays.is_empty() { return; }
+        if overlays.is_empty() {
+            return;
+        }
         let gl = context.gl();
         self.ensure_overlay_quad(&gl);
-        let shader = match self.shader.as_ref() { Some(s) => s, None => return };
-        let gpu_data = match self.member_data.get(member_key) { Some(d) => d, None => return };
-        let fbo = match self.fbo.as_ref() { Some(f) => f, None => return };
+        let shader = match self.shader.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        let gpu_data = match self.member_data.get(member_key) {
+            Some(d) => d,
+            None => return,
+        };
+        let fbo = match self.fbo.as_ref() {
+            Some(f) => f,
+            None => return,
+        };
 
         gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(fbo));
         gl.viewport(0, 0, width as i32, height as i32);
@@ -1723,19 +2028,36 @@ void main() {
         gl.disable(WebGl2RenderingContext::DEPTH_TEST);
         gl.disable(WebGl2RenderingContext::CULL_FACE);
         gl.enable(WebGl2RenderingContext::BLEND);
-        gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA);
+        gl.blend_func(
+            WebGl2RenderingContext::SRC_ALPHA,
+            WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA,
+        );
 
         let w = width as f32;
         let h = height as f32;
         // Ortho projection: (0,0)=top-left in screen space
         // FBO is Y-flipped when composited, so use positive Y (no flip here)
         let ortho: [f32; 16] = [
-            2.0/w,  0.0,    0.0, 0.0,
-            0.0,    2.0/h,  0.0, 0.0,
-            0.0,    0.0,   -1.0, 0.0,
-           -1.0,   -1.0,    0.0, 1.0,
+            2.0 / w,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0 / h,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            -1.0,
+            -1.0,
+            0.0,
+            1.0,
         ];
-        let identity: [f32; 16] = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+        let identity: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
         gl.uniform_matrix4fv_with_f32_array(shader.u_projection.as_ref(), false, &ortho);
         gl.uniform_matrix4fv_with_f32_array(shader.u_view.as_ref(), false, &identity);
         gl.uniform1i(shader.u_num_lights.as_ref(), 0);
@@ -1748,30 +2070,41 @@ void main() {
         // Signal overlay mode: u_skinning_enabled = -1 → skip CLOD UV remap in vertex shader
         gl.uniform1i(shader.u_skinning_enabled.as_ref(), -1);
         // Reset texture transform to identity for overlays
-        let ov_identity = [1.0f32,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+        let ov_identity = [
+            1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
         gl.uniform_matrix4fv_with_f32_array(shader.u_tex_transform.as_ref(), false, &ov_identity);
         gl.uniform4f(shader.u_emissive_color.as_ref(), 1.0, 1.0, 1.0, 1.0);
         gl.uniform4f(shader.u_diffuse_color.as_ref(), 1.0, 1.0, 1.0, 1.0);
         gl.uniform4f(shader.u_ambient_color.as_ref(), 0.0, 0.0, 0.0, 1.0);
 
         // Bind quad VBOs once
-        gl.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, self.overlay_quad_vbo.as_ref());
+        gl.bind_buffer(
+            WebGl2RenderingContext::ARRAY_BUFFER,
+            self.overlay_quad_vbo.as_ref(),
+        );
         gl.enable_vertex_attrib_array(0);
         gl.vertex_attrib_pointer_with_i32(0, 3, WebGl2RenderingContext::FLOAT, false, 24, 0);
         gl.enable_vertex_attrib_array(1);
         gl.vertex_attrib_pointer_with_i32(1, 3, WebGl2RenderingContext::FLOAT, false, 24, 12);
 
-        gl.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, self.overlay_quad_uv.as_ref());
+        gl.bind_buffer(
+            WebGl2RenderingContext::ARRAY_BUFFER,
+            self.overlay_quad_uv.as_ref(),
+        );
         gl.enable_vertex_attrib_array(2);
         gl.vertex_attrib_pointer_with_i32(2, 2, WebGl2RenderingContext::FLOAT, false, 0, 0);
 
         for overlay in overlays {
-            if overlay.source_texture.is_empty() || overlay.blend <= 0.0 { continue; }
+            if overlay.source_texture.is_empty() || overlay.blend <= 0.0 {
+                continue;
+            }
             let tex = match gpu_data.textures.get(&overlay.source_texture_lower) {
                 Some(t) => t,
                 None => continue,
             };
-            let (tex_w, tex_h) = gpu_data.texture_sizes
+            let (tex_w, tex_h) = gpu_data
+                .texture_sizes
                 .get(&overlay.source_texture_lower)
                 .map(|&(w, h)| (w as f32, h as f32))
                 .unwrap_or((64.0, 64.0));
@@ -1779,8 +2112,16 @@ void main() {
             gl.active_texture(WebGl2RenderingContext::TEXTURE0);
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(tex));
             // Use NEAREST filtering for overlays — crisp pixel-perfect text/HUD rendering
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::NEAREST as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::NEAREST as i32);
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::NEAREST as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                WebGl2RenderingContext::NEAREST as i32,
+            );
             gl.uniform1i(shader.u_diffuse_tex.as_ref(), 0);
             gl.uniform1i(shader.u_has_texture.as_ref(), 1);
             gl.uniform1f(shader.u_opacity.as_ref(), (overlay.blend / 100.0) as f32);
@@ -1799,18 +2140,36 @@ void main() {
             let sw = sx * tex_w;
             let sh = sy * tex_h;
             let model: [f32; 16] = [
-                cos_r * sw, sin_r * sw, 0.0, 0.0,
-               -sin_r * sh, cos_r * sh, 0.0, 0.0,
-                0.0,        0.0,        1.0, 0.0,
+                cos_r * sw,
+                sin_r * sw,
+                0.0,
+                0.0,
+                -sin_r * sh,
+                cos_r * sh,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
                 x - rx * sx * cos_r + ry * sy * sin_r,
                 y - rx * sx * sin_r - ry * sy * cos_r,
-                0.0, 1.0,
+                0.0,
+                1.0,
             ];
             gl.uniform_matrix4fv_with_f32_array(shader.u_model.as_ref(), false, &model);
             gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 6);
             // Restore texture filtering so 3D rendering is not affected
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR_MIPMAP_LINEAR as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                WebGl2RenderingContext::LINEAR as i32,
+            );
         }
 
         // Restore state
@@ -1832,10 +2191,7 @@ void main() {
         member_key: &(i32, i32),
     ) {
         let identity = [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         gl.uniform_matrix4fv_with_f32_array(shader.u_model.as_ref(), false, &identity);
         self.bind_default_material(gl, shader, scene);
@@ -1878,7 +2234,10 @@ void main() {
             } else {
                 node.resource_name.as_str()
             };
-            !scene.skeletons.iter().any(|s| s.name == skeleton_key && s.bones.len() > 1)
+            !scene
+                .skeletons
+                .iter()
+                .any(|s| s.name == skeleton_key && s.bones.len() > 1)
         } else {
             true
         };
@@ -1941,15 +2300,22 @@ void main() {
         };
         let res_info = scene.model_resources.get(resource);
 
-        let is_skybox = model_node.name.starts_with("SB_") && model_node.parent_name.contains("SkyBox");
+        let is_skybox =
+            model_node.name.starts_with("SB_") && model_node.parent_name.contains("SkyBox");
         let mut vis_mode = 1u8; // default #front
 
         if let Some(gpu_data) = self.member_data.get(member_key) {
             let has_skeleton_data = self.setup_skinning_for_resource(
-                gl, shader, scene, resource, gpu_data, runtime_state,
+                gl,
+                shader,
+                scene,
+                resource,
+                gpu_data,
+                runtime_state,
             );
 
-            let world_matrix = self.accumulate_transform_with_state(scene, model_node, runtime_state);
+            let world_matrix =
+                self.accumulate_transform_with_state(scene, model_node, runtime_state);
             if has_skeleton_data {
                 let has_runtime_model_override = runtime_state
                     .map(|rs| rs.node_transforms.contains_key(&model_node.name))
@@ -1960,7 +2326,11 @@ void main() {
                     // authored transform directly. Applying the legacy skinned
                     // basis correction here would rotate the whole skeleton a
                     // second time for scripted movies like the dinosaur test.
-                    gl.uniform_matrix4fv_with_f32_array(shader.u_model.as_ref(), false, &world_matrix);
+                    gl.uniform_matrix4fv_with_f32_array(
+                        shader.u_model.as_ref(),
+                        false,
+                        &world_matrix,
+                    );
                 } else {
                     // Passive W3D skinned content still needs the historical
                     // Z-up -> render-basis correction.
@@ -2000,11 +2370,26 @@ void main() {
             if let Some(mesh_group) = gpu_data.mesh_groups.get(resource) {
                 for (mesh_idx, mesh_buf) in mesh_group.iter().enumerate() {
                     let bound = self.bind_material_for_mesh(
-                        gl, shader, scene, model_node,
-                        res_info, mesh_idx, member_key, runtime_state, force_blend,
+                        gl,
+                        shader,
+                        scene,
+                        model_node,
+                        res_info,
+                        mesh_idx,
+                        member_key,
+                        runtime_state,
+                        force_blend,
                     );
                     if !bound {
-                        self.bind_material(gl, shader, scene, model_node, member_key, runtime_state, force_blend);
+                        self.bind_material(
+                            gl,
+                            shader,
+                            scene,
+                            model_node,
+                            member_key,
+                            runtime_state,
+                            force_blend,
+                        );
                     }
 
                     if mesh_buf.has_bones && has_skeleton_data {
@@ -2012,10 +2397,14 @@ void main() {
                     } else {
                         gl.uniform1i(shader.u_skinning_enabled.as_ref(), 0);
                     }
-                    gl.uniform1i(shader.u_has_vertex_color.as_ref(),
-                        if mesh_buf.has_vertex_colors { 1 } else { 0 });
-                    gl.uniform1i(shader.u_has_texcoord2.as_ref(),
-                        if mesh_buf.has_texcoord2 { 1 } else { 0 });
+                    gl.uniform1i(
+                        shader.u_has_vertex_color.as_ref(),
+                        if mesh_buf.has_vertex_colors { 1 } else { 0 },
+                    );
+                    gl.uniform1i(
+                        shader.u_has_texcoord2.as_ref(),
+                        if mesh_buf.has_texcoord2 { 1 } else { 0 },
+                    );
                     gl.uniform1i(
                         shader.u_texcoord2_direct.as_ref(),
                         if mesh_buf.texcoord2_direct { 1 } else { 0 },
@@ -2027,16 +2416,20 @@ void main() {
                 }
             } else {
                 // Log missing mesh data — deduplicate by model name
-                use std::sync::Mutex;
                 use std::collections::HashSet;
+                use std::sync::Mutex;
                 static LOGGED_MISS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
                 if let Ok(mut guard) = LOGGED_MISS.lock() {
                     let set = guard.get_or_insert_with(HashSet::new);
                     if set.insert(model_node.name.clone()) {
                         console_warn!(
                             "[W3D-MISS] model=\"{}\" resource=\"{}\" (res=\"{}\", mres=\"{}\") — NOT in mesh_groups({} keys). parent=\"{}\"",
-                            model_node.name, resource, model_node.resource_name,
-                            model_node.model_resource_name, gpu_data.mesh_groups.len(), model_node.parent_name,
+                            model_node.name,
+                            resource,
+                            model_node.resource_name,
+                            model_node.model_resource_name,
+                            gpu_data.mesh_groups.len(),
+                            model_node.parent_name,
                         );
                     }
                 }
@@ -2062,10 +2455,9 @@ void main() {
         node_name: &str,
         mesh_idx: Option<usize>,
     ) -> Option<&'a String> {
-        rs.node_shaders.get(node_name).and_then(|m| {
-            mesh_idx.and_then(|idx| m.get(&idx))
-                .or_else(|| m.get(&0))
-        })
+        rs.node_shaders
+            .get(node_name)
+            .and_then(|m| mesh_idx.and_then(|idx| m.get(&idx)).or_else(|| m.get(&0)))
     }
 
     fn get_model_opacity(
@@ -2081,7 +2473,9 @@ void main() {
             .unwrap_or_else(|| model_node.shader_name.clone());
         if !effective_shader_name.is_empty() {
             if let Some(w3d_shader) = Self::find_shader_ci(&scene.shaders, &effective_shader_name) {
-                if let Some(mat) = Self::find_material_ci(&scene.materials, &w3d_shader.material_name) {
+                if let Some(mat) =
+                    Self::find_material_ci(&scene.materials, &w3d_shader.material_name)
+                {
                     return mat.opacity;
                 }
                 if let Some(mat) = Self::find_material_ci(&scene.materials, &w3d_shader.name) {
@@ -2148,7 +2542,9 @@ void main() {
             Some(d) => d,
             None => return false,
         };
-        if gpu_data.alpha_textures.is_empty() { return false; }
+        if gpu_data.alpha_textures.is_empty() {
+            return false;
+        }
 
         // Collect all shader names that affect this model
         let mut shader_names: Vec<String> = Vec::new();
@@ -2192,7 +2588,9 @@ void main() {
 
     /// Compile post-processing shader for bloom (lazy init)
     fn ensure_pp_shader(&mut self, context: &WebGL2Context) -> Result<(), JsValue> {
-        if self.pp_shader.is_some() { return Ok(()); }
+        if self.pp_shader.is_some() {
+            return Ok(());
+        }
 
         let vs = r#"#version 300 es
 layout(location = 0) in vec2 a_pos;
@@ -2306,7 +2704,12 @@ void main() {
     }
 
     /// Create bloom FBOs at half resolution (lazy init / resize)
-    fn ensure_bloom_fbos(&mut self, context: &WebGL2Context, width: u32, height: u32) -> Result<(), JsValue> {
+    fn ensure_bloom_fbos(
+        &mut self,
+        context: &WebGL2Context,
+        width: u32,
+        height: u32,
+    ) -> Result<(), JsValue> {
         let bw = width / 2;
         let bh = height / 2;
         if bw == self.bloom_width && bh == self.bloom_height && self.bloom_fbo_a.is_some() {
@@ -2321,20 +2724,42 @@ void main() {
             gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&fbo));
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&tex));
             gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-                WebGl2RenderingContext::TEXTURE_2D, 0,
+                WebGl2RenderingContext::TEXTURE_2D,
+                0,
                 WebGl2RenderingContext::RGBA as i32,
-                bw as i32, bh as i32, 0,
+                bw as i32,
+                bh as i32,
+                0,
                 WebGl2RenderingContext::RGBA,
                 WebGl2RenderingContext::UNSIGNED_BYTE,
                 None,
             )?;
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::LINEAR as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                WebGl2RenderingContext::LINEAR as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_S,
+                WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_T,
+                WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+            );
             gl.framebuffer_texture_2d(
-                WebGl2RenderingContext::FRAMEBUFFER, WebGl2RenderingContext::COLOR_ATTACHMENT0,
-                WebGl2RenderingContext::TEXTURE_2D, Some(&tex), 0,
+                WebGl2RenderingContext::FRAMEBUFFER,
+                WebGl2RenderingContext::COLOR_ATTACHMENT0,
+                WebGl2RenderingContext::TEXTURE_2D,
+                Some(&tex),
+                0,
             );
             if is_b {
                 self.bloom_fbo_b = Some(fbo);
@@ -2373,10 +2798,16 @@ void main() {
         gl.disable(WebGl2RenderingContext::CULL_FACE);
 
         // Pass 1: Bright-pass extract → bloom_fbo_a
-        gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, self.bloom_fbo_a.as_ref());
+        gl.bind_framebuffer(
+            WebGl2RenderingContext::FRAMEBUFFER,
+            self.bloom_fbo_a.as_ref(),
+        );
         gl.viewport(0, 0, bw as i32, bh as i32);
         gl.active_texture(WebGl2RenderingContext::TEXTURE0);
-        gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, self.fbo_texture.as_ref());
+        gl.bind_texture(
+            WebGl2RenderingContext::TEXTURE_2D,
+            self.fbo_texture.as_ref(),
+        );
         gl.uniform1i(pp.u_mode.as_ref(), 0); // bright-pass
         gl.uniform1f(pp.u_threshold.as_ref(), threshold);
         gl.uniform2f(pp.u_resolution.as_ref(), bw, bh);
@@ -2384,22 +2815,37 @@ void main() {
         gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);
 
         // Pass 2: Horizontal blur → bloom_fbo_b
-        gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, self.bloom_fbo_b.as_ref());
-        gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, self.bloom_tex_a.as_ref());
+        gl.bind_framebuffer(
+            WebGl2RenderingContext::FRAMEBUFFER,
+            self.bloom_fbo_b.as_ref(),
+        );
+        gl.bind_texture(
+            WebGl2RenderingContext::TEXTURE_2D,
+            self.bloom_tex_a.as_ref(),
+        );
         gl.uniform1i(pp.u_mode.as_ref(), 1); // blur
         gl.uniform2f(pp.u_direction.as_ref(), 1.0, 0.0);
         gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);
 
         // Pass 3: Vertical blur → bloom_fbo_a
-        gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, self.bloom_fbo_a.as_ref());
-        gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, self.bloom_tex_b.as_ref());
+        gl.bind_framebuffer(
+            WebGl2RenderingContext::FRAMEBUFFER,
+            self.bloom_fbo_a.as_ref(),
+        );
+        gl.bind_texture(
+            WebGl2RenderingContext::TEXTURE_2D,
+            self.bloom_tex_b.as_ref(),
+        );
         gl.uniform2f(pp.u_direction.as_ref(), 0.0, 1.0);
         gl.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);
 
         // Pass 4: Composite — additive blend bloom onto main FBO
         gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, self.fbo.as_ref());
         gl.viewport(0, 0, self.fbo_width as i32, self.fbo_height as i32);
-        gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, self.bloom_tex_a.as_ref());
+        gl.bind_texture(
+            WebGl2RenderingContext::TEXTURE_2D,
+            self.bloom_tex_a.as_ref(),
+        );
         gl.uniform1i(pp.u_mode.as_ref(), 2); // composite
         gl.uniform1f(pp.u_intensity.as_ref(), intensity);
         gl.enable(WebGl2RenderingContext::BLEND);
@@ -2446,7 +2892,9 @@ void main() {
 
         let gl = context.gl();
         for (base_name, mask) in &candidates {
-            if *mask != 0x3F { continue; } // Need all 6 faces
+            if *mask != 0x3F {
+                continue;
+            } // Need all 6 faces
 
             let cube_tex = match gl.create_texture() {
                 Some(t) => t,
@@ -2457,7 +2905,9 @@ void main() {
             let mut all_ok = true;
             for (i, suffix) in suffixes.iter().enumerate() {
                 let face_name = format!("{}{}", base_name, suffix);
-                let face_data = scene.texture_images.iter()
+                let face_data = scene
+                    .texture_images
+                    .iter()
                     .find(|(k, _)| k.to_lowercase() == face_name)
                     .map(|(_, v)| v);
 
@@ -2485,13 +2935,27 @@ void main() {
             }
 
             if all_ok {
-                gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_CUBE_MAP, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR as i32);
-                gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_CUBE_MAP, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
-                gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_CUBE_MAP, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
-                gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_CUBE_MAP, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::CLAMP_TO_EDGE as i32);
-                log(&format!(
-                    "[3D-CUBEMAP] Created cubemap: \"{}\"", base_name
-                ));
+                gl.tex_parameteri(
+                    WebGl2RenderingContext::TEXTURE_CUBE_MAP,
+                    WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                    WebGl2RenderingContext::LINEAR as i32,
+                );
+                gl.tex_parameteri(
+                    WebGl2RenderingContext::TEXTURE_CUBE_MAP,
+                    WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                    WebGl2RenderingContext::LINEAR as i32,
+                );
+                gl.tex_parameteri(
+                    WebGl2RenderingContext::TEXTURE_CUBE_MAP,
+                    WebGl2RenderingContext::TEXTURE_WRAP_S,
+                    WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_parameteri(
+                    WebGl2RenderingContext::TEXTURE_CUBE_MAP,
+                    WebGl2RenderingContext::TEXTURE_WRAP_T,
+                    WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+                );
+                log(&format!("[3D-CUBEMAP] Created cubemap: \"{}\"", base_name));
                 cube_maps.insert(base_name.clone(), cube_tex);
             }
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_CUBE_MAP, None);
@@ -2511,10 +2975,17 @@ void main() {
         runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>,
     ) -> Result<(), JsValue> {
         let targets: Vec<(String, String)> = runtime_state
-            .map(|rs| rs.render_targets.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .map(|rs| {
+                rs.render_targets
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        if targets.is_empty() { return Ok(()); }
+        if targets.is_empty() {
+            return Ok(());
+        }
 
         for (cam_name, tex_name) in &targets {
             // Temporarily set this camera as active
@@ -2530,17 +3001,28 @@ void main() {
             gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, self.rtt_fbo.as_ref());
             gl.viewport(0, 0, width as i32, height as i32);
             gl.clear_color(0.0, 0.0, 0.0, 0.0);
-            gl.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT);
+            gl.clear(
+                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+            );
 
             // Render the scene (this will use the RTT FBO since it's bound)
             // We can't call render_scene_with_state_ex recursively, so we just copy the main FBO
             // For a proper implementation, we'd need to refactor the render loop.
             // For now: copy the main FBO texture into the named texture.
             gl.bind_framebuffer(WebGl2RenderingContext::READ_FRAMEBUFFER, self.fbo.as_ref());
-            gl.bind_framebuffer(WebGl2RenderingContext::DRAW_FRAMEBUFFER, self.rtt_fbo.as_ref());
+            gl.bind_framebuffer(
+                WebGl2RenderingContext::DRAW_FRAMEBUFFER,
+                self.rtt_fbo.as_ref(),
+            );
             gl.blit_framebuffer(
-                0, 0, width as i32, height as i32,
-                0, 0, width as i32, height as i32,
+                0,
+                0,
+                width as i32,
+                height as i32,
+                0,
+                0,
+                width as i32,
+                height as i32,
                 WebGl2RenderingContext::COLOR_BUFFER_BIT,
                 WebGl2RenderingContext::NEAREST,
             );
@@ -2559,26 +3041,47 @@ void main() {
                     let copy_tex = gl.create_texture().ok_or("rtt copy")?;
                     gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&copy_tex));
                     gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-                        WebGl2RenderingContext::TEXTURE_2D, 0,
+                        WebGl2RenderingContext::TEXTURE_2D,
+                        0,
                         WebGl2RenderingContext::RGBA as i32,
-                        width as i32, height as i32, 0,
+                        width as i32,
+                        height as i32,
+                        0,
                         WebGl2RenderingContext::RGBA,
                         WebGl2RenderingContext::UNSIGNED_BYTE,
                         None,
                     )?;
-                    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR as i32);
-                    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
+                    gl.tex_parameteri(
+                        WebGl2RenderingContext::TEXTURE_2D,
+                        WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                        WebGl2RenderingContext::LINEAR as i32,
+                    );
+                    gl.tex_parameteri(
+                        WebGl2RenderingContext::TEXTURE_2D,
+                        WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+                        WebGl2RenderingContext::LINEAR as i32,
+                    );
 
                     // Copy from RTT FBO to the new texture
-                    gl.bind_framebuffer(WebGl2RenderingContext::READ_FRAMEBUFFER, self.rtt_fbo.as_ref());
+                    gl.bind_framebuffer(
+                        WebGl2RenderingContext::READ_FRAMEBUFFER,
+                        self.rtt_fbo.as_ref(),
+                    );
                     gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&copy_tex));
                     gl.copy_tex_sub_image_2d(
-                        WebGl2RenderingContext::TEXTURE_2D, 0,
-                        0, 0, 0, 0,
-                        width as i32, height as i32,
+                        WebGl2RenderingContext::TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        width as i32,
+                        height as i32,
                     );
                     gpu_data.textures.insert(tex_key, copy_tex);
-                    gpu_data.texture_sizes.insert(tex_name.to_lowercase(), (width, height));
+                    gpu_data
+                        .texture_sizes
+                        .insert(tex_name.to_lowercase(), (width, height));
                 }
             }
 
@@ -2590,7 +3093,12 @@ void main() {
     }
 
     /// Ensure render-to-texture FBO exists
-    fn ensure_rtt_fbo(&mut self, context: &WebGL2Context, width: u32, height: u32) -> Result<(), JsValue> {
+    fn ensure_rtt_fbo(
+        &mut self,
+        context: &WebGL2Context,
+        width: u32,
+        height: u32,
+    ) -> Result<(), JsValue> {
         if self.rtt_width == width && self.rtt_height == height && self.rtt_fbo.is_some() {
             return Ok(());
         }
@@ -2603,20 +3111,47 @@ void main() {
 
         gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&tex));
         gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-            WebGl2RenderingContext::TEXTURE_2D, 0,
+            WebGl2RenderingContext::TEXTURE_2D,
+            0,
             WebGl2RenderingContext::RGBA as i32,
-            width as i32, height as i32, 0,
+            width as i32,
+            height as i32,
+            0,
             WebGl2RenderingContext::RGBA,
             WebGl2RenderingContext::UNSIGNED_BYTE,
             None,
         )?;
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR as i32);
-        gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
-        gl.framebuffer_texture_2d(WebGl2RenderingContext::FRAMEBUFFER, WebGl2RenderingContext::COLOR_ATTACHMENT0, WebGl2RenderingContext::TEXTURE_2D, Some(&tex), 0);
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
+        gl.framebuffer_texture_2d(
+            WebGl2RenderingContext::FRAMEBUFFER,
+            WebGl2RenderingContext::COLOR_ATTACHMENT0,
+            WebGl2RenderingContext::TEXTURE_2D,
+            Some(&tex),
+            0,
+        );
 
         gl.bind_renderbuffer(WebGl2RenderingContext::RENDERBUFFER, Some(&depth));
-        gl.renderbuffer_storage(WebGl2RenderingContext::RENDERBUFFER, WebGl2RenderingContext::DEPTH_COMPONENT16, width as i32, height as i32);
-        gl.framebuffer_renderbuffer(WebGl2RenderingContext::FRAMEBUFFER, WebGl2RenderingContext::DEPTH_ATTACHMENT, WebGl2RenderingContext::RENDERBUFFER, Some(&depth));
+        gl.renderbuffer_storage(
+            WebGl2RenderingContext::RENDERBUFFER,
+            WebGl2RenderingContext::DEPTH_COMPONENT16,
+            width as i32,
+            height as i32,
+        );
+        gl.framebuffer_renderbuffer(
+            WebGl2RenderingContext::FRAMEBUFFER,
+            WebGl2RenderingContext::DEPTH_ATTACHMENT,
+            WebGl2RenderingContext::RENDERBUFFER,
+            Some(&depth),
+        );
 
         gl.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
 
@@ -2630,7 +3165,9 @@ void main() {
 
     /// Compile outline shader for ShaderInker (lazy init)
     fn ensure_outline_shader(&mut self, context: &WebGL2Context) -> Result<(), JsValue> {
-        if self.outline_shader.is_some() { return Ok(()); }
+        if self.outline_shader.is_some() {
+            return Ok(());
+        }
 
         let vs = r#"#version 300 es
 layout(location = 0) in vec3 a_position;
@@ -2687,7 +3224,9 @@ void main() {
 
         // Check if any model uses ShaderInker
         let has_inker = scene.nodes.iter().any(|n| {
-            if n.node_type != W3dNodeType::Model { return false; }
+            if n.node_type != W3dNodeType::Model {
+                return false;
+            }
             let shader_name = runtime_state
                 .and_then(|rs| Self::node_shader_override(rs, &n.name, None))
                 .unwrap_or(&n.shader_name);
@@ -2695,7 +3234,9 @@ void main() {
                 .map(|s| s.shader_type == W3dShaderType::Inker)
                 .unwrap_or(false)
         });
-        if !has_inker { return Ok(()); }
+        if !has_inker {
+            return Ok(());
+        }
 
         self.ensure_outline_shader(context)?;
         let gl = context.gl();
@@ -2703,7 +3244,11 @@ void main() {
 
         gl.use_program(Some(&outline.program));
         gl.uniform_matrix4fv_with_f32_array(outline.u_view.as_ref(), false, view_matrix);
-        gl.uniform_matrix4fv_with_f32_array(outline.u_projection.as_ref(), false, projection_matrix);
+        gl.uniform_matrix4fv_with_f32_array(
+            outline.u_projection.as_ref(),
+            false,
+            projection_matrix,
+        );
 
         // Render back-faces only (front-face culling gives outline effect)
         gl.enable(WebGl2RenderingContext::CULL_FACE);
@@ -2711,7 +3256,11 @@ void main() {
         // Actually for outline: cull FRONT faces, draw BACK faces expanded outward
         gl.cull_face(WebGl2RenderingContext::FRONT);
 
-        for model_node in scene.nodes.iter().filter(|n| n.node_type == W3dNodeType::Model) {
+        for model_node in scene
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == W3dNodeType::Model)
+        {
             let shader_name = runtime_state
                 .and_then(|rs| Self::node_shader_override(rs, &model_node.name, None))
                 .unwrap_or(&model_node.shader_name);
@@ -2720,12 +3269,23 @@ void main() {
                 _ => continue,
             };
 
-            let width = if w3d_shader.outline_width > 0.0 { w3d_shader.outline_width } else { 0.02 };
+            let width = if w3d_shader.outline_width > 0.0 {
+                w3d_shader.outline_width
+            } else {
+                0.02
+            };
             let color = w3d_shader.outline_color;
             gl.uniform1f(outline.u_outline_width.as_ref(), width);
-            gl.uniform4f(outline.u_outline_color.as_ref(), color[0], color[1], color[2], color[3]);
+            gl.uniform4f(
+                outline.u_outline_color.as_ref(),
+                color[0],
+                color[1],
+                color[2],
+                color[3],
+            );
 
-            let world_matrix = self.accumulate_transform_with_state(scene, model_node, runtime_state);
+            let world_matrix =
+                self.accumulate_transform_with_state(scene, model_node, runtime_state);
             gl.uniform_matrix4fv_with_f32_array(outline.u_model.as_ref(), false, &world_matrix);
 
             let resource = if !model_node.model_resource_name.is_empty() {
@@ -2761,23 +3321,34 @@ void main() {
     }
 
     /// Find the first shader that references a material by name.
-    fn find_shader_for_material_ci<'a>(scene: &'a W3dScene, material_name: &str) -> Option<&'a W3dShader> {
-        scene.shaders.iter().find(|s| s.material_name.eq_ignore_ascii_case(material_name))
+    fn find_shader_for_material_ci<'a>(
+        scene: &'a W3dScene,
+        material_name: &str,
+    ) -> Option<&'a W3dShader> {
+        scene
+            .shaders
+            .iter()
+            .find(|s| s.material_name.eq_ignore_ascii_case(material_name))
     }
 
     /// Resolve a candidate name to a shader, allowing either shader names or material names.
-    fn resolve_shader_candidate_ci<'a>(scene: &'a W3dScene, candidate: &str) -> Option<&'a W3dShader> {
+    fn resolve_shader_candidate_ci<'a>(
+        scene: &'a W3dScene,
+        candidate: &str,
+    ) -> Option<&'a W3dShader> {
         Self::find_shader_ci(&scene.shaders, candidate)
             .or_else(|| Self::find_shader_for_material_ci(scene, candidate))
     }
 
     /// Resolve a candidate name to a material, allowing either material names or shader names.
-    fn resolve_material_candidate_ci<'a>(scene: &'a W3dScene, candidate: &str) -> Option<&'a W3dMaterial> {
-        Self::find_material_ci(&scene.materials, candidate)
-            .or_else(|| {
-                Self::find_shader_ci(&scene.shaders, candidate)
-                    .and_then(|s| Self::find_material_ci(&scene.materials, &s.material_name))
-            })
+    fn resolve_material_candidate_ci<'a>(
+        scene: &'a W3dScene,
+        candidate: &str,
+    ) -> Option<&'a W3dMaterial> {
+        Self::find_material_ci(&scene.materials, candidate).or_else(|| {
+            Self::find_shader_ci(&scene.shaders, candidate)
+                .and_then(|s| Self::find_material_ci(&scene.materials, &s.material_name))
+        })
     }
 
     /// Resolve all texture layers for a shader: diffuse, extra blend layers, and specular map.
@@ -2787,7 +3358,9 @@ void main() {
         layers: &[crate::director::chunks::w3d::types::W3dTextureLayer],
         gpu_data: &'a MemberGpuData,
     ) -> TextureBindResult<'a> {
-        let identity = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
         let mut result = TextureBindResult {
             diffuse: None,
             diffuse_tex_transform: identity,
@@ -2799,7 +3372,9 @@ void main() {
         let mut diffuse_name = String::new();
 
         for (layer_idx, layer) in layers.iter().enumerate() {
-            if layer.name.is_empty() { continue; }
+            if layer.name.is_empty() {
+                continue;
+            }
             let lower = layer.name.to_lowercase();
             let tex = gpu_data.textures.get(&lower);
             let tex = match tex {
@@ -2850,9 +3425,9 @@ void main() {
                     if lightmap_only { 1 } else { 2 }
                 } else {
                     match layer.blend_func {
-                        1 => 2,  // #add / GL_ADD → our add mode
-                        2 => 1,  // #replace / GL_MODULATE → our multiply mode
-                        _ => 1,  // #multiply → multiply
+                        1 => 2, // #add / GL_ADD → our add mode
+                        2 => 1, // #replace / GL_MODULATE → our multiply mode
+                        _ => 1, // #multiply → multiply
                     }
                 };
 
@@ -2885,12 +3460,32 @@ void main() {
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(tex));
             gl.uniform1i(shader.u_has_texture.as_ref(), 1);
             // Upload texture coordinate transform
-            gl.uniform_matrix4fv_with_f32_array(shader.u_tex_transform.as_ref(), false, &result.diffuse_tex_transform);
+            gl.uniform_matrix4fv_with_f32_array(
+                shader.u_tex_transform.as_ref(),
+                false,
+                &result.diffuse_tex_transform,
+            );
             // Set wrap mode per layer: 0=clamp, 1=repeat (default)
-            let wrap_s = if result.diffuse_wrap.0 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            let wrap_t = if result.diffuse_wrap.1 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, wrap_s as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, wrap_t as i32);
+            let wrap_s = if result.diffuse_wrap.0 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            let wrap_t = if result.diffuse_wrap.1 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_S,
+                wrap_s as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_T,
+                wrap_t as i32,
+            );
             tex_bound = true;
         }
 
@@ -2900,10 +3495,26 @@ void main() {
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(layer.tex));
             gl.uniform1i(shader.u_has_lightmap.as_ref(), layer.blend);
             gl.uniform1f(shader.u_lightmap_intensity.as_ref(), layer.intensity);
-            let wrap_s = if layer.wrap.0 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            let wrap_t = if layer.wrap.1 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, wrap_s as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, wrap_t as i32);
+            let wrap_s = if layer.wrap.0 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            let wrap_t = if layer.wrap.1 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_S,
+                wrap_s as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_T,
+                wrap_t as i32,
+            );
         } else {
             gl.uniform1i(shader.u_has_lightmap.as_ref(), 0);
         }
@@ -2914,10 +3525,26 @@ void main() {
             gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(layer.tex));
             gl.uniform1i(shader.u_layer2_blend.as_ref(), layer.blend);
             gl.uniform1f(shader.u_layer2_intensity.as_ref(), layer.intensity);
-            let wrap_s = if layer.wrap.0 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            let wrap_t = if layer.wrap.1 == 0 { WebGl2RenderingContext::CLAMP_TO_EDGE } else { WebGl2RenderingContext::REPEAT };
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, wrap_s as i32);
-            gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, wrap_t as i32);
+            let wrap_s = if layer.wrap.0 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            let wrap_t = if layer.wrap.1 == 0 {
+                WebGl2RenderingContext::CLAMP_TO_EDGE
+            } else {
+                WebGl2RenderingContext::REPEAT
+            };
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_S,
+                wrap_s as i32,
+            );
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_WRAP_T,
+                wrap_t as i32,
+            );
         } else {
             gl.uniform1i(shader.u_layer2_blend.as_ref(), 0);
         }
@@ -2964,8 +3591,10 @@ void main() {
                 // Find material: try shader's material_name, then shader name itself
                 let mat = if !w3d_shader.material_name.is_empty() {
                     Self::find_material_ci(&scene.materials, &w3d_shader.material_name)
-                } else { None }
-                    .or_else(|| Self::find_material_ci(&scene.materials, &w3d_shader.name));
+                } else {
+                    None
+                }
+                .or_else(|| Self::find_material_ci(&scene.materials, &w3d_shader.name));
                 if let Some(mat) = mat {
                     self.set_material_uniforms(gl, shader, mat);
                     mat_found = true;
@@ -2990,14 +3619,17 @@ void main() {
                 if let Some(binding) = res_info.shader_bindings.first() {
                     // Resolve binding name → shader → material
                     if let Some(w3d_shader) = Self::find_shader_ci(&scene.shaders, &binding.name) {
-                        if let Some(mat) = Self::find_material_ci(&scene.materials, &w3d_shader.material_name) {
+                        if let Some(mat) =
+                            Self::find_material_ci(&scene.materials, &w3d_shader.material_name)
+                        {
                             self.set_material_uniforms(gl, shader, mat);
                             mat_found = true;
                         }
                         // Bind texture layers from shader binding
                         if !tex_bound {
                             if let Some(gpu_data) = self.member_data.get(member_key) {
-                                let layers = Self::find_texture_layers(&w3d_shader.texture_layers, gpu_data);
+                                let layers =
+                                    Self::find_texture_layers(&w3d_shader.texture_layers, gpu_data);
                                 tex_bound = Self::bind_texture_layers(gl, shader, &layers);
                             }
                         }
@@ -3020,7 +3652,11 @@ void main() {
             match w3d_shader.shader_type {
                 W3dShaderType::Painter => {
                     gl.uniform1i(shader.u_shader_mode.as_ref(), 1);
-                    let steps = if w3d_shader.toon_steps > 0 { w3d_shader.toon_steps as f32 } else { 3.0 };
+                    let steps = if w3d_shader.toon_steps > 0 {
+                        w3d_shader.toon_steps as f32
+                    } else {
+                        3.0
+                    };
                     gl.uniform1f(shader.u_toon_steps.as_ref(), steps);
                 }
                 _ => {
@@ -3035,7 +3671,9 @@ void main() {
         // force diffuse to white (1,1,1) so lighting doesn't attenuate the textured surface.
         // Shaders with useDiffuseWithTexture=true (e.g., lightmap clones) keep their actual diffuse.
         if tex_bound {
-            let use_diffuse = w3d_shader_opt.map(|s| s.use_diffuse_with_texture).unwrap_or(false);
+            let use_diffuse = w3d_shader_opt
+                .map(|s| s.use_diffuse_with_texture)
+                .unwrap_or(false);
             if !use_diffuse {
                 gl.uniform4f(shader.u_diffuse_color.as_ref(), 1.0, 1.0, 1.0, 1.0);
             }
@@ -3051,7 +3689,12 @@ void main() {
     }
 
     /// Get the first texture layer's blend_func for a model node
-    fn get_first_blend_func(&self, scene: &W3dScene, node: &W3dNode, runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>) -> u8 {
+    fn get_first_blend_func(
+        &self,
+        scene: &W3dScene,
+        node: &W3dNode,
+        runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>,
+    ) -> u8 {
         let effective_shader = runtime_state
             .and_then(|rs| Self::node_shader_override(rs, &node.name, None))
             .cloned()
@@ -3082,8 +3725,10 @@ void main() {
             if let Some(w3d_shader) = Self::find_shader_ci(&scene.shaders, override_name) {
                 let mat = if !w3d_shader.material_name.is_empty() {
                     Self::find_material_ci(&scene.materials, &w3d_shader.material_name)
-                } else { None }
-                    .or_else(|| Self::find_material_ci(&scene.materials, &w3d_shader.name));
+                } else {
+                    None
+                }
+                .or_else(|| Self::find_material_ci(&scene.materials, &w3d_shader.name));
                 if let Some(m) = mat {
                     self.set_material_uniforms(gl, shader, m);
                 } else {
@@ -3118,7 +3763,11 @@ void main() {
                 if tex_bound && !w3d_shader.use_diffuse_with_texture {
                     gl.uniform4f(shader.u_diffuse_color.as_ref(), 1.0, 1.0, 1.0, 1.0);
                 }
-                let first_bf = w3d_shader.texture_layers.first().map(|l| l.blend_func).unwrap_or(0);
+                let first_bf = w3d_shader
+                    .texture_layers
+                    .first()
+                    .map(|l| l.blend_func)
+                    .unwrap_or(0);
                 let opacity = mat.map(|m| m.opacity).unwrap_or(1.0);
                 Self::apply_blend_mode(gl, opacity, first_bf, force_blend);
                 return true;
@@ -3132,7 +3781,8 @@ void main() {
 
         let mut candidate_names: Vec<String> = Vec::new();
         for binding in &res_info.shader_bindings {
-            if mesh_idx < binding.mesh_bindings.len() && !binding.mesh_bindings[mesh_idx].is_empty() {
+            if mesh_idx < binding.mesh_bindings.len() && !binding.mesh_bindings[mesh_idx].is_empty()
+            {
                 candidate_names.push(binding.mesh_bindings[mesh_idx].clone());
             }
         }
@@ -3170,12 +3820,16 @@ void main() {
                         }
                     })
                 })
-                .or_else(|| w3d_shader.and_then(|s| Self::find_material_ci(&scene.materials, &s.name)));
+                .or_else(|| {
+                    w3d_shader.and_then(|s| Self::find_material_ci(&scene.materials, &s.name))
+                });
 
             // Skip DefaultShader as best_material when there are more specific candidates.
             // DefaultShader often has white default material that overrides model-specific
             // materials (e.g., cloned models with yellow emissive from their source member).
-            if best_material.is_none() && !(candidate.eq_ignore_ascii_case("DefaultShader") && candidate_names.len() > 1) {
+            if best_material.is_none()
+                && !(candidate.eq_ignore_ascii_case("DefaultShader") && candidate_names.len() > 1)
+            {
                 best_material = mat;
                 best_blend_func = w3d_shader
                     .and_then(|s| s.texture_layers.first())
@@ -3184,7 +3838,9 @@ void main() {
             }
 
             let mut tex_bound = false;
-            if let (Some(gpu_data), Some(w3d_shader)) = (self.member_data.get(member_key), w3d_shader) {
+            if let (Some(gpu_data), Some(w3d_shader)) =
+                (self.member_data.get(member_key), w3d_shader)
+            {
                 let layers = Self::find_texture_layers(&w3d_shader.texture_layers, gpu_data);
                 tex_bound = Self::bind_texture_layers(gl, shader, &layers);
             }
@@ -3194,7 +3850,9 @@ void main() {
                     self.set_material_uniforms(gl, shader, m);
                 }
                 // IFX default: white diffuse for textured models unless useDiffuseWithTexture
-                let use_diffuse = w3d_shader.map(|s| s.use_diffuse_with_texture).unwrap_or(false);
+                let use_diffuse = w3d_shader
+                    .map(|s| s.use_diffuse_with_texture)
+                    .unwrap_or(false);
                 if !use_diffuse {
                     gl.uniform4f(shader.u_diffuse_color.as_ref(), 1.0, 1.0, 1.0, 1.0);
                 }
@@ -3209,9 +3867,13 @@ void main() {
         }
 
         // Log multi-mesh models that end up without texture
-        if res_info.shader_bindings.iter().any(|b| b.mesh_bindings.len() > 1) {
-            use std::sync::Mutex;
+        if res_info
+            .shader_bindings
+            .iter()
+            .any(|b| b.mesh_bindings.len() > 1)
+        {
             use std::collections::HashSet;
+            use std::sync::Mutex;
             static LOGGED_NOTEX2: Mutex<Option<HashSet<String>>> = Mutex::new(None);
             let key = format!("{}:{}", model_node.name, mesh_idx);
             if let Ok(mut guard) = LOGGED_NOTEX2.lock() {
@@ -3249,28 +3911,72 @@ void main() {
         false
     }
 
-    fn set_material_uniforms(&self, gl: &WebGl2RenderingContext, shader: &Shader3d, mat: &W3dMaterial) {
-        gl.uniform4f(shader.u_diffuse_color.as_ref(), mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], mat.diffuse[3]);
-        gl.uniform4f(shader.u_ambient_color.as_ref(), mat.ambient[0], mat.ambient[1], mat.ambient[2], mat.ambient[3]);
-        gl.uniform4f(shader.u_specular_color.as_ref(), mat.specular[0], mat.specular[1], mat.specular[2], mat.specular[3]);
-        gl.uniform4f(shader.u_emissive_color.as_ref(), mat.emissive[0], mat.emissive[1], mat.emissive[2], mat.emissive[3]);
+    fn set_material_uniforms(
+        &self,
+        gl: &WebGl2RenderingContext,
+        shader: &Shader3d,
+        mat: &W3dMaterial,
+    ) {
+        gl.uniform4f(
+            shader.u_diffuse_color.as_ref(),
+            mat.diffuse[0],
+            mat.diffuse[1],
+            mat.diffuse[2],
+            mat.diffuse[3],
+        );
+        gl.uniform4f(
+            shader.u_ambient_color.as_ref(),
+            mat.ambient[0],
+            mat.ambient[1],
+            mat.ambient[2],
+            mat.ambient[3],
+        );
+        gl.uniform4f(
+            shader.u_specular_color.as_ref(),
+            mat.specular[0],
+            mat.specular[1],
+            mat.specular[2],
+            mat.specular[3],
+        );
+        gl.uniform4f(
+            shader.u_emissive_color.as_ref(),
+            mat.emissive[0],
+            mat.emissive[1],
+            mat.emissive[2],
+            mat.emissive[3],
+        );
         // IFX maps material reflectivity to shader shininess (scaled by 100)
-        let shininess = if mat.shininess > 0.0 { mat.shininess } else { mat.reflectivity * 100.0 };
+        let shininess = if mat.shininess > 0.0 {
+            mat.shininess
+        } else {
+            mat.reflectivity * 100.0
+        };
         gl.uniform1f(shader.u_shininess.as_ref(), shininess);
         gl.uniform1f(shader.u_opacity.as_ref(), mat.opacity);
     }
 
     /// Set GL blend mode based on material opacity and shader blend function.
     /// `force_blend` = true when drawing in the transparent pass (models with alpha textures).
-    fn apply_blend_mode(gl: &WebGl2RenderingContext, opacity: f32, first_layer_blend_func: u8, force_blend: bool) {
+    fn apply_blend_mode(
+        gl: &WebGl2RenderingContext,
+        opacity: f32,
+        first_layer_blend_func: u8,
+        force_blend: bool,
+    ) {
         if opacity < 1.0 || first_layer_blend_func == 1 || force_blend {
             gl.enable(WebGl2RenderingContext::BLEND);
             if first_layer_blend_func == 1 {
                 // #add — additive blending (for glow/lightbox effects)
-                gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE);
+                gl.blend_func(
+                    WebGl2RenderingContext::SRC_ALPHA,
+                    WebGl2RenderingContext::ONE,
+                );
             } else {
                 // #multiply / default — standard alpha blending
-                gl.blend_func(WebGl2RenderingContext::SRC_ALPHA, WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA);
+                gl.blend_func(
+                    WebGl2RenderingContext::SRC_ALPHA,
+                    WebGl2RenderingContext::ONE_MINUS_SRC_ALPHA,
+                );
             }
         } else {
             gl.disable(WebGl2RenderingContext::BLEND);
@@ -3297,18 +4003,24 @@ void main() {
 
         // Compute inverse bind matrices fresh (bypass cache to ensure correct transpose)
         let inv_bind_fresh = {
-            let rest = crate::director::chunks::w3d::skeleton::build_bone_matrices(skeleton, None, 0.0);
-            rest.iter().map(|m| {
-                // Proper column-major affine inverse: R^-1 = R^T, t^-1 = -R^T * t
-                let (r00,r01,r02) = (m[0], m[4], m[8]);
-                let (r10,r11,r12) = (m[1], m[5], m[9]);
-                let (r20,r21,r22) = (m[2], m[6], m[10]);
-                let (tx,ty,tz) = (m[12], m[13], m[14]);
-                let itx = -(r00*tx + r10*ty + r20*tz);
-                let ity = -(r01*tx + r11*ty + r21*tz);
-                let itz = -(r02*tx + r12*ty + r22*tz);
-                [r00,r01,r02,0.0, r10,r11,r12,0.0, r20,r21,r22,0.0, itx,ity,itz,1.0]
-            }).collect::<Vec<_>>()
+            let rest =
+                crate::director::chunks::w3d::skeleton::build_bone_matrices(skeleton, None, 0.0);
+            rest.iter()
+                .map(|m| {
+                    // Proper column-major affine inverse: R^-1 = R^T, t^-1 = -R^T * t
+                    let (r00, r01, r02) = (m[0], m[4], m[8]);
+                    let (r10, r11, r12) = (m[1], m[5], m[9]);
+                    let (r20, r21, r22) = (m[2], m[6], m[10]);
+                    let (tx, ty, tz) = (m[12], m[13], m[14]);
+                    let itx = -(r00 * tx + r10 * ty + r20 * tz);
+                    let ity = -(r01 * tx + r11 * ty + r21 * tz);
+                    let itz = -(r02 * tx + r12 * ty + r22 * tz);
+                    [
+                        r00, r01, r02, 0.0, r10, r11, r12, 0.0, r20, r21, r22, 0.0, itx, ity, itz,
+                        1.0,
+                    ]
+                })
+                .collect::<Vec<_>>()
         };
         let inv_bind = &inv_bind_fresh;
 
@@ -3327,9 +4039,17 @@ void main() {
         }
         let time = self.animation_time;
         let duration = motion.map(|m| m.duration()).unwrap_or(0.0);
-        let end_time = runtime_state.map(|rs| rs.animation_end_time).unwrap_or(-1.0);
-        let start_time = runtime_state.map(|rs| rs.animation_start_time).unwrap_or(0.0);
-        let eff_end = if end_time >= 0.0 { (end_time).min(duration) } else { duration };
+        let end_time = runtime_state
+            .map(|rs| rs.animation_end_time)
+            .unwrap_or(-1.0);
+        let start_time = runtime_state
+            .map(|rs| rs.animation_start_time)
+            .unwrap_or(0.0);
+        let eff_end = if end_time >= 0.0 {
+            (end_time).min(duration)
+        } else {
+            duration
+        };
         let eff_start = start_time.min(eff_end);
         let range = eff_end - eff_start;
         let t = if range > 0.0 {
@@ -3338,7 +4058,9 @@ void main() {
             } else {
                 time.clamp(eff_start, eff_end)
             }
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let world_matrices = crate::director::chunks::w3d::skeleton::build_bone_matrices_ex(
             skeleton, motion, t, root_lock,
         );
@@ -3354,16 +4076,20 @@ void main() {
         let uniform_slots = 48;
         let mut skinning_matrices = vec![0.0f32; uniform_slots * 16];
         for i in 0..uniform_slots {
-            skinning_matrices[i * 16]      = 1.0; // m[0][0]
-            skinning_matrices[i * 16 + 5]  = 1.0; // m[1][1]
+            skinning_matrices[i * 16] = 1.0; // m[0][0]
+            skinning_matrices[i * 16 + 5] = 1.0; // m[1][1]
             skinning_matrices[i * 16 + 10] = 1.0; // m[2][2]
             skinning_matrices[i * 16 + 15] = 1.0; // m[3][3]
         }
 
         if blending {
-            let prev_motion = prev_motion_name.and_then(|n| scene.motions.iter().find(|m| m.name == n));
+            let prev_motion =
+                prev_motion_name.and_then(|n| scene.motions.iter().find(|m| m.name == n));
             let prev_matrices = crate::director::chunks::w3d::skeleton::build_bone_matrices_ex(
-                skeleton, prev_motion, t, root_lock,
+                skeleton,
+                prev_motion,
+                t,
+                root_lock,
             );
             for i in 0..bone_count {
                 let cur = mat4_multiply_col_major(&world_matrices[i], &inv_bind[i]);
@@ -3381,14 +4107,23 @@ void main() {
 
         // Debug: log root bone matrices once
         {
-            static BONE_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            static BONE_LOG: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
             if !BONE_LOG.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 let w = &world_matrices[0];
                 let ib = &inv_bind[0];
                 log(&format!(
                     "[3D-BONE0] rootLock={} world_pos=({:.1},{:.1},{:.1}) inv_bind_pos=({:.1},{:.1},{:.1}) skin_pos=({:.2},{:.2},{:.2})",
-                    root_lock, w[12], w[13], w[14], ib[12], ib[13], ib[14],
-                    skinning_matrices[12], skinning_matrices[13], skinning_matrices[14]
+                    root_lock,
+                    w[12],
+                    w[13],
+                    w[14],
+                    ib[12],
+                    ib[13],
+                    ib[14],
+                    skinning_matrices[12],
+                    skinning_matrices[13],
+                    skinning_matrices[14]
                 ));
             }
         }
@@ -3401,7 +4136,12 @@ void main() {
         true
     }
 
-    fn bind_default_material(&self, gl: &WebGl2RenderingContext, shader: &Shader3d, scene: &W3dScene) {
+    fn bind_default_material(
+        &self,
+        gl: &WebGl2RenderingContext,
+        shader: &Shader3d,
+        scene: &W3dScene,
+    ) {
         if let Some(mat) = scene.materials.first() {
             self.set_material_uniforms(gl, shader, mat);
         } else {
@@ -3417,12 +4157,19 @@ void main() {
 
     /// Check if a node is a child (direct or indirect) of a given root node
     fn is_child_of(&self, scene: &W3dScene, node_name: &str, root_name: &str) -> bool {
-        if node_name == root_name { return true; }
+        if node_name == root_name {
+            return true;
+        }
         let mut current = node_name;
-        for _ in 0..20 { // max depth to prevent infinite loops
+        for _ in 0..20 {
+            // max depth to prevent infinite loops
             if let Some(node) = scene.nodes.iter().find(|n| n.name == current) {
-                if node.parent_name == root_name { return true; }
-                if node.parent_name.is_empty() { return false; }
+                if node.parent_name == root_name {
+                    return true;
+                }
+                if node.parent_name.is_empty() {
+                    return false;
+                }
                 current = &node.parent_name;
             } else {
                 return false;
@@ -3432,14 +4179,27 @@ void main() {
     }
 
     /// Check if any ancestor in the parent chain is in the detached set
-    fn has_detached_ancestor(&self, scene: &W3dScene, parent_name: &str, detached: &std::collections::HashSet<&str>) -> bool {
-        if parent_name.is_empty() || parent_name == "World" { return false; }
-        if detached.contains(parent_name) { return true; }
+    fn has_detached_ancestor(
+        &self,
+        scene: &W3dScene,
+        parent_name: &str,
+        detached: &std::collections::HashSet<&str>,
+    ) -> bool {
+        if parent_name.is_empty() || parent_name == "World" {
+            return false;
+        }
+        if detached.contains(parent_name) {
+            return true;
+        }
         // Walk up parent chain
         for _ in 0..10 {
             if let Some(node) = scene.nodes.iter().find(|n| n.name == parent_name) {
-                if node.parent_name.is_empty() || node.parent_name == "World" { return false; }
-                if detached.contains(node.parent_name.as_str()) { return true; }
+                if node.parent_name.is_empty() || node.parent_name == "World" {
+                    return false;
+                }
+                if detached.contains(node.parent_name.as_str()) {
+                    return true;
+                }
                 return self.has_detached_ancestor(scene, &node.parent_name, detached);
             }
             return false;
@@ -3458,9 +4218,16 @@ void main() {
         let cam_name = self.active_camera.as_ref().unwrap_or(&default_cam);
 
         // 2. Find the camera node (case-insensitive), fall back to first view node
-        let view_node = scene.nodes.iter()
+        let view_node = scene
+            .nodes
+            .iter()
             .find(|n| n.node_type == W3dNodeType::View && n.name.eq_ignore_ascii_case(cam_name))
-            .or_else(|| scene.nodes.iter().find(|n| n.node_type == W3dNodeType::View));
+            .or_else(|| {
+                scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.node_type == W3dNodeType::View)
+            });
 
         if let Some(node) = view_node {
             let world_t = self.accumulate_transform_with_state(scene, node, runtime_state);
@@ -3480,7 +4247,8 @@ void main() {
         // Use world transform (accumulated through parent chain)
         if let Some(node) = view_node {
             let world_t = self.accumulate_transform_with_state(scene, node, runtime_state);
-            let has_position = world_t[12].abs() > 0.01 || world_t[13].abs() > 0.01 || world_t[14].abs() > 0.01;
+            let has_position =
+                world_t[12].abs() > 0.01 || world_t[13].abs() > 0.01 || world_t[14].abs() > 0.01;
             if has_position {
                 let cam_pos = [world_t[12], world_t[13], world_t[14]];
                 let view = invert_transform(&world_t);
@@ -3491,30 +4259,41 @@ void main() {
         // Default camera: looking at origin from a reasonable distance
         let cam_pos = [0.0, 0.0, 100.0];
         let view = [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, -100.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -100.0, 1.0,
         ];
         (view, cam_pos)
     }
 
     /// Build perspective projection matrix from ViewNode
-    fn build_projection_matrix(&self, scene: &W3dScene, _fbo_aspect: f32,
+    fn build_projection_matrix(
+        &self,
+        scene: &W3dScene,
+        _fbo_aspect: f32,
         runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>,
     ) -> [f32; 16] {
         let default_cam = "DefaultView".to_string();
         let cam_name = self.active_camera.as_ref().unwrap_or(&default_cam);
         // Find camera node (case-insensitive), fall back to first view node
-        let view_node = scene.nodes.iter()
+        let view_node = scene
+            .nodes
+            .iter()
             .find(|n| n.node_type == W3dNodeType::View && n.name.eq_ignore_ascii_case(cam_name))
-            .or_else(|| scene.nodes.iter().find(|n| n.node_type == W3dNodeType::View));
+            .or_else(|| {
+                scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.node_type == W3dNodeType::View)
+            });
 
         let (fov, near, far, aspect) = if let Some(node) = view_node {
             let mut f = node.far_plane;
-            if f > 100000.0 || f <= 0.0 { f = 10000.0; }
+            if f > 100000.0 || f <= 0.0 {
+                f = 10000.0;
+            }
             let mut n = node.near_plane;
-            if n <= 0.0 { n = 1.0; }
+            if n <= 0.0 {
+                n = 1.0;
+            }
             let cam_aspect = if node.screen_width > 0 && node.screen_height > 0 {
                 node.screen_width as f32 / node.screen_height as f32
             } else {
@@ -3529,7 +4308,10 @@ void main() {
 
         // Check for orthographic projection mode
         let is_ortho = runtime_state
-            .and_then(|rs| rs.camera_projection_mode.get(&cam_name.to_ascii_lowercase()))
+            .and_then(|rs| {
+                rs.camera_projection_mode
+                    .get(&cam_name.to_ascii_lowercase())
+            })
             .map(|&m| m == 1)
             .unwrap_or(false);
 
@@ -3550,15 +4332,20 @@ void main() {
     }
 
     /// Set up lighting uniforms from scene lights
-    fn setup_lights(&self, gl: &WebGl2RenderingContext, shader: &Shader3d, scene: &W3dScene, camera_pos: &[f32; 3],
+    fn setup_lights(
+        &self,
+        gl: &WebGl2RenderingContext,
+        shader: &Shader3d,
+        scene: &W3dScene,
+        camera_pos: &[f32; 3],
         runtime_state: Option<&crate::player::cast_member::Shockwave3dRuntimeState>,
     ) {
         let mut positions = [0.0f32; 24]; // 8 * 3
         let mut colors = [0.0f32; 24];
         let mut types = [0i32; 8];
         let mut attenuations = [0.0f32; 24]; // 8 * 3 (constant, linear, quadratic)
-        let mut directions = [0.0f32; 24];   // 8 * 3 (direction for spot/directional)
-        let mut spot_angles = [0.0f32; 8];   // cone angle in radians
+        let mut directions = [0.0f32; 24]; // 8 * 3 (direction for spot/directional)
+        let mut spot_angles = [0.0f32; 8]; // cone angle in radians
         let mut global_ambient = [0.0f32, 0.0, 0.0];
         let mut num_lights = 0i32;
 
@@ -3567,12 +4354,20 @@ void main() {
             use std::sync::atomic::{AtomicBool, Ordering};
             static LOGGED: AtomicBool = AtomicBool::new(false);
             if !LOGGED.swap(true, Ordering::Relaxed) {
-                let light_info: Vec<String> = scene.lights.iter().map(|l| {
-                    format!("{}({:?}, color=[{:.2},{:.2},{:.2}])", l.name, l.light_type, l.color[0], l.color[1], l.color[2])
-                }).collect();
+                let light_info: Vec<String> = scene
+                    .lights
+                    .iter()
+                    .map(|l| {
+                        format!(
+                            "{}({:?}, color=[{:.2},{:.2},{:.2}])",
+                            l.name, l.light_type, l.color[0], l.color[1], l.color[2]
+                        )
+                    })
+                    .collect();
                 log(&format!(
                     "[W3D-LIGHTS] {} lights: {:?}",
-                    scene.lights.len(), light_info
+                    scene.lights.len(),
+                    light_info
                 ));
             }
         }
@@ -3587,7 +4382,9 @@ void main() {
             colors[2] = 1.0;
             types[0] = 1; // directional
             attenuations[0] = 1.0; // constant = 1 (no falloff for directional)
-            directions[0] = -0.5; directions[1] = -1.0; directions[2] = -0.7; // matches position
+            directions[0] = -0.5;
+            directions[1] = -1.0;
+            directions[2] = -0.7; // matches position
             num_lights = 1;
         } else {
             // Collect detached nodes to skip lights that are removeFromWorld()
@@ -3646,39 +4443,49 @@ void main() {
                     W3dLightType::Point => 2,
                     W3dLightType::Spot => 3,
                 };
-                if li >= 8 { continue; } // Max 8 non-ambient lights
+                if li >= 8 {
+                    continue;
+                } // Max 8 non-ambient lights
 
                 // Per-light attenuation from W3dLight (constant, linear, quadratic)
-                attenuations[li * 3]     = light.attenuation[0]; // constant
+                attenuations[li * 3] = light.attenuation[0]; // constant
                 attenuations[li * 3 + 1] = light.attenuation[1]; // linear
                 attenuations[li * 3 + 2] = light.attenuation[2]; // quadratic
                 // Ensure attenuation sum > 0 (prevent division by zero)
-                if attenuations[li * 3] + attenuations[li * 3 + 1] + attenuations[li * 3 + 2] < 0.001 {
+                if attenuations[li * 3] + attenuations[li * 3 + 1] + attenuations[li * 3 + 2]
+                    < 0.001
+                {
                     attenuations[li * 3] = 1.0; // default constant = 1
                 }
 
                 // Spot angle (degrees → radians)
-                spot_angles[li] = if lt == 3 { light.spot_angle.to_radians() } else { 0.0 };
+                spot_angles[li] = if lt == 3 {
+                    light.spot_angle.to_radians()
+                } else {
+                    0.0
+                };
 
                 if let Some(light_node) = scene.nodes.iter().find(|n| {
-                    n.node_type == W3dNodeType::Light && (n.resource_name == light.name || n.name == light.name)
+                    n.node_type == W3dNodeType::Light
+                        && (n.resource_name == light.name || n.name == light.name)
                 }) {
-                    let world_t = self.accumulate_transform_with_state(scene, light_node, runtime_state);
+                    let world_t =
+                        self.accumulate_transform_with_state(scene, light_node, runtime_state);
                     if lt == 1 {
                         // Directional: direction = -Z axis of world transform
-                        positions[li * 3]     = -world_t[8];
+                        positions[li * 3] = -world_t[8];
                         positions[li * 3 + 1] = -world_t[9];
                         positions[li * 3 + 2] = -world_t[10];
-                        directions[li * 3]     = -world_t[8];
+                        directions[li * 3] = -world_t[8];
                         directions[li * 3 + 1] = -world_t[9];
                         directions[li * 3 + 2] = -world_t[10];
                     } else {
                         // Point/Spot: world position from translation
-                        positions[li * 3]     = world_t[12];
+                        positions[li * 3] = world_t[12];
                         positions[li * 3 + 1] = world_t[13];
                         positions[li * 3 + 2] = world_t[14];
                         // Spot direction = -Z axis of light transform
-                        directions[li * 3]     = -world_t[8];
+                        directions[li * 3] = -world_t[8];
                         directions[li * 3 + 1] = -world_t[9];
                         directions[li * 3 + 2] = -world_t[10];
                     }
@@ -3706,7 +4513,12 @@ void main() {
         gl.uniform3fv_with_f32_array(shader.u_light_atten.as_ref(), &attenuations[..n * 3]);
         gl.uniform3fv_with_f32_array(shader.u_light_dir.as_ref(), &directions[..n * 3]);
         gl.uniform1fv_with_f32_array(shader.u_light_spot_angle.as_ref(), &spot_angles[..n]);
-        gl.uniform3f(shader.u_global_ambient.as_ref(), global_ambient[0], global_ambient[1], global_ambient[2]);
+        gl.uniform3f(
+            shader.u_global_ambient.as_ref(),
+            global_ambient[0],
+            global_ambient[1],
+            global_ambient[2],
+        );
     }
 
     /// Get the FBO texture (for use as sprite texture in 2D pipeline)
@@ -3723,8 +4535,13 @@ void main() {
 
 /// Decode image data (raw RGBA, DXT, JPEG/PNG) and upload as a WebGL2 texture.
 /// Free function to avoid borrow conflicts when called during incremental updates.
-fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Option<(WebGlTexture, u32, u32, bool)> {
-    if data.len() < 4 { return None; }
+fn decode_and_upload_texture_impl(
+    context: &WebGL2Context,
+    data: &[u8],
+) -> Option<(WebGlTexture, u32, u32, bool)> {
+    if data.len() < 4 {
+        return None;
+    }
 
     // Detection priority: JPEG/PNG magic → DXT header → raw RGBA (our own format)
     // Raw RGBA must be checked LAST because its 8-byte header (u32 w, u32 h) can
@@ -3732,15 +4549,19 @@ fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Optio
     // (e.g., a DXT texture whose first 8 bytes happen to decode as valid small dimensions).
     let (width, height, rgba_data) = if data.len() >= 2
         && (data[0] == 0xFF && data[1] == 0xD8       // JPEG magic
-            || data[0] == 0x89 && data[1] == 0x50)    // PNG magic
+            || data[0] == 0x89 && data[1] == 0x50)
+    // PNG magic
     {
         let img = match image::load_from_memory(data) {
             Ok(img) => img.to_rgba8(),
             Err(e) => {
-                let header: Vec<String> = data.iter().take(8).map(|b| format!("{:02X}", b)).collect();
+                let header: Vec<String> =
+                    data.iter().take(8).map(|b| format!("{:02X}", b)).collect();
                 console_warn!(
                     "[3D-TEX-DECODE] Failed to decode {} bytes, header=[{}]: {}",
-                    data.len(), header.join(" "), e
+                    data.len(),
+                    header.join(" "),
+                    e
                 );
                 return None;
             }
@@ -3767,10 +4588,13 @@ fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Optio
             let img = match image::load_from_memory(data) {
                 Ok(img) => img.to_rgba8(),
                 Err(e) => {
-                    let header: Vec<String> = data.iter().take(8).map(|b| format!("{:02X}", b)).collect();
+                    let header: Vec<String> =
+                        data.iter().take(8).map(|b| format!("{:02X}", b)).collect();
                     console_warn!(
                         "[3D-TEX-DECODE] Failed to decode {} bytes, header=[{}]: {}",
-                        data.len(), header.join(" "), e
+                        data.len(),
+                        header.join(" "),
+                        e
                     );
                     return None;
                 }
@@ -3787,10 +4611,26 @@ fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Optio
     let texture = gl.create_texture()?;
     gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&texture));
 
-    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MIN_FILTER, WebGl2RenderingContext::LINEAR_MIPMAP_LINEAR as i32);
-    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_MAG_FILTER, WebGl2RenderingContext::LINEAR as i32);
-    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_S, WebGl2RenderingContext::REPEAT as i32);
-    gl.tex_parameteri(WebGl2RenderingContext::TEXTURE_2D, WebGl2RenderingContext::TEXTURE_WRAP_T, WebGl2RenderingContext::REPEAT as i32);
+    gl.tex_parameteri(
+        WebGl2RenderingContext::TEXTURE_2D,
+        WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+        WebGl2RenderingContext::LINEAR_MIPMAP_LINEAR as i32,
+    );
+    gl.tex_parameteri(
+        WebGl2RenderingContext::TEXTURE_2D,
+        WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+        WebGl2RenderingContext::LINEAR as i32,
+    );
+    gl.tex_parameteri(
+        WebGl2RenderingContext::TEXTURE_2D,
+        WebGl2RenderingContext::TEXTURE_WRAP_S,
+        WebGl2RenderingContext::REPEAT as i32,
+    );
+    gl.tex_parameteri(
+        WebGl2RenderingContext::TEXTURE_2D,
+        WebGl2RenderingContext::TEXTURE_WRAP_T,
+        WebGl2RenderingContext::REPEAT as i32,
+    );
 
     gl.pixel_storei(WebGl2RenderingContext::UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
 
@@ -3799,22 +4639,26 @@ fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Optio
     if rgba_data.len() != expected_size {
         console_warn!(
             "[3D-TEX] Size mismatch! {}x{} expects {} bytes but got {}",
-            width, height, expected_size, rgba_data.len()
+            width,
+            height,
+            expected_size,
+            rgba_data.len()
         );
         return None;
     }
 
-    let upload_result = gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-        WebGl2RenderingContext::TEXTURE_2D,
-        0,
-        WebGl2RenderingContext::RGBA as i32,
-        width as i32,
-        height as i32,
-        0,
-        WebGl2RenderingContext::RGBA,
-        WebGl2RenderingContext::UNSIGNED_BYTE,
-        Some(&rgba_data),
-    );
+    let upload_result = gl
+        .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+            WebGl2RenderingContext::TEXTURE_2D,
+            0,
+            WebGl2RenderingContext::RGBA as i32,
+            width as i32,
+            height as i32,
+            0,
+            WebGl2RenderingContext::RGBA,
+            WebGl2RenderingContext::UNSIGNED_BYTE,
+            Some(&rgba_data),
+        );
     if let Err(ref e) = upload_result {
         console_warn!("[3D-TEX] tex_image_2d failed: {:?}", e);
     }
@@ -3830,10 +4674,14 @@ fn decode_and_upload_texture_impl(context: &WebGL2Context, data: &[u8]) -> Optio
 /// Check if data looks like a DXT compressed texture.
 /// IFX stores DXT textures with a small header: width(u16), height(u16), format(u8), then blocks.
 fn is_dxt_texture(data: &[u8]) -> bool {
-    if data.len() < 5 { return false; }
+    if data.len() < 5 {
+        return false;
+    }
     let w = u16::from_le_bytes([data[0], data[1]]) as u32;
     let h = u16::from_le_bytes([data[2], data[3]]) as u32;
-    if w == 0 || h == 0 || w > 4096 || h > 4096 { return false; }
+    if w == 0 || h == 0 || w > 4096 || h > 4096 {
+        return false;
+    }
     // DXT1: 8 bytes per 4x4 block = 0.5 bytes per pixel
     let blocks_w = (w + 3) / 4;
     let blocks_h = (h + 3) / 4;
@@ -3845,7 +4693,9 @@ fn is_dxt_texture(data: &[u8]) -> bool {
 
 /// Decode DXT compressed texture to RGBA. Returns (width, height, rgba_pixels).
 fn decode_dxt_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    if data.len() < 5 { return None; }
+    if data.len() < 5 {
+        return None;
+    }
     let w = u16::from_le_bytes([data[0], data[1]]) as u32;
     let h = u16::from_le_bytes([data[2], data[3]]) as u32;
     let _format = data[4];
@@ -3863,13 +4713,31 @@ fn decode_dxt_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
             let block_idx = (by * blocks_w + bx) as usize;
             if is_dxt1 {
                 let offset = block_idx * 8;
-                if offset + 8 > block_data.len() { break; }
-                decode_dxt1_block(&block_data[offset..offset+8], &mut rgba, bx * 4, by * 4, w, h);
+                if offset + 8 > block_data.len() {
+                    break;
+                }
+                decode_dxt1_block(
+                    &block_data[offset..offset + 8],
+                    &mut rgba,
+                    bx * 4,
+                    by * 4,
+                    w,
+                    h,
+                );
             } else {
                 // DXT3/DXT5: skip 8-byte alpha block, decode 8-byte color block
                 let offset = block_idx * 16;
-                if offset + 16 > block_data.len() { break; }
-                decode_dxt1_block(&block_data[offset+8..offset+16], &mut rgba, bx * 4, by * 4, w, h);
+                if offset + 16 > block_data.len() {
+                    break;
+                }
+                decode_dxt1_block(
+                    &block_data[offset + 8..offset + 16],
+                    &mut rgba,
+                    bx * 4,
+                    by * 4,
+                    w,
+                    h,
+                );
             }
         }
     }
@@ -3878,7 +4746,14 @@ fn decode_dxt_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
 }
 
 /// Decode a single DXT1 4x4 color block into RGBA pixels.
-fn decode_dxt1_block(block: &[u8], rgba: &mut [u8], start_x: u32, start_y: u32, img_w: u32, img_h: u32) {
+fn decode_dxt1_block(
+    block: &[u8],
+    rgba: &mut [u8],
+    start_x: u32,
+    start_y: u32,
+    img_w: u32,
+    img_h: u32,
+) {
     let c0 = u16::from_le_bytes([block[0], block[1]]);
     let c1 = u16::from_le_bytes([block[2], block[3]]);
 
@@ -3892,16 +4767,51 @@ fn decode_dxt1_block(block: &[u8], rgba: &mut [u8], start_x: u32, start_y: u32, 
     // Expand to 8-bit
     let colors: [[u8; 4]; 4] = if c0 > c1 {
         [
-            [(r0 << 3) | (r0 >> 2), (g0 << 2) | (g0 >> 4), (b0 << 3) | (b0 >> 2), 255],
-            [(r1 << 3) | (r1 >> 2), (g1 << 2) | (g1 >> 4), (b1 << 3) | (b1 >> 2), 255],
-            [((2*r0 as u16 + r1 as u16)/3) as u8 * 8 / 8, ((2*g0 as u16 + g1 as u16)/3) as u8 * 4 / 4, ((2*b0 as u16 + b1 as u16)/3) as u8 * 8 / 8, 255],
-            [((r0 as u16 + 2*r1 as u16)/3) as u8 * 8 / 8, ((g0 as u16 + 2*g1 as u16)/3) as u8 * 4 / 4, ((b0 as u16 + 2*b1 as u16)/3) as u8 * 8 / 8, 255],
+            [
+                (r0 << 3) | (r0 >> 2),
+                (g0 << 2) | (g0 >> 4),
+                (b0 << 3) | (b0 >> 2),
+                255,
+            ],
+            [
+                (r1 << 3) | (r1 >> 2),
+                (g1 << 2) | (g1 >> 4),
+                (b1 << 3) | (b1 >> 2),
+                255,
+            ],
+            [
+                ((2 * r0 as u16 + r1 as u16) / 3) as u8 * 8 / 8,
+                ((2 * g0 as u16 + g1 as u16) / 3) as u8 * 4 / 4,
+                ((2 * b0 as u16 + b1 as u16) / 3) as u8 * 8 / 8,
+                255,
+            ],
+            [
+                ((r0 as u16 + 2 * r1 as u16) / 3) as u8 * 8 / 8,
+                ((g0 as u16 + 2 * g1 as u16) / 3) as u8 * 4 / 4,
+                ((b0 as u16 + 2 * b1 as u16) / 3) as u8 * 8 / 8,
+                255,
+            ],
         ]
     } else {
         [
-            [(r0 << 3) | (r0 >> 2), (g0 << 2) | (g0 >> 4), (b0 << 3) | (b0 >> 2), 255],
-            [(r1 << 3) | (r1 >> 2), (g1 << 2) | (g1 >> 4), (b1 << 3) | (b1 >> 2), 255],
-            [((r0 as u16 + r1 as u16)/2) as u8 * 8 / 8, ((g0 as u16 + g1 as u16)/2) as u8 * 4 / 4, ((b0 as u16 + b1 as u16)/2) as u8 * 8 / 8, 255],
+            [
+                (r0 << 3) | (r0 >> 2),
+                (g0 << 2) | (g0 >> 4),
+                (b0 << 3) | (b0 >> 2),
+                255,
+            ],
+            [
+                (r1 << 3) | (r1 >> 2),
+                (g1 << 2) | (g1 >> 4),
+                (b1 << 3) | (b1 >> 2),
+                255,
+            ],
+            [
+                ((r0 as u16 + r1 as u16) / 2) as u8 * 8 / 8,
+                ((g0 as u16 + g1 as u16) / 2) as u8 * 4 / 4,
+                ((b0 as u16 + b1 as u16) / 2) as u8 * 8 / 8,
+                255,
+            ],
             [0, 0, 0, 0], // Transparent black for DXT1 with alpha
         ]
     };
@@ -3910,13 +4820,15 @@ fn decode_dxt1_block(block: &[u8], rgba: &mut [u8], start_x: u32, start_y: u32, 
         for px in 0..4u32 {
             let x = start_x + px;
             let y = start_y + py;
-            if x >= img_w || y >= img_h { continue; }
+            if x >= img_w || y >= img_h {
+                continue;
+            }
             let bit_idx = (py * 4 + px) * 2;
             let byte_idx = 4 + (bit_idx / 8) as usize;
             let bit_offset = bit_idx % 8;
             let color_idx = ((block[byte_idx] >> bit_offset) & 3) as usize;
             let pixel_offset = ((y * img_w + x) * 4) as usize;
-            rgba[pixel_offset..pixel_offset+4].copy_from_slice(&colors[color_idx]);
+            rgba[pixel_offset..pixel_offset + 4].copy_from_slice(&colors[color_idx]);
         }
     }
 }
@@ -3925,67 +4837,95 @@ fn decode_dxt1_block(block: &[u8], rgba: &mut [u8], start_x: u32, start_y: u32, 
 
 /// Pack variable-length bone indices into fixed vec4 (as f32 for vertex attribute).
 fn pack_bone_vec4_f32(indices: &[Vec<u32>]) -> Vec<[f32; 4]> {
-    indices.iter().map(|v| {
-        let mut out = [0.0f32; 4];
-        for (i, &idx) in v.iter().take(4).enumerate() {
-            // Clamp to max bone uniform array size to prevent out-of-bounds GPU access
-            out[i] = (idx as f32).min(47.0);
-        }
-        out
-    }).collect()
+    indices
+        .iter()
+        .map(|v| {
+            let mut out = [0.0f32; 4];
+            for (i, &idx) in v.iter().take(4).enumerate() {
+                // Clamp to max bone uniform array size to prevent out-of-bounds GPU access
+                out[i] = (idx as f32).min(47.0);
+            }
+            out
+        })
+        .collect()
 }
 
 /// Pack variable-length bone weights into fixed vec4, normalized to sum to 1.
 fn pack_bone_weights_vec4(weights: &[Vec<f32>]) -> Vec<[f32; 4]> {
-    weights.iter().map(|v| {
-        let mut out = [0.0f32; 4];
-        for (i, &w) in v.iter().take(4).enumerate() {
-            out[i] = w.max(0.0); // clamp negatives to 0 (bad IQ can produce negative weights)
-        }
-        // Normalize so weights sum to 1.0
-        let sum: f32 = out.iter().sum();
-        if sum > 0.001 {
-            for w in out.iter_mut() {
-                *w /= sum;
+    weights
+        .iter()
+        .map(|v| {
+            let mut out = [0.0f32; 4];
+            for (i, &w) in v.iter().take(4).enumerate() {
+                out[i] = w.max(0.0); // clamp negatives to 0 (bad IQ can produce negative weights)
             }
-        } else {
-            // No weights — assign full weight to bone 0
-            out[0] = 1.0;
-        }
-        out
-    }).collect()
+            // Normalize so weights sum to 1.0
+            let sum: f32 = out.iter().sum();
+            if sum > 0.001 {
+                for w in out.iter_mut() {
+                    *w /= sum;
+                }
+            } else {
+                // No weights — assign full weight to bone 0
+                out[0] = 1.0;
+            }
+            out
+        })
+        .collect()
 }
 
 // ─── Matrix math helpers ───
 
 const IDENTITY_4X4: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 /// Convert a W3dKeyframe (quaternion + position + scale) to a column-major 4x4 matrix
-fn keyframe_to_column_major_matrix(kf: &crate::director::chunks::w3d::types::W3dKeyframe) -> [f32; 16] {
+fn keyframe_to_column_major_matrix(
+    kf: &crate::director::chunks::w3d::types::W3dKeyframe,
+) -> [f32; 16] {
     let (qx, qy, qz, qw) = (kf.rot_x, kf.rot_y, kf.rot_z, kf.rot_w);
     let (sx, sy, sz) = (kf.scale_x, kf.scale_y, kf.scale_z);
 
     // Quaternion to rotation matrix (column-major)
-    let x2 = qx + qx; let y2 = qy + qy; let z2 = qz + qz;
-    let xx = qx * x2; let xy = qx * y2; let xz = qx * z2;
-    let yy = qy * y2; let yz = qy * z2; let zz = qz * z2;
-    let wx = qw * x2; let wy = qw * y2; let wz = qw * z2;
+    let x2 = qx + qx;
+    let y2 = qy + qy;
+    let z2 = qz + qz;
+    let xx = qx * x2;
+    let xy = qx * y2;
+    let xz = qx * z2;
+    let yy = qy * y2;
+    let yz = qy * z2;
+    let zz = qz * z2;
+    let wx = qw * x2;
+    let wy = qw * y2;
+    let wz = qw * z2;
 
     [
-        (1.0 - (yy + zz)) * sx,  (xy + wz) * sx,           (xz - wy) * sx,           0.0,  // col 0
-        (xy - wz) * sy,           (1.0 - (xx + zz)) * sy,  (yz + wx) * sy,           0.0,  // col 1
-        (xz + wy) * sz,           (yz - wx) * sz,           (1.0 - (xx + yy)) * sz,  0.0,  // col 2
-        kf.pos_x,                 kf.pos_y,                 kf.pos_z,                 1.0,  // col 3
+        (1.0 - (yy + zz)) * sx,
+        (xy + wz) * sx,
+        (xz - wy) * sx,
+        0.0, // col 0
+        (xy - wz) * sy,
+        (1.0 - (xx + zz)) * sy,
+        (yz + wx) * sy,
+        0.0, // col 1
+        (xz + wy) * sz,
+        (yz - wx) * sz,
+        (1.0 - (xx + yy)) * sz,
+        0.0, // col 2
+        kf.pos_x,
+        kf.pos_y,
+        kf.pos_z,
+        1.0, // col 3
     ]
 }
 
 /// Case-insensitive lookup in node_transforms (Director is case-insensitive for node names).
-fn get_runtime_transform(rs: &crate::player::cast_member::Shockwave3dRuntimeState, name: &str) -> Option<[f32; 16]> {
+fn get_runtime_transform(
+    rs: &crate::player::cast_member::Shockwave3dRuntimeState,
+    name: &str,
+) -> Option<[f32; 16]> {
     if let Some(m) = rs.node_transforms.get(name) {
         return Some(*m);
     }
@@ -4001,10 +4941,22 @@ fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
     let f = 1.0 / (fov_y / 2.0).tan();
     let nf = 1.0 / (near - far);
     [
-        f / aspect, 0.0, 0.0, 0.0,
-        0.0, f, 0.0, 0.0,
-        0.0, 0.0, (far + near) * nf, -1.0,
-        0.0, 0.0, 2.0 * far * near * nf, 0.0,
+        f / aspect,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        f,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        (far + near) * nf,
+        -1.0,
+        0.0,
+        0.0,
+        2.0 * far * near * nf,
+        0.0,
     ]
 }
 
@@ -4013,10 +4965,22 @@ fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f3
     let tb = top - bottom;
     let fn_ = far - near;
     [
-        2.0 / rl, 0.0, 0.0, 0.0,
-        0.0, 2.0 / tb, 0.0, 0.0,
-        0.0, 0.0, -2.0 / fn_, 0.0,
-        -(right + left) / rl, -(top + bottom) / tb, -(far + near) / fn_, 1.0,
+        2.0 / rl,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.0 / tb,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.0 / fn_,
+        0.0,
+        -(right + left) / rl,
+        -(top + bottom) / tb,
+        -(far + near) / fn_,
+        1.0,
     ]
 }
 
@@ -4025,24 +4989,20 @@ fn mat4_multiply_row_major(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut r = [0.0f32; 16];
     for row in 0..4 {
         for col in 0..4 {
-            r[row * 4 + col] =
-                a[row * 4 + 0] * b[0 * 4 + col] +
-                a[row * 4 + 1] * b[1 * 4 + col] +
-                a[row * 4 + 2] * b[2 * 4 + col] +
-                a[row * 4 + 3] * b[3 * 4 + col];
+            r[row * 4 + col] = a[row * 4 + 0] * b[0 * 4 + col]
+                + a[row * 4 + 1] * b[1 * 4 + col]
+                + a[row * 4 + 2] * b[2 * 4 + col]
+                + a[row * 4 + 3] * b[3 * 4 + col];
         }
     }
     r
 }
 
-
 /// Convert row-major matrix to column-major for OpenGL uniforms
 fn row_major_to_column_major(m: &[f32; 16]) -> [f32; 16] {
     [
-        m[0], m[4], m[8],  m[12],
-        m[1], m[5], m[9],  m[13],
-        m[2], m[6], m[10], m[14],
-        m[3], m[7], m[11], m[15],
+        m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14], m[3], m[7],
+        m[11], m[15],
     ]
 }
 
@@ -4057,7 +5017,9 @@ fn invert_transform(m: &[f32; 16]) -> [f32; 16] {
     //   R[0][0]=m[0]  R[0][1]=m[4]  R[0][2]=m[8]
     //   R[1][0]=m[1]  R[1][1]=m[5]  R[1][2]=m[9]
     //   R[2][0]=m[2]  R[2][1]=m[6]  R[2][2]=m[10]
-    let tx = m[12]; let ty = m[13]; let tz = m[14];
+    let tx = m[12];
+    let ty = m[13];
+    let tz = m[14];
 
     // R^T: swap rows and columns
     // R^T[0][0]=m[0]  R^T[0][1]=m[1]  R^T[0][2]=m[2]
@@ -4071,10 +5033,10 @@ fn invert_transform(m: &[f32; 16]) -> [f32; 16] {
 
     // Output column-major: columns of R^T
     [
-        m[0], m[4], m[8],  0.0,  // R^T column 0
-        m[1], m[5], m[9],  0.0,  // R^T column 1
-        m[2], m[6], m[10], 0.0,  // R^T column 2
-        itx,  ity,  itz,   1.0,  // translation
+        m[0], m[4], m[8], 0.0, // R^T column 0
+        m[1], m[5], m[9], 0.0, // R^T column 1
+        m[2], m[6], m[10], 0.0, // R^T column 2
+        itx, ity, itz, 1.0, // translation
     ]
 }
 
@@ -4089,18 +5051,21 @@ fn generate_spherical_uvs(positions: &[[f32; 3]]) -> Vec<[f32; 2]> {
     let cy = positions.iter().map(|p| p[1]).sum::<f32>() / n;
     let cz = positions.iter().map(|p| p[2]).sum::<f32>() / n;
 
-    positions.iter().map(|p| {
-        let dx = p[0] - cx;
-        let dy = p[1] - cy;
-        let dz = p[2] - cz;
-        let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-8);
-        let nx = dx / len;
-        let ny = dy / len;
-        let nz = dz / len;
-        let u = 0.5 + nz.atan2(nx) / (2.0 * std::f32::consts::PI);
-        let v = 0.5 - ny.asin() / std::f32::consts::PI;
-        [u, v]
-    }).collect()
+    positions
+        .iter()
+        .map(|p| {
+            let dx = p[0] - cx;
+            let dy = p[1] - cy;
+            let dz = p[2] - cz;
+            let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-8);
+            let nx = dx / len;
+            let ny = dy / len;
+            let nz = dz / len;
+            let u = 0.5 + nz.atan2(nx) / (2.0 * std::f32::consts::PI);
+            let v = 0.5 - ny.asin() / std::f32::consts::PI;
+            [u, v]
+        })
+        .collect()
 }
 
 /// Generate cylindrical UV coordinates from vertex positions.
@@ -4115,13 +5080,16 @@ fn generate_cylindrical_uvs(positions: &[[f32; 3]]) -> Vec<[f32; 2]> {
     let max_y = positions.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
     let height = (max_y - min_y).max(0.001);
 
-    positions.iter().map(|p| {
-        let dx = p[0] - cx;
-        let dz = p[2] - cz;
-        let u = 0.5 + dz.atan2(dx) / (2.0 * std::f32::consts::PI);
-        let v = (p[1] - min_y) / height;
-        [u, v]
-    }).collect()
+    positions
+        .iter()
+        .map(|p| {
+            let dx = p[0] - cx;
+            let dz = p[2] - cz;
+            let u = 0.5 + dz.atan2(dx) / (2.0 * std::f32::consts::PI);
+            let v = (p[1] - min_y) / height;
+            [u, v]
+        })
+        .collect()
 }
 
 /// Generate UVs using the specified mode: 0=planar, 1=spherical, 2=cylindrical, 3=reflection.
@@ -4144,17 +5112,26 @@ fn generate_planar_uvs(positions: &[[f32; 3]]) -> Vec<[f32; 2]> {
     let mut min_y = f32::MAX;
     let mut max_y = f32::MIN;
     for p in positions {
-        if p[0] < min_x { min_x = p[0]; }
-        if p[0] > max_x { max_x = p[0]; }
-        if p[1] < min_y { min_y = p[1]; }
-        if p[1] > max_y { max_y = p[1]; }
+        if p[0] < min_x {
+            min_x = p[0];
+        }
+        if p[0] > max_x {
+            max_x = p[0];
+        }
+        if p[1] < min_y {
+            min_y = p[1];
+        }
+        if p[1] > max_y {
+            max_y = p[1];
+        }
     }
     let range_x = (max_x - min_x).max(0.001);
     let range_y = (max_y - min_y).max(0.001);
 
-    positions.iter().map(|p| {
-        [(p[0] - min_x) / range_x, (p[1] - min_y) / range_y]
-    }).collect()
+    positions
+        .iter()
+        .map(|p| [(p[0] - min_x) / range_x, (p[1] - min_y) / range_y])
+        .collect()
 }
 
 /// Multiply two column-major 4x4 matrices: result = A * B
@@ -4162,13 +5139,11 @@ fn mat4_multiply_col_major(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut r = [0.0f32; 16];
     for col in 0..4 {
         for row in 0..4 {
-            r[col * 4 + row] =
-                a[0 * 4 + row] * b[col * 4 + 0] +
-                a[1 * 4 + row] * b[col * 4 + 1] +
-                a[2 * 4 + row] * b[col * 4 + 2] +
-                a[3 * 4 + row] * b[col * 4 + 3];
+            r[col * 4 + row] = a[0 * 4 + row] * b[col * 4 + 0]
+                + a[1 * 4 + row] * b[col * 4 + 1]
+                + a[2 * 4 + row] * b[col * 4 + 2]
+                + a[3 * 4 + row] * b[col * 4 + 3];
         }
     }
     r
 }
-

@@ -1,6 +1,6 @@
 use vm_rust::browser_e2e_test;
 use vm_rust::director::static_datum::StaticDatum;
-use vm_rust::player::testing_shared::{datum, sprite, SnapshotContext, TestConfig, TestHarness};
+use vm_rust::player::testing_shared::{SnapshotContext, TestConfig, TestHarness, datum, sprite};
 
 const CONFIG: &str = include_str!("../configs/nintendo_mario7.toml");
 
@@ -16,13 +16,19 @@ browser_e2e_test!(test_nintendo_mario7_load, |player| async move {
 
     snapshots.verify("init_game", player.snapshot_stage())?;
 
-    player.step_until(datum("_movie.frame").equals(StaticDatum::Int(2))).timeout(10.0).await?;
+    player
+        .step_until(datum("_movie.frame").equals(StaticDatum::Int(2)))
+        .timeout(10.0)
+        .await?;
 
     snapshots.verify("start_game", player.snapshot_stage())?;
 
     player.click_sprite(sprite().member("Opening text")).await?;
 
-    player.step_until(datum("_movie.frame").equals(StaticDatum::Int(17))).timeout(10.0).await?;
+    player
+        .step_until(datum("_movie.frame").equals(StaticDatum::Int(17)))
+        .timeout(10.0)
+        .await?;
 
     snapshots.verify("in_match", player.snapshot_stage())?;
 

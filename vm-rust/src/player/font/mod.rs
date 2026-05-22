@@ -1,14 +1,15 @@
 use fxhash::FxHashMap;
-use log::{warn, debug};
+use log::{debug, warn};
 use std::cell::Cell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::player::{
-    bitmap::bitmap::{get_system_default_palette, Bitmap, PaletteRef},
+    CastManager,
+    bitmap::bitmap::{Bitmap, PaletteRef, get_system_default_palette},
     cast_member::CastMemberType,
-    reserve_player_mut, CastManager,
+    reserve_player_mut,
 };
 
 use std::collections::HashMap;
@@ -46,6 +47,28 @@ pub fn get_glyph_preference() -> GlyphPreference {
 pub fn set_glyph_preference(pref: GlyphPreference) {
     GLYPH_PREFERENCE.with(|p| p.set(pref));
     debug!("[GlyphPreference] Set to {:?}", pref);
+}
+
+pub fn resolve_director_native_font_name(
+    member_name: Option<&str>,
+    requested_font_name: &str,
+) -> String {
+    let trimmed = requested_font_name.trim();
+    let canonical = FontManager::canonical_font_name(trimmed);
+
+    if member_name
+        .map(|name| name.eq_ignore_ascii_case("bubbletext"))
+        .unwrap_or(false)
+        && (canonical.is_empty() || canonical == "arial")
+    {
+        return "Comic Sans MS".to_string();
+    }
+
+    if trimmed.is_empty() {
+        "Arial".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 pub type FontRef = u32;
@@ -108,6 +131,76 @@ pub struct DrawTextParams<'a> {
     pub top_spacing: i16,
     pub char_spacing: i16,
     pub member_width: Option<i16>,
+}
+
+pub fn count_director_lines(text: &str) -> i32 {
+    if text.is_empty() {
+        return 1;
+    }
+
+    let mut count = 1;
+    let mut prev_was_cr = false;
+    for c in text.chars() {
+        match c {
+            '\r' => {
+                count += 1;
+                prev_was_cr = true;
+            }
+            '\n' => {
+                if !prev_was_cr {
+                    count += 1;
+                }
+                prev_was_cr = false;
+            }
+            _ => prev_was_cr = false,
+        }
+    }
+
+    count
+}
+
+pub fn director_text_line_step(
+    fixed_line_space: u16,
+    font_size: u16,
+    top_spacing: i16,
+    bottom_spacing: i16,
+) -> i32 {
+    let line_height = if fixed_line_space > 0 {
+        fixed_line_space as i32
+    } else if font_size > 0 {
+        font_size as i32
+    } else {
+        12
+    };
+
+    (line_height + top_spacing as i32 + bottom_spacing as i32).max(1)
+}
+
+pub fn director_loc_v_to_line_pos(
+    text: &str,
+    loc_v: i32,
+    fixed_line_space: u16,
+    font_size: u16,
+    top_spacing: i16,
+    bottom_spacing: i16,
+) -> i32 {
+    let line_count = count_director_lines(text).max(1);
+    let line_step =
+        director_text_line_step(fixed_line_space, font_size, top_spacing, bottom_spacing);
+    let relative_v = (loc_v - top_spacing as i32).max(0);
+    ((relative_v / line_step) + 1).clamp(1, line_count)
+}
+
+pub fn director_line_pos_to_loc_v(
+    line_pos: i32,
+    fixed_line_space: u16,
+    font_size: u16,
+    top_spacing: i16,
+    bottom_spacing: i16,
+) -> i32 {
+    let line_step =
+        director_text_line_step(fixed_line_space, font_size, top_spacing, bottom_spacing);
+    top_spacing as i32 + (line_pos.max(1) - 1) * line_step + line_step
 }
 
 impl FontManager {
@@ -181,18 +274,19 @@ impl FontManager {
                 if let CastMemberType::Font(font_data) = &member.member_type {
                     let info_name_canon = Self::canonical_font_name(&font_data.font_info.name);
                     let member_name_canon = Self::canonical_font_name(&member.name);
-                    let name_matches =
-                        font_data.font_info.name.to_lowercase() == font_name_lc
-                            || member.name.to_lowercase() == font_name_lc
-                            || (!font_name_canon.is_empty()
-                                && (info_name_canon == font_name_canon
-                                    || member_name_canon == font_name_canon));
+                    let name_matches = font_data.font_info.name.to_lowercase() == font_name_lc
+                        || member.name.to_lowercase() == font_name_lc
+                        || (!font_name_canon.is_empty()
+                            && (info_name_canon == font_name_canon
+                                || member_name_canon == font_name_canon));
                     if !name_matches {
                         continue;
                     }
 
                     if let Some(ref parsed) = font_data.pfr_parsed {
-                        use crate::director::chunks::pfr1::{rasterizer, parse_pfr1_font_with_target};
+                        use crate::director::chunks::pfr1::{
+                            parse_pfr1_font_with_target, rasterizer,
+                        };
 
                         let parsed_for_size = if let Some(ref raw) = font_data.pfr_data {
                             match parse_pfr1_font_with_target(raw, 0) {
@@ -203,7 +297,11 @@ impl FontManager {
                             parsed.clone()
                         };
 
-                        let rasterized = rasterizer::rasterize_pfr1_font(&parsed_for_size, requested_size as usize, font_data.font_info.size as usize);
+                        let rasterized = rasterizer::rasterize_pfr1_font(
+                            &parsed_for_size,
+                            requested_size as usize,
+                            font_data.font_info.size as usize,
+                        );
 
                         let bitmap_width = rasterized.bitmap_width as u16;
                         let bitmap_height = rasterized.bitmap_height as u16;
@@ -218,7 +316,8 @@ impl FontManager {
                         );
 
                         let data_len = rasterized.bitmap_data.len().min(bitmap.data.len());
-                        bitmap.data[..data_len].copy_from_slice(&rasterized.bitmap_data[..data_len]);
+                        bitmap.data[..data_len]
+                            .copy_from_slice(&rasterized.bitmap_data[..data_len]);
 
                         for i in (0..data_len).step_by(4) {
                             let a = bitmap.data[i + 3];
@@ -253,15 +352,23 @@ impl FontManager {
                         };
 
                         let rc_font = Rc::new(font);
-                        let cache_key = Self::cache_key(&format!("{}_{}_{}", font_name, requested_size, style.unwrap_or(0)));
+                        let cache_key = Self::cache_key(&format!(
+                            "{}_{}_{}",
+                            font_name,
+                            requested_size,
+                            style.unwrap_or(0)
+                        ));
                         self.font_cache.insert(cache_key, Rc::clone(&rc_font));
-                        self.font_cache.insert(Self::cache_key(font_name), Rc::clone(&rc_font));
-                        self.font_cache.insert(Self::cache_key(&member.name), Rc::clone(&rc_font));
+                        self.font_cache
+                            .insert(Self::cache_key(font_name), Rc::clone(&rc_font));
+                        self.font_cache
+                            .insert(Self::cache_key(&member.name), Rc::clone(&rc_font));
 
                         let font_ref = self.font_counter;
                         self.font_counter += 1;
                         self.fonts.insert(font_ref, Rc::clone(&rc_font));
-                        self.font_by_id.insert(font_data.font_info.font_id, font_ref);
+                        self.font_by_id
+                            .insert(font_data.font_info.font_id, font_ref);
 
                         return Some(rc_font);
                     }
@@ -277,7 +384,9 @@ impl FontManager {
         // Fallback: try default embedded PFR fonts
         if requested_size > 0 {
             let font_name_canon = Self::canonical_font_name(font_name);
-            let matched_key = self.default_pfr_data.keys()
+            let matched_key = self
+                .default_pfr_data
+                .keys()
                 .find(|k| {
                     k.eq_ignore_ascii_case(font_name)
                         || Self::canonical_font_name(k) == font_name_canon
@@ -285,11 +394,15 @@ impl FontManager {
                 .cloned();
             if let Some(key) = matched_key {
                 if let Some(pfr_bytes) = self.default_pfr_data.get(&key) {
-                    use crate::director::chunks::pfr1::{rasterizer, parse_pfr1_font_with_target};
+                    use crate::director::chunks::pfr1::{parse_pfr1_font_with_target, rasterizer};
 
                     match parse_pfr1_font_with_target(pfr_bytes, 0) {
                         Ok(parsed) => {
-                            let rasterized = rasterizer::rasterize_pfr1_font(&parsed, requested_size as usize, 0);
+                            let rasterized = rasterizer::rasterize_pfr1_font(
+                                &parsed,
+                                requested_size as usize,
+                                0,
+                            );
 
                             let bitmap_width = rasterized.bitmap_width as u16;
                             let bitmap_height = rasterized.bitmap_height as u16;
@@ -304,7 +417,8 @@ impl FontManager {
                             );
 
                             let data_len = rasterized.bitmap_data.len().min(bitmap.data.len());
-                            bitmap.data[..data_len].copy_from_slice(&rasterized.bitmap_data[..data_len]);
+                            bitmap.data[..data_len]
+                                .copy_from_slice(&rasterized.bitmap_data[..data_len]);
 
                             for i in (0..data_len).step_by(4) {
                                 let a = bitmap.data[i + 3];
@@ -339,10 +453,17 @@ impl FontManager {
                             };
 
                             let rc_font = Rc::new(font);
-                            let cache_key = Self::cache_key(&format!("{}_{}_{}", font_name, requested_size, style.unwrap_or(0)));
+                            let cache_key = Self::cache_key(&format!(
+                                "{}_{}_{}",
+                                font_name,
+                                requested_size,
+                                style.unwrap_or(0)
+                            ));
                             self.font_cache.insert(cache_key, Rc::clone(&rc_font));
-                            self.font_cache.insert(Self::cache_key(font_name), Rc::clone(&rc_font));
-                            self.font_cache.insert(Self::cache_key(&key), Rc::clone(&rc_font));
+                            self.font_cache
+                                .insert(Self::cache_key(font_name), Rc::clone(&rc_font));
+                            self.font_cache
+                                .insert(Self::cache_key(&key), Rc::clone(&rc_font));
 
                             let font_ref = self.font_counter;
                             self.font_counter += 1;
@@ -356,10 +477,7 @@ impl FontManager {
                             return Some(rc_font);
                         }
                         Err(e) => {
-                            debug!(
-                                "Failed to parse default PFR font '{}': {}",
-                                key, e
-                            );
+                            debug!("Failed to parse default PFR font '{}': {}", key, e);
                         }
                     }
                 }
@@ -446,7 +564,12 @@ impl FontManager {
         size: Option<u16>,
         style: Option<u8>,
     ) -> Option<Rc<BitmapFont>> {
-        let cache_key = Self::cache_key(&format!("{}_{}_{}", font_name, size.unwrap_or(0), style.unwrap_or(0)));
+        let cache_key = Self::cache_key(&format!(
+            "{}_{}_{}",
+            font_name,
+            size.unwrap_or(0),
+            style.unwrap_or(0)
+        ));
 
         for cast_lib in &cast_manager.casts {
             for member in cast_lib.members.values() {
@@ -457,8 +580,7 @@ impl FontManager {
                     let info_name_canon = Self::canonical_font_name(&font_data.font_info.name);
                     let member_name_canon = Self::canonical_font_name(&member.name);
 
-                    let name_matches =
-                        font_data.font_info.name.to_lowercase() == font_name_lc
+                    let name_matches = font_data.font_info.name.to_lowercase() == font_name_lc
                         || member.name.to_lowercase() == font_name_lc
                         || (!font_name_canon.is_empty()
                             && (info_name_canon == font_name_canon
@@ -478,8 +600,7 @@ impl FontManager {
                         // Check if this font has a bitmap_ref from PFR parsing
                         if let Some(bitmap_ref) = font_data.bitmap_ref {
                             web_sys::console::log_1(
-                                &format!("Found PFR font with bitmap_ref: {}", bitmap_ref)
-                                    .into(),
+                                &format!("Found PFR font with bitmap_ref: {}", bitmap_ref).into(),
                             );
 
                             let font = BitmapFont {
@@ -521,8 +642,10 @@ impl FontManager {
                             if font_data.font_info.name != member.name
                                 && font_data.font_info.name != font_name
                             {
-                                self.font_cache
-                                    .insert(Self::cache_key(&font_data.font_info.name), Rc::clone(&rc_font));
+                                self.font_cache.insert(
+                                    Self::cache_key(&font_data.font_info.name),
+                                    Rc::clone(&rc_font),
+                                );
                             }
 
                             let font_ref = self.font_counter;
@@ -553,8 +676,7 @@ impl FontManager {
                                 .insert(cache_key.clone(), Rc::clone(&rc_font));
                             let name_key = Self::cache_key(font_name);
                             if !self.font_cache.contains_key(&name_key) {
-                                self.font_cache
-                                    .insert(name_key, Rc::clone(&rc_font));
+                                self.font_cache.insert(name_key, Rc::clone(&rc_font));
                             }
 
                             let font_ref = self.font_counter;
@@ -680,7 +802,7 @@ impl FontManager {
         size: u16,
         bitmap_manager: &mut crate::player::bitmap::manager::BitmapManager,
     ) -> Option<Rc<BitmapFont>> {
-        use crate::director::chunks::pfr1::{rasterizer, parse_pfr1_font_with_target};
+        use crate::director::chunks::pfr1::{parse_pfr1_font_with_target, rasterizer};
 
         let parsed_for_size = match parse_pfr1_font_with_target(pfr_data, size as i32) {
             Ok(p) => p,
@@ -693,7 +815,11 @@ impl FontManager {
         let bitmap_height = rasterized.bitmap_height as u16;
 
         let mut bitmap = Bitmap::new(
-            bitmap_width, bitmap_height, 32, 32, 0,
+            bitmap_width,
+            bitmap_height,
+            32,
+            32,
+            0,
             PaletteRef::BuiltIn(get_system_default_palette()),
         );
 
@@ -1124,7 +1250,12 @@ pub fn bitmap_font_copy_char_tight(
     dest.copy_pixels_with_params(
         palettes,
         font_bitmap,
-        IntRect::from(dest_x + min_x, dest_y + min_y, dest_x + min_x + w, dest_y + min_y + h),
+        IntRect::from(
+            dest_x + min_x,
+            dest_y + min_y,
+            dest_x + min_x + w,
+            dest_y + min_y + h,
+        ),
         IntRect::from(src_x, src_y, src_x + w, src_y + h),
         draw_params,
     )
@@ -1182,12 +1313,7 @@ pub fn bitmap_font_copy_char_italic(
                 dest_x + shift + w,
                 dest_y + row + 1,
             ),
-            IntRect::from(
-                src_x,
-                src_y + row,
-                src_x + w,
-                src_y + row + 1,
-            ),
+            IntRect::from(src_x, src_y + row, src_x + w, src_y + row + 1),
             draw_params,
         );
     }
@@ -1253,7 +1379,14 @@ pub fn bitmap_font_copy_char_tight_italic(
 
     if max_x < min_x || max_y < min_y {
         bitmap_font_copy_char_italic(
-            font, font_bitmap, char_num, dest, dest_x, dest_y, palettes, draw_params,
+            font,
+            font_bitmap,
+            char_num,
+            dest,
+            dest_x,
+            dest_y,
+            palettes,
+            draw_params,
         );
         return;
     }
@@ -1278,12 +1411,7 @@ pub fn bitmap_font_copy_char_tight_italic(
                 dest_x + min_x + shift + w,
                 dest_y + min_y + row + 1,
             ),
-            IntRect::from(
-                src_x,
-                src_y_top + row,
-                src_x + w,
-                src_y_top + row + 1,
-            ),
+            IntRect::from(src_x, src_y_top + row, src_x + w, src_y_top + row + 1),
             draw_params,
         );
     }
@@ -1332,15 +1460,18 @@ pub fn measure_text(
     } else {
         font.char_height
     };
-    let line_spacing = if line_spacing > 0
-        && (line_spacing as u32) > (natural_lh_for_guard as u32 * 5 / 2)
-    {
-        0
-    } else {
-        line_spacing
-    };
+    let line_spacing =
+        if line_spacing > 0 && (line_spacing as u32) > (natural_lh_for_guard as u32 * 5 / 2) {
+            0
+        } else {
+            line_spacing
+        };
     // fixedLineSpace overrides line step between lines; topSpacing + bottomSpacing added on top.
-    let effective_lh = if line_spacing > 0 { line_spacing as i16 } else { line_height as i16 };
+    let effective_lh = if line_spacing > 0 {
+        line_spacing as i16
+    } else {
+        line_height as i16
+    };
     // First line height: when an explicit line_spacing (member's
     // fixedLineSpace) is set, trust it verbatim — that's the authored
     // per-line stride and Director uses it as the first-line extent too.
@@ -1432,21 +1563,22 @@ pub fn measure_text_wrapped(
     } else {
         font.char_height
     };
-    let line_spacing = if line_spacing > 0
-        && (line_spacing as u32) > (natural_lh_for_guard as u32 * 5 / 2)
-    {
-        0
+    let line_spacing =
+        if line_spacing > 0 && (line_spacing as u32) > (natural_lh_for_guard as u32 * 5 / 2) {
+            0
+        } else {
+            line_spacing
+        };
+    let effective_lh = if line_spacing > 0 {
+        line_spacing as i16
     } else {
-        line_spacing
+        effective_line_h as i16
     };
-    let effective_lh = if line_spacing > 0 { line_spacing as i16 } else { effective_line_h as i16 };
     let line_step = (effective_lh + bottom_spacing + top_spacing) as u16;
 
     // Per-character advance including char_spacing — matches the renderer at
     // text.rs's flush_line loop which does `x += adv + char_spacing` for every char.
-    let char_adv = |c: char| -> i32 {
-        font.get_char_advance(c as u8) as i32 + char_spacing
-    };
+    let char_adv = |c: char| -> i32 { font.get_char_advance(c as u8) as i32 + char_spacing };
 
     // Split into explicit lines first
     let raw_lines: Vec<&str> = text.split(|c: char| c == '\r' || c == '\n').collect();
@@ -1516,8 +1648,7 @@ pub fn measure_text_wrapped(
     let num_lines = visual_lines.len().max(1);
     let max_width_found = visual_lines.iter().copied().max().unwrap_or(0).max(0) as u16;
     let first_line_h = (effective_line_h as i16).max(effective_lh);
-    let height = (top_spacing + first_line_h) as u16
-        + (num_lines as u16 - 1) * line_step;
+    let height = (top_spacing + first_line_h) as u16 + (num_lines as u16 - 1) * line_step;
 
     (max_width_found, height)
 }
@@ -1527,10 +1658,12 @@ pub fn get_text_char_pos(text: &str, params: &DrawTextParams, char_index: usize)
     let mut y = params.top_spacing;
     let mut line_width: i16 = 0;
     let mut line_index = 0;
-    let eff_lh = if params.font.font_size > 0 { params.font.font_size } else { params.font.char_height };
-    let line_step = params.line_height.unwrap_or(eff_lh) as i16
-        + params.line_spacing as i16
-        + 1;
+    let eff_lh = if params.font.font_size > 0 {
+        params.font.font_size
+    } else {
+        params.font.char_height
+    };
+    let line_step = params.line_height.unwrap_or(eff_lh) as i16 + params.line_spacing as i16 + 1;
 
     let mut prev_was_cr = false;
     for c in text.chars() {
@@ -1549,7 +1682,8 @@ pub fn get_text_char_pos(text: &str, params: &DrawTextParams, char_index: usize)
             y += line_step;
         } else {
             prev_was_cr = false;
-            let char_advance = params.font.get_char_advance(c as u8) as i16 + 1 + params.char_spacing;
+            let char_advance =
+                params.font.get_char_advance(c as u8) as i16 + 1 + params.char_spacing;
             if line_index == char_index {
                 return (line_width, y);
             }
@@ -1564,7 +1698,11 @@ pub fn get_text_char_pos(text: &str, params: &DrawTextParams, char_index: usize)
 }
 
 pub fn get_text_index_at_pos(text: &str, params: &DrawTextParams, x: i32, y: i32) -> usize {
-    let eff_lh = if params.font.font_size > 0 { params.font.font_size } else { params.font.char_height };
+    let eff_lh = if params.font.font_size > 0 {
+        params.font.font_size
+    } else {
+        params.font.char_height
+    };
     let line_h = params.line_height.unwrap_or(eff_lh) as i32;
     let mut index = 0;
     let mut line_width = 0;

@@ -1,6 +1,6 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
 
 pub struct RectDatumHandlers {}
@@ -64,12 +64,15 @@ impl RectDatumHandlers {
             let dy = player.get_datum(&args[1]).int_value()?;
 
             // offset always produces int results
-            Ok(player.alloc_datum(Datum::Rect([
-                vals[0] + dx as f64,
-                vals[1] + dy as f64,
-                vals[2] + dx as f64,
-                vals[3] + dy as f64,
-            ], 0)))
+            Ok(player.alloc_datum(Datum::Rect(
+                [
+                    vals[0] + dx as f64,
+                    vals[1] + dy as f64,
+                    vals[2] + dx as f64,
+                    vals[3] + dy as f64,
+                ],
+                0,
+            )))
         })
     }
 
@@ -106,7 +109,8 @@ impl RectDatumHandlers {
             }
 
             let i = (index - 1) as usize;
-            let component = Datum::inline_component_to_datum(vals[i], Datum::inline_is_float(flags, i));
+            let component =
+                Datum::inline_component_to_datum(vals[i], Datum::inline_is_float(flags, i));
             Ok(player.alloc_datum(component))
         })
     }
@@ -131,7 +135,11 @@ impl RectDatumHandlers {
         })
     }
 
-    pub fn get_prop(player: &DirPlayer, datum: &DatumRef, prop: &str) -> Result<Datum, ScriptError> {
+    pub fn get_prop(
+        player: &DirPlayer,
+        datum: &DatumRef,
+        prop: &str,
+    ) -> Result<Datum, ScriptError> {
         let (vals, flags) = player.get_datum(datum).to_rect_inline()?;
 
         let left = vals[0];
@@ -143,21 +151,46 @@ impl RectDatumHandlers {
             "ilk" => Ok(Datum::Symbol("rect".to_string())),
             "width" => Ok(Datum::from_f64(right - left)),
             "height" => Ok(Datum::from_f64(bottom - top)),
-            "left" => Ok(Datum::inline_component_to_datum(left, Datum::inline_is_float(flags, 0))),
-            "top" => Ok(Datum::inline_component_to_datum(top, Datum::inline_is_float(flags, 1))),
-            "right" => Ok(Datum::inline_component_to_datum(right, Datum::inline_is_float(flags, 2))),
-            "bottom" => Ok(Datum::inline_component_to_datum(bottom, Datum::inline_is_float(flags, 3))),
-            _ => Err(ScriptError::new(format!("Cannot get rect property {}", prop))),
+            "left" => Ok(Datum::inline_component_to_datum(
+                left,
+                Datum::inline_is_float(flags, 0),
+            )),
+            "top" => Ok(Datum::inline_component_to_datum(
+                top,
+                Datum::inline_is_float(flags, 1),
+            )),
+            "right" => Ok(Datum::inline_component_to_datum(
+                right,
+                Datum::inline_is_float(flags, 2),
+            )),
+            "bottom" => Ok(Datum::inline_component_to_datum(
+                bottom,
+                Datum::inline_is_float(flags, 3),
+            )),
+            _ => Err(ScriptError::new(format!(
+                "Cannot get rect property {}",
+                prop
+            ))),
         }
     }
 
-    pub fn set_prop(player: &mut DirPlayer, datum: &DatumRef, prop: &str, value_ref: &DatumRef) -> Result<(), ScriptError> {
+    pub fn set_prop(
+        player: &mut DirPlayer,
+        datum: &DatumRef,
+        prop: &str,
+        value_ref: &DatumRef,
+    ) -> Result<(), ScriptError> {
         let idx = match prop {
             "left" => 0usize,
             "top" => 1usize,
             "right" => 2usize,
             "bottom" => 3usize,
-            _ => return Err(ScriptError::new(format!("Cannot set rect property {}", prop))),
+            _ => {
+                return Err(ScriptError::new(format!(
+                    "Cannot set rect property {}",
+                    prop
+                )));
+            }
         };
 
         let new_val = player.get_datum(value_ref).clone();

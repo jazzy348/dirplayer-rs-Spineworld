@@ -13,12 +13,15 @@ import {
   player_set_picking_mode,
   player_get_sprite_at,
   player_set_debug_selected_channel,
+  player_get_keyboard_focus_sprite_at,
   is_sprite_editable_field,
+  is_sprite_keyboard_focusable,
   field_set_caret_at,
   field_drag_extend_to,
   field_select_word_at,
   field_select_line_at,
   is_field_focused,
+  edit_shortcuts_enabled,
   get_focused_field_selected_text,
   delete_focused_field_selection,
   field_select_all,
@@ -37,17 +40,10 @@ import styles from "./styles.module.css";
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 10;
 
-// Snap the CSS scale so that (cssScale × devicePixelRatio) is an integer,
-// guaranteeing one physical-pixel-wide columns/rows per canvas pixel.
-// At 125% Windows DPI (DPR=1.25), scale=1.0 would give 1.25 physical pixels
-// per source pixel, causing pixel-walking. Snapping to round(1.25)/1.25=0.8
-// gives 1:1 physical pixel mapping instead.
-// Only applied when upscaling (physicalScale >= 1); downscaling is left alone.
+// Keep Director coordinates in CSS pixels; embedded movies must render and
+// hit-test at the same scale the host page lays out.
 function getEffectiveScale(scale: number): number {
-  const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : null) ?? 1;
-  const physicalScale = scale * dpr;
-  if (physicalScale < 1) return scale;
-  return Math.round(physicalScale) / dpr;
+  return scale;
 }
 
 function ZoomSlider({ scale, setScale }: { scale: number; setScale: (scale: number) => void }) {
@@ -195,6 +191,17 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
   }, [scale]);
   useEffect(() => { panRef.current = pan; }, [pan]);
   useEffect(() => { panModeRef.current = panMode; }, [panMode]);
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(wheelKeyReleaseTimersRef.current)) {
+        if (timer !== undefined) {
+          window.clearTimeout(timer);
+        }
+      }
+      key_up("ArrowUp", 38);
+      key_up("ArrowDown", 40);
+    };
+  }, []);
 
   // outer-relative coords keyed by pointerId
   const activePointersRef = useRef<Map<number, Pt>>(new Map());
@@ -209,6 +216,7 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
   // tracks recent clicks on the same editable sprite to detect double / triple
   // clicks for word/line selection.
   const lastClickRef = useRef<{ spriteId: number; t: number; x: number; y: number; count: number } | null>(null);
+  const wheelKeyReleaseTimersRef = useRef<Record<string, number | undefined>>({});
   // True while an IME composition is in flight on the hidden input. Used to
   // suppress the regular onInput char-by-char dispatch path so we don't double
   // up insertion (compositionend already commits the final string).
@@ -373,7 +381,7 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
     };
 
     const onCopy = (e: ClipboardEvent) => {
-      if (!is_field_focused() || isNativeEditable(e)) return;
+      if (!is_field_focused() || !edit_shortcuts_enabled() || isNativeEditable(e)) return;
       const text = get_focused_field_selected_text();
       if (!text) return;
       e.preventDefault();
@@ -381,7 +389,7 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
       set_clipboard_mirror(text);
     };
     const onCut = (e: ClipboardEvent) => {
-      if (!is_field_focused() || isNativeEditable(e)) return;
+      if (!is_field_focused() || !edit_shortcuts_enabled() || isNativeEditable(e)) return;
       const text = get_focused_field_selected_text();
       if (!text) return;
       e.preventDefault();
@@ -390,7 +398,7 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
       delete_focused_field_selection();
     };
     const onPaste = (e: ClipboardEvent) => {
-      if (!is_field_focused() || isNativeEditable(e)) return;
+      if (!is_field_focused() || !edit_shortcuts_enabled() || isNativeEditable(e)) return;
       const text = e.clipboardData?.getData("text/plain") ?? "";
       if (!text) return;
       e.preventDefault();
@@ -436,6 +444,59 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
     return c.x >= 0 && c.y >= 0 && c.x < stageWidth && c.y < stageHeight;
   }
 
+  function releaseWheelArrowKey(key: "ArrowUp" | "ArrowDown", code: 38 | 40) {
+    const timer = wheelKeyReleaseTimersRef.current[key];
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      wheelKeyReleaseTimersRef.current[key] = undefined;
+    }
+    key_up(key, code);
+  }
+
+  function pulseWheelArrowKey(key: "ArrowUp" | "ArrowDown", code: 38 | 40) {
+    const oppositeKey = key === "ArrowDown" ? "ArrowUp" : "ArrowDown";
+    const oppositeCode = key === "ArrowDown" ? 38 : 40;
+    releaseWheelArrowKey(oppositeKey, oppositeCode);
+    key_down(key, code);
+    const existingTimer = wheelKeyReleaseTimersRef.current[key];
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+    wheelKeyReleaseTimersRef.current[key] = window.setTimeout(() => {
+      key_up(key, code);
+      wheelKeyReleaseTimersRef.current[key] = undefined;
+    }, 90);
+  }
+
+  function onStageWheel(e: WheelEvent) {
+    if (enableGestures || is_field_focused()) {
+      return;
+    }
+    const rect = outerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const canvas = outerToCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (!isInsideCanvas(canvas)) return;
+
+    const primaryDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (primaryDelta === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    mouse_move(canvas.x, canvas.y);
+    if (primaryDelta > 0) {
+      pulseWheelArrowKey("ArrowDown", 40);
+    } else {
+      pulseWheelArrowKey("ArrowUp", 38);
+    }
+  }
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el || enableGestures) return;
+    el.addEventListener("wheel", onStageWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onStageWheel);
+  }, [outerWidth, outerHeight, stageWidth, stageHeight, enableGestures]);
+
   function gestureCentroidAndDist(): { centroid: Pt; dist: number } {
     const pts = Array.from(activePointersRef.current.values());
     let cx = 0, cy = 0;
@@ -476,35 +537,42 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
         break;
       case "down": {
         const spriteId = player_get_sprite_at(canvasX, canvasY);
-        const isEditable = spriteId > 0 && is_sprite_editable_field(spriteId);
+        const focusSpriteId = player_get_keyboard_focus_sprite_at(canvasX, canvasY);
+        const textSpriteId = focusSpriteId || spriteId;
+        const isEditable = textSpriteId > 0 && is_sprite_editable_field(textSpriteId);
+        const isKeyboardFocusable = textSpriteId > 0 && is_sprite_keyboard_focusable(textSpriteId);
         mouse_down(canvasX, canvasY);
-        if (isEditable) {
+        if (isKeyboardFocusable) {
           e.preventDefault();
           hiddenInputRef.current?.focus();
+        }
+        if (isEditable) {
           // Detect rapid repeat clicks on the same sprite for word/line select.
           const now = performance.now();
           const prev = lastClickRef.current;
           const sameSpot = !!prev
-            && prev.spriteId === spriteId
+            && prev.spriteId === textSpriteId
             && (now - prev.t) < 500
             && Math.hypot(prev.x - canvasX, prev.y - canvasY) < 4;
           const count = sameSpot ? prev.count + 1 : 1;
-          lastClickRef.current = { spriteId, t: now, x: canvasX, y: canvasY, count };
+          lastClickRef.current = { spriteId: textSpriteId, t: now, x: canvasX, y: canvasY, count };
           if (count >= 3) {
-            field_select_line_at(spriteId, canvasX, canvasY);
+            field_select_line_at(textSpriteId, canvasX, canvasY);
             textDragRef.current = null; // don't drag-extend after triple click
           } else if (count === 2) {
-            field_select_word_at(spriteId, canvasX, canvasY);
+            field_select_word_at(textSpriteId, canvasX, canvasY);
             textDragRef.current = null;
           } else {
-            field_set_caret_at(spriteId, canvasX, canvasY, e.shiftKey);
-            textDragRef.current = { spriteId };
+            field_set_caret_at(textSpriteId, canvasX, canvasY, e.shiftKey);
+            textDragRef.current = { spriteId: textSpriteId };
           }
         } else {
           textDragRef.current = null;
           lastClickRef.current = null;
-          if (document.activeElement === hiddenInputRef.current) {
-            hiddenInputRef.current?.blur();
+          if (!isKeyboardFocusable) {
+            if (document.activeElement === hiddenInputRef.current) {
+              hiddenInputRef.current?.blur();
+            }
             outerRef.current?.focus();
           }
         }
@@ -692,10 +760,6 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
 
   // Show minimap only when stage extends beyond the viewport — keeps it out
   // of the way for movies that fit comfortably on screen.
-  // Snap the rendered scale to an integer physical-pixel multiple so canvas
-  // pixels map to square physical pixels. At 125% Windows DPI (DPR=1.25),
-  // scale=1.0 → 1.25 physical pixels per source pixel (non-integer, pixel-
-  // walking). effectiveScale snaps to round(1.25)/1.25=0.8 → 1:1 physical.
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
   const effectiveScale = getEffectiveScale(scale);
   const stageFitsInViewport =
@@ -730,6 +794,12 @@ export default function Stage({ showControls, enableGestures }: { showControls?:
       }}
       onKeyUp={e => {
         if (document.activeElement === hiddenInputRef.current) return;
+        if (e.key.length === 1) {
+          const key = e.key;
+          const code = e.keyCode;
+          setTimeout(() => key_up(key, code), 100);
+          return;
+        }
         key_up(e.key, e.keyCode);
       }}
     >

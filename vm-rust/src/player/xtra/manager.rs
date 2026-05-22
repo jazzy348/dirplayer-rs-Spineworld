@@ -3,9 +3,9 @@ use crate::{
     player::{DatumRef, ScriptError},
 };
 
-use super::fileio::{borrow_fileio_manager_mut, FileIoXtraManager};
-use super::multiuser::{borrow_multiuser_manager_mut, MultiuserXtraManager};
-use super::xmlparser::{borrow_xmlparser_manager_mut, XmlParserXtraManager};
+use super::fileio::{FileIoXtraManager, borrow_fileio_manager_mut};
+use super::multiuser::{MultiuserXtraManager, borrow_multiuser_manager_mut};
+use super::xmlparser::{XmlParserXtraManager, borrow_xmlparser_manager_mut};
 
 pub fn is_xtra_registered(name: &str) -> bool {
     let name_lower = name.to_lowercase();
@@ -25,13 +25,13 @@ pub fn call_xtra_instance_handler(
     let xtra_name_lower = xtra_name.to_lowercase();
     match xtra_name_lower.as_str() {
         "multiuser" => {
-            return MultiuserXtraManager::call_instance_handler(handler_name, instance_id, args)
+            return MultiuserXtraManager::call_instance_handler(handler_name, instance_id, args);
         }
         "xmlparser" => {
-            return XmlParserXtraManager::call_instance_handler(handler_name, instance_id, args)
+            return XmlParserXtraManager::call_instance_handler(handler_name, instance_id, args);
         }
         "fileio" => {
-            return FileIoXtraManager::call_instance_handler(handler_name, instance_id, args)
+            return FileIoXtraManager::call_instance_handler(handler_name, instance_id, args);
         }
         _ => Err(ScriptError::new(format!(
             "No handler {} found for xtra {} instance #{}",
@@ -54,7 +54,7 @@ pub async fn call_xtra_instance_async_handler(
                 instance_id,
                 args,
             )
-            .await
+            .await;
         }
         "xmlparser" => {
             return XmlParserXtraManager::call_instance_async_handler(
@@ -62,15 +62,11 @@ pub async fn call_xtra_instance_async_handler(
                 instance_id,
                 args,
             )
-            .await
+            .await;
         }
         "fileio" => {
-            return FileIoXtraManager::call_instance_async_handler(
-                handler_name,
-                instance_id,
-                args,
-            )
-            .await
+            return FileIoXtraManager::call_instance_async_handler(handler_name, instance_id, args)
+                .await;
         }
         _ => Err(ScriptError::new(format!(
             "No async handler {} found for xtra {} instance #{}",

@@ -53,7 +53,9 @@ impl Mesh3dBuffers {
         texcoords2: Option<&[[f32; 2]]>,
         faces: &[[u32; 3]],
     ) -> Result<Self, JsValue> {
-        Self::new_with_bones(context, positions, normals, texcoords, texcoords2, faces, None, None)
+        Self::new_with_bones(
+            context, positions, normals, texcoords, texcoords2, faces, None, None,
+        )
     }
 
     /// Upload mesh data with optional bone indices/weights for skeletal skinning.
@@ -67,7 +69,17 @@ impl Mesh3dBuffers {
         bone_indices: Option<&[[f32; 4]]>,
         bone_weights: Option<&[[f32; 4]]>,
     ) -> Result<Self, JsValue> {
-        Self::new_full(context, positions, normals, texcoords, texcoords2, faces, bone_indices, bone_weights, None)
+        Self::new_full(
+            context,
+            positions,
+            normals,
+            texcoords,
+            texcoords2,
+            faces,
+            bone_indices,
+            bone_weights,
+            None,
+        )
     }
 
     /// Upload mesh data with all optional attributes.
@@ -292,7 +304,10 @@ impl Mesh3dBuffers {
         // Explicitly re-bind IBO — some WebGL2 implementations lose the
         // ELEMENT_ARRAY_BUFFER binding from the VAO when other code
         // (e.g. the 2D sprite renderer) changes GL state between frames.
-        gl.bind_buffer(WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER, Some(&self.ibo));
+        gl.bind_buffer(
+            WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
+            Some(&self.ibo),
+        );
     }
 
     /// Draw the mesh (call after binding and setting uniforms)

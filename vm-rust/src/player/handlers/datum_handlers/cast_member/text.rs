@@ -1,25 +1,32 @@
 use std::collections::VecDeque;
 
-use log::{debug, warn};
 use crate::{
     director::enums::TextInfo,
     director::lingo::datum::{
-        datum_bool, Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType,
+        Datum, DatumType, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool,
     },
     player::{
+        DatumRef, DirPlayer, ScriptError,
         bitmap::{
             bitmap::{Bitmap, PaletteRef, get_system_default_palette},
             drawing::CopyPixelsParams,
         },
         cast_lib::CastMemberRef,
-        font::{get_text_index_at_pos, get_glyph_preference, GlyphPreference, measure_text, measure_text_wrapped, DrawTextParams},
-        handlers::datum_handlers::{
-            cast_member::font::{FontMemberHandlers, HtmlParser, HtmlStyle, StyledSpan, TextAlignment},
-            cast_member_ref::borrow_member_mut, string_chunk::StringChunkUtils,
+        font::{
+            DrawTextParams, GlyphPreference, director_line_pos_to_loc_v,
+            director_loc_v_to_line_pos, get_glyph_preference, get_text_index_at_pos, measure_text,
+            measure_text_wrapped, resolve_director_native_font_name,
         },
-        DatumRef, DirPlayer, ScriptError,
+        handlers::datum_handlers::{
+            cast_member::font::{
+                FontMemberHandlers, HtmlParser, HtmlStyle, StyledSpan, TextAlignment,
+            },
+            cast_member_ref::borrow_member_mut,
+            string_chunk::StringChunkUtils,
+        },
     },
 };
+use log::{debug, warn};
 
 pub struct TextMemberHandlers {}
 const DEBUG_TEXT_IMAGE: bool = true;
@@ -45,6 +52,164 @@ struct ParsedRtf {
 }
 
 impl TextMemberHandlers {
+    fn font_style_bits(font_style: &[String]) -> u8 {
+        let mut style = 0u8;
+        for tag in font_style {
+            match tag.as_str() {
+                "bold" => style |= 0x01,
+                "italic" => style |= 0x02,
+                "underline" => style |= 0x04,
+                _ => {}
+            }
+        }
+        style
+    }
+
+    fn wrapped_line_count<F>(
+        raw: &str,
+        word_wrap: bool,
+        max_width: f64,
+        measure: F,
+    ) -> usize
+    where
+        F: Fn(&str) -> f64,
+    {
+        if !word_wrap || max_width <= 0.0 || raw.is_empty() {
+            return 1;
+        }
+
+        let words: Vec<&str> = raw.split_whitespace().collect();
+        if words.is_empty() {
+            return 1;
+        }
+
+        let mut count = 0usize;
+        let mut current = String::new();
+        for word in words {
+            let candidate = if current.is_empty() {
+                word.to_string()
+            } else {
+                format!("{} {}", current, word)
+            };
+            if measure(&candidate) > max_width && !current.is_empty() {
+                count += 1;
+                current = word.to_string();
+            } else {
+                current = candidate;
+            }
+        }
+        if !current.is_empty() {
+            count += 1;
+        }
+        count.max(1)
+    }
+
+    fn logical_line_bottoms(
+        player: &mut DirPlayer,
+        text: &str,
+        font_name: &str,
+        font_style: &[String],
+        font_size: u16,
+        fixed_line_space: u16,
+        top_spacing: i16,
+        char_spacing: i32,
+        member_width: u16,
+        word_wrap: bool,
+    ) -> Option<Vec<f64>> {
+        if text.is_empty() {
+            return None;
+        }
+
+        let font_size_opt = if font_size > 0 { Some(font_size) } else { None };
+        let loaded_font = if !font_name.is_empty() {
+            player.font_manager.get_font_with_cast_and_bitmap(
+                font_name,
+                &player.movie.cast_manager,
+                &mut player.bitmap_manager,
+                font_size_opt,
+                None,
+            )
+        } else {
+            None
+        };
+        let is_pfr = loaded_font
+            .as_ref()
+            .map_or(false, |font| font.char_widths.is_some());
+        let max_width = if word_wrap && member_width > 0 {
+            member_width as f64
+        } else {
+            0.0
+        };
+        let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
+        let raw_lines: Vec<&str> = normalised.split('\n').collect();
+        let mut bottoms = Vec::with_capacity(raw_lines.len());
+        let mut current_bottom = top_spacing.max(0) as f64;
+
+        if !is_pfr {
+            use wasm_bindgen::JsCast;
+
+            let document = web_sys::window().and_then(|w| w.document())?;
+            let canvas: web_sys::HtmlCanvasElement =
+                document.create_element("canvas").ok()?.dyn_into().ok()?;
+            let ctx: web_sys::CanvasRenderingContext2d =
+                canvas.get_context("2d").ok().flatten()?.dyn_into().ok()?;
+
+            let display_font_name = resolve_director_native_font_name(None, font_name);
+            let display_font_size = if font_size > 0 { font_size } else { 12 };
+            let mut font_parts = Vec::new();
+            let style_bits = Self::font_style_bits(font_style);
+            if style_bits & 0x02 != 0 {
+                font_parts.push("italic".to_string());
+            }
+            if style_bits & 0x01 != 0 {
+                font_parts.push("bold".to_string());
+            }
+            font_parts.push(format!("{}px", display_font_size));
+            font_parts.push(display_font_name);
+            ctx.set_font(&font_parts.join(" "));
+
+            let measure = |value: &str| -> f64 {
+                ctx.measure_text(value).map(|m| m.width()).unwrap_or(0.0)
+            };
+            let line_step = if fixed_line_space > 0 {
+                fixed_line_space as f64
+            } else {
+                display_font_size as f64
+            };
+
+            for raw in raw_lines {
+                let visual_lines = Self::wrapped_line_count(raw, word_wrap, max_width, measure);
+                current_bottom += visual_lines as f64 * line_step;
+                bottoms.push(current_bottom);
+            }
+            return Some(bottoms);
+        }
+
+        let font = loaded_font.or_else(|| player.font_manager.get_system_font())?;
+        let line_step = if fixed_line_space > 0 {
+            fixed_line_space as f64
+        } else {
+            let eff_lh = if font.font_size > 0 {
+                font.font_size
+            } else {
+                font.char_height
+            };
+            (eff_lh as f64 + 1.0).max(1.0)
+        };
+        let measure = |value: &str| -> f64 {
+            value
+                .chars()
+                .map(|c| font.get_char_advance(c as u8) as f64 + 1.0 + char_spacing as f64)
+                .sum()
+        };
+        for raw in raw_lines {
+            let visual_lines = Self::wrapped_line_count(raw, word_wrap, max_width, measure);
+            current_bottom += visual_lines as f64 * line_step;
+            bottoms.push(current_bottom);
+        }
+        Some(bottoms)
+    }
+
     pub fn call(
         player: &mut DirPlayer,
         datum: &DatumRef,
@@ -80,8 +245,14 @@ impl TextMemberHandlers {
                 } else {
                     start
                 };
-                let chunk_type = std::panic::catch_unwind(|| StringChunkType::from(prop_name.as_str()))
-                    .map_err(|_| ScriptError::new(format!("Invalid chunk type '{}' for text member getPropRef", prop_name)))?;
+                let chunk_type =
+                    std::panic::catch_unwind(|| StringChunkType::from(prop_name.as_str()))
+                        .map_err(|_| {
+                            ScriptError::new(format!(
+                                "Invalid chunk type '{}' for text member getPropRef",
+                                prop_name
+                            ))
+                        })?;
                 let chunk_expr = StringChunkExpr {
                     chunk_type,
                     start,
@@ -113,6 +284,106 @@ impl TextMemberHandlers {
                 let index = get_text_index_at_pos(&text.text, &params, x, y);
                 Ok(player.alloc_datum(Datum::Int((index + 1) as i32)))
             }
+            "locVToLinePos" | "locvtolinepos" => {
+                if args.len() != 1 {
+                    return Err(ScriptError::new(format!(
+                        "{handler_name} requires 1 argument"
+                    )));
+                }
+                let loc_v = player.get_datum(&args[0]).int_value()?;
+                let text_value = text.text.clone();
+                let font_name = text.font.clone();
+                let font_style = text.font_style.clone();
+                let font_size = text.font_size;
+                let fixed_line_space = text.fixed_line_space;
+                let top_spacing = text.top_spacing;
+                let bottom_spacing = text.bottom_spacing;
+                let char_spacing = text.char_spacing;
+                let member_width = text.width;
+                let word_wrap = text.word_wrap
+                    && !(text.box_type == "adjust"
+                        && (text_value.contains('\r') || text_value.contains('\n')));
+                let line_pos = if let Some(line_bottoms) = Self::logical_line_bottoms(
+                    player,
+                    &text_value,
+                    &font_name,
+                    &font_style,
+                    font_size,
+                    fixed_line_space,
+                    top_spacing,
+                    char_spacing,
+                    member_width,
+                    word_wrap,
+                ) {
+                    let loc_v = loc_v as f64;
+                    line_bottoms
+                        .iter()
+                        .position(|bottom| loc_v < *bottom)
+                        .map(|idx| idx as i32 + 1)
+                        .unwrap_or(line_bottoms.len() as i32)
+                        .max(1)
+                } else {
+                    director_loc_v_to_line_pos(
+                        &text_value,
+                        loc_v,
+                        fixed_line_space,
+                        font_size,
+                        top_spacing,
+                        bottom_spacing,
+                    )
+                };
+                Ok(player.alloc_datum(Datum::Int(line_pos)))
+            }
+            "linePosToLocV" | "linepostolocv" => {
+                if args.len() != 1 {
+                    return Err(ScriptError::new(format!(
+                        "{handler_name} requires 1 argument"
+                    )));
+                }
+                let line_pos = player.get_datum(&args[0]).int_value()?;
+                let text_value = text.text.clone();
+                let font_name = text.font.clone();
+                let font_style = text.font_style.clone();
+                let font_size = text.font_size;
+                let fixed_line_space = text.fixed_line_space;
+                let top_spacing = text.top_spacing;
+                let bottom_spacing = text.bottom_spacing;
+                let char_spacing = text.char_spacing;
+                let member_width = text.width;
+                let word_wrap = text.word_wrap
+                    && !(text.box_type == "adjust"
+                        && (text_value.contains('\r') || text_value.contains('\n')));
+                let loc_v = if let Some(line_bottoms) = Self::logical_line_bottoms(
+                    player,
+                    &text_value,
+                    &font_name,
+                    &font_style,
+                    font_size,
+                    fixed_line_space,
+                    top_spacing,
+                    char_spacing,
+                    member_width,
+                    word_wrap,
+                ) {
+                    let idx = (line_pos.max(1) as usize)
+                        .saturating_sub(1)
+                        .min(line_bottoms.len().saturating_sub(1));
+                    if idx == 0 {
+                        top_spacing.max(0) as i32
+                    } else {
+                        line_bottoms.get(idx - 1).copied().unwrap_or(0.0).round() as i32
+                    }
+                } else {
+                    director_line_pos_to_loc_v(
+                        line_pos,
+                        fixed_line_space,
+                        font_size,
+                        top_spacing,
+                        bottom_spacing,
+                    )
+                };
+                Ok(player.alloc_datum(Datum::Int(loc_v)))
+            }
             "setProp" => {
                 // setProp(#line, index, value) or setProp(#word, index, value) etc.
                 let prop_name = player.get_datum(&args[0]).string_value()?;
@@ -126,9 +397,17 @@ impl TextMemberHandlers {
                     item_delimiter: player.movie.item_delimiter,
                 };
                 let current_text = text.text.clone();
-                let new_text = StringChunkUtils::string_by_putting_into_chunk(&current_text, &chunk_expr, &new_value)?;
+                let new_text = StringChunkUtils::string_by_putting_into_chunk(
+                    &current_text,
+                    &chunk_expr,
+                    &new_value,
+                )?;
                 // Need mutable access - drop immutable borrows first
-                let cast_member = player.movie.cast_manager.find_mut_member_by_ref(&member_ref).unwrap();
+                let cast_member = player
+                    .movie
+                    .cast_manager
+                    .find_mut_member_by_ref(&member_ref)
+                    .unwrap();
                 let text_member = cast_member.member_type.as_text_mut().unwrap();
                 text_member.set_text_preserving_caret(new_text.trim_end_matches('\0').to_string());
                 Ok(DatumRef::Void)
@@ -145,7 +424,9 @@ impl TextMemberHandlers {
                         "{handler_name} requires 1 argument"
                     )));
                 }
-                let new_str = player.get_datum(&args[0]).string_value()?
+                let new_str = player
+                    .get_datum(&args[0])
+                    .string_value()?
                     .trim_end_matches('\0')
                     .to_string();
                 let cast_member = player
@@ -183,41 +464,43 @@ impl TextMemberHandlers {
         let prop_lc = prop.to_ascii_lowercase();
         match prop_lc.as_str() {
             "text" => Ok(Datum::String(text_data.text.to_owned())),
-            "line" => {
+            "line" | "word" | "char" | "item" => {
                 // Return a list of StringChunk references (one per
-                // \r-separated line) rooted at the member, NOT a list of
+                // requested chunk) rooted at the member, NOT a list of
                 // plain strings. The chunk reference preserves the member-
                 // source link so subsequent property access like
-                // `member.line[N].fixedLineSpace` (or `.fontSize`,
+                // `member.line[N].fixedLineSpace` or `member.word[N].color`
                 // `.alignment`, ...) can walk back to the member and
-                // resolve per-line par_info / styled-span values via
+                // resolve per-chunk par_info / styled-span values via
                 // script.rs's StringChunk arm. With plain strings the
                 // chained access falls through to the string built-in
                 // handler and fails with
                 // "Invalid string built-in property fixedLineSpace".
                 let item_delimiter = player.movie.item_delimiter;
                 let member_ref = cast_member_ref.clone();
-                let lines: Vec<String> = text_data.text.split('\r').map(|s| s.to_string()).collect();
-                let line_datums: VecDeque<_> = lines
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, l)| {
-                        let chunk_expr = StringChunkExpr {
-                            chunk_type: StringChunkType::Line,
-                            // Lingo line indices are 1-based.
-                            start: (i + 1) as i32,
-                            end: (i + 1) as i32,
-                            item_delimiter,
-                        };
-                        Datum::StringChunk(
-                            StringChunkSource::Member(member_ref.clone()),
-                            chunk_expr,
-                            l,
-                        )
-                    })
-                    .map(|d| player.alloc_datum(d))
-                    .collect();
-                Ok(Datum::List(DatumType::List, line_datums, false))
+                let chunk_type = StringChunkType::from(prop_lc.as_str());
+                let chunk_count = StringChunkUtils::resolve_chunk_count(
+                    &text_data.text,
+                    chunk_type.clone(),
+                    item_delimiter,
+                )?;
+                let mut chunk_datums = VecDeque::with_capacity(chunk_count);
+                for i in 1..=chunk_count {
+                    let chunk_expr = StringChunkExpr {
+                        chunk_type: chunk_type.clone(),
+                        start: i as i32,
+                        end: i as i32,
+                        item_delimiter,
+                    };
+                    let value =
+                        StringChunkUtils::resolve_chunk_expr_string(&text_data.text, &chunk_expr)?;
+                    chunk_datums.push_back(player.alloc_datum(Datum::StringChunk(
+                        StringChunkSource::Member(member_ref.clone()),
+                        chunk_expr,
+                        value,
+                    )));
+                }
+                Ok(Datum::List(DatumType::List, chunk_datums, false))
             }
             "alignment" => Ok(Datum::String(text_data.alignment.to_owned())),
             "wordwrap" => Ok(datum_bool(text_data.word_wrap)),
@@ -232,14 +515,10 @@ impl TextMemberHandlers {
                 // Director's getter, not an empty list.
                 let mut item_refs = VecDeque::new();
                 if text_data.font_style.is_empty() {
-                    item_refs.push_back(
-                        player.alloc_datum(Datum::Symbol("plain".to_string())),
-                    );
+                    item_refs.push_back(player.alloc_datum(Datum::Symbol("plain".to_string())));
                 } else {
                     for item in &text_data.font_style {
-                        item_refs.push_back(
-                            player.alloc_datum(Datum::Symbol(item.to_owned())),
-                        );
+                        item_refs.push_back(player.alloc_datum(Datum::Symbol(item.to_owned())));
                     }
                 }
                 Ok(Datum::List(DatumType::List, item_refs, false))
@@ -255,12 +534,20 @@ impl TextMemberHandlers {
 
                 // Get colors for body tag
                 let bg_color = match member.bg_color {
-                    crate::player::sprite::ColorRef::PaletteIndex(idx) => format!("#{:06X}", idx as u32),
-                    crate::player::sprite::ColorRef::Rgb(r, g, b) => format!("#{:02X}{:02X}{:02X}", r, g, b),
+                    crate::player::sprite::ColorRef::PaletteIndex(idx) => {
+                        format!("#{:06X}", idx as u32)
+                    }
+                    crate::player::sprite::ColorRef::Rgb(r, g, b) => {
+                        format!("#{:02X}{:02X}{:02X}", r, g, b)
+                    }
                 };
                 let text_color = match member.color {
-                    crate::player::sprite::ColorRef::PaletteIndex(idx) => format!("#{:06X}", idx as u32),
-                    crate::player::sprite::ColorRef::Rgb(r, g, b) => format!("#{:02X}{:02X}{:02X}", r, g, b),
+                    crate::player::sprite::ColorRef::PaletteIndex(idx) => {
+                        format!("#{:06X}", idx as u32)
+                    }
+                    crate::player::sprite::ColorRef::Rgb(r, g, b) => {
+                        format!("#{:02X}{:02X}{:02X}", r, g, b)
+                    }
                 };
 
                 // Build body tag with color attributes (Director style uses bg= not bgcolor=)
@@ -321,11 +608,8 @@ impl TextMemberHandlers {
                 // fonts are measurably wider than the PFR atlas, so a PFR
                 // line-count can disagree with the Canvas2D render, leaving
                 // wrapped text clipped or the bitmap over-sized.
-                let requested_font_for_measure = if !text_data.font.is_empty() {
-                    text_data.font.as_str()
-                } else {
-                    "Arial"
-                };
+                let requested_font_for_measure =
+                    resolve_director_native_font_name(Some(&member.name), &text_data.font);
                 let measure_with_canvas = !is_pfr;
                 // Pass bold/italic to Canvas2D measurement so wrap decisions
                 // match the actual rendered text — bold glyphs are measurably
@@ -343,17 +627,28 @@ impl TextMemberHandlers {
                     }
                     s
                 };
+                let text_has_breaks = text_data.text.contains('\n') || text_data.text.contains('\r');
+                let effective_word_wrap =
+                    text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
                 let (width, measured_height) = if measure_with_canvas {
                     // Canvas2D measurement — matches the Canvas2D render path
                     // used by `.image` for non-PFR and native-standard fonts.
-                    let font_size = if text_data.font_size > 0 { text_data.font_size } else { 12 };
+                    let font_size = if text_data.font_size > 0 {
+                        text_data.font_size
+                    } else {
+                        12
+                    };
                     FontMemberHandlers::measure_text_native_styled(
                         &text_data.text,
-                        requested_font_for_measure,
+                        &requested_font_for_measure,
                         font_size,
                         Some(member_style_bits),
-                        text_data.word_wrap,
-                        if text_data.width > 0 { text_data.width as i32 } else { 0 },
+                        effective_word_wrap,
+                        if text_data.width > 0 {
+                            text_data.width as i32
+                        } else {
+                            0
+                        },
                         text_data.top_spacing,
                         text_data.bottom_spacing,
                         text_data.fixed_line_space,
@@ -386,12 +681,18 @@ impl TextMemberHandlers {
                         text_data.width
                     } else if let Some(ref info) = text_data.info {
                         if info.width > 0 { info.width as u16 } else { 0 }
-                    } else { 0 };
-                    let line_count = if text_data.word_wrap && wrap_width > 0 {
+                    } else {
+                        0
+                    };
+                    let line_count = if effective_word_wrap && wrap_width > 0 {
                         let (_, wrapped_h) = measure_text_wrapped(
-                            &text_data.text, &font, wrap_width, true,
+                            &text_data.text,
+                            &font,
+                            wrap_width,
+                            true,
                             text_data.fixed_line_space,
-                            text_data.top_spacing, text_data.bottom_spacing,
+                            text_data.top_spacing,
+                            text_data.bottom_spacing,
                             text_data.char_spacing,
                         );
                         let raw_line_h = font.char_height.saturating_sub(1).max(1) as u16;
@@ -400,11 +701,13 @@ impl TextMemberHandlers {
                         // Count CRLF / lone CR / lone LF as one break each.
                         // Without CRLF normalisation Lingo's `& RETURN` (which
                         // is `\r\n` on Windows-saved movies) double-counts.
-                        text_data.text
+                        text_data
+                            .text
                             .replace("\r\n", "\n")
                             .chars()
                             .filter(|c| *c == '\r' || *c == '\n')
-                            .count() + 1
+                            .count()
+                            + 1
                     };
                     let nominal = if text_data.font_size > 0 {
                         text_data.font_size
@@ -468,7 +771,9 @@ impl TextMemberHandlers {
                 if text_data.width > 0 {
                     box_width = text_data.width;
                 } else if let Some(ref info) = text_data.info {
-                    if info.width > 0 { box_width = info.width as u16; }
+                    if info.width > 0 {
+                        box_width = info.width as u16;
+                    }
                 }
                 // Mirror the `.height` getter: trust `text_data.height`
                 // for non-#adjust members and for #adjust members whose
@@ -484,21 +789,24 @@ impl TextMemberHandlers {
                 // the rendered bitmap to one line.
                 // Wrap-only #adjust (single paragraph, no \n — member 82
                 // recycler help, par_runs.len() ≤ 1) still falls through.
-                let text_has_breaks = text_data.text.contains('\n')
-                    || text_data.text.contains('\r');
                 let is_multi_par_authored = text_data.par_runs.len() > 1;
                 let box_height = if text_data.height > 0
-                    && (text_data.box_type != "adjust"
-                        || text_has_breaks
-                        || is_multi_par_authored)
+                    && (text_data.box_type != "adjust" || text_has_breaks || is_multi_par_authored)
                 {
                     text_data.height
                 } else if let Some(ref info) = text_data.info {
-                    if info.height > 0 { info.height as u16 } else { measured_height }
+                    if info.height > 0 {
+                        info.height as u16
+                    } else {
+                        measured_height
+                    }
                 } else {
                     measured_height
                 };
-                Ok(Datum::Rect([0.0, 0.0, box_width as f64, box_height as f64], 0))
+                Ok(Datum::Rect(
+                    [0.0, 0.0, box_width as f64, box_height as f64],
+                    0,
+                ))
             }
             "height" => {
                 // Trust the stored `text_data.height` whenever it represents
@@ -522,13 +830,11 @@ impl TextMemberHandlers {
                 // writes, so Junkbot's level-name list reports 331 even
                 // when Lingo has temporarily overwritten the text with a
                 // single line.
-                let text_has_breaks = text_data.text.contains('\n')
-                    || text_data.text.contains('\r');
+                let text_has_breaks =
+                    text_data.text.contains('\n') || text_data.text.contains('\r');
                 let is_multi_par_authored = text_data.par_runs.len() > 1;
                 if text_data.height > 0
-                    && (text_data.box_type != "adjust"
-                        || text_has_breaks
-                        || is_multi_par_authored)
+                    && (text_data.box_type != "adjust" || text_has_breaks || is_multi_par_authored)
                 {
                     Ok(Datum::Int(text_data.height as i32))
                 } else {
@@ -551,13 +857,14 @@ impl TextMemberHandlers {
                         text_data.width
                     } else if let Some(ref info) = text_data.info {
                         if info.width > 0 { info.width as u16 } else { 0 }
-                    } else { 0 };
-                    let requested_font_for_measure = if !text_data.font.is_empty() {
-                        text_data.font.as_str()
                     } else {
-                        "Arial"
+                        0
                     };
+                    let requested_font_for_measure =
+                        resolve_director_native_font_name(Some(&member.name), &text_data.font);
                     let measure_with_canvas = !is_pfr;
+                    let effective_word_wrap =
+                        text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
                     let member_style_bits: u8 = {
                         let mut s = 0u8;
                         for tag in &text_data.font_style {
@@ -571,13 +878,21 @@ impl TextMemberHandlers {
                         s
                     };
                     let height = if measure_with_canvas {
-                        let font_size = if text_data.font_size > 0 { text_data.font_size } else { 12 };
+                        let font_size = if text_data.font_size > 0 {
+                            text_data.font_size
+                        } else {
+                            12
+                        };
                         let (_, h) = FontMemberHandlers::measure_text_native_styled(
-                            &text_data.text, requested_font_for_measure, font_size,
+                            &text_data.text,
+                            &requested_font_for_measure,
+                            font_size,
                             Some(member_style_bits),
-                            text_data.word_wrap,
+                            effective_word_wrap,
                             if wrap_width > 0 { wrap_width as i32 } else { 0 },
-                            text_data.top_spacing, text_data.bottom_spacing, text_data.fixed_line_space,
+                            text_data.top_spacing,
+                            text_data.bottom_spacing,
+                            text_data.fixed_line_space,
                         );
                         h
                     } else {
@@ -596,16 +911,26 @@ impl TextMemberHandlers {
                             font.char_height
                         };
                         // Count lines (respecting word-wrap if enabled).
-                        let line_count = if text_data.word_wrap && wrap_width > 0 {
+                        let line_count = if effective_word_wrap && wrap_width > 0 {
                             let (_, wrapped_h) = measure_text_wrapped(
-                                &text_data.text, &font, wrap_width, true,
-                                text_data.fixed_line_space, text_data.top_spacing, text_data.bottom_spacing,
+                                &text_data.text,
+                                &font,
+                                wrap_width,
+                                true,
+                                text_data.fixed_line_space,
+                                text_data.top_spacing,
+                                text_data.bottom_spacing,
                                 text_data.char_spacing,
                             );
                             let raw_line_h = font.char_height.saturating_sub(1).max(1) as u16;
                             (wrapped_h / raw_line_h.max(1)).max(1) as usize
                         } else {
-                            text_data.text.chars().filter(|c| *c == '\r' || *c == '\n').count() + 1
+                            text_data
+                                .text
+                                .chars()
+                                .filter(|c| *c == '\r' || *c == '\n')
+                                .count()
+                                + 1
                         };
                         // See `.rect` getter for the rationale —
                         // `min(cell_h, nominal × 1.5)` caps pixel-padded
@@ -646,7 +971,9 @@ impl TextMemberHandlers {
             "forecolor" | "color" => {
                 // Get foreground color from cast member
                 match member.color {
-                    crate::player::sprite::ColorRef::PaletteIndex(idx) => Ok(Datum::Int(idx as i32)),
+                    crate::player::sprite::ColorRef::PaletteIndex(idx) => {
+                        Ok(Datum::Int(idx as i32))
+                    }
                     crate::player::sprite::ColorRef::Rgb(r, g, b) => {
                         // Convert RGB to a packed integer
                         let rgb = ((r as i32) << 16) | ((g as i32) << 8) | (b as i32);
@@ -657,7 +984,9 @@ impl TextMemberHandlers {
             "bgcolor" | "backcolor" => {
                 // Get background color from cast member
                 match member.bg_color {
-                    crate::player::sprite::ColorRef::PaletteIndex(idx) => Ok(Datum::Int(idx as i32)),
+                    crate::player::sprite::ColorRef::PaletteIndex(idx) => {
+                        Ok(Datum::Int(idx as i32))
+                    }
                     crate::player::sprite::ColorRef::Rgb(r, g, b) => {
                         // Convert RGB to a packed integer
                         let rgb = ((r as i32) << 16) | ((g as i32) << 8) | (b as i32);
@@ -675,67 +1004,99 @@ impl TextMemberHandlers {
                     let faces = info.display_face_list();
                     let mut item_refs = VecDeque::new();
                     for face in faces {
-                        item_refs.push_back(player.alloc_datum(Datum::Symbol(face.trim_start_matches('#').to_string())));
+                        item_refs.push_back(
+                            player.alloc_datum(Datum::Symbol(
+                                face.trim_start_matches('#').to_string(),
+                            )),
+                        );
                     }
                     Ok(Datum::List(DatumType::List, item_refs, false))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "tunneldepth" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Int(info.tunnel_depth as i32))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "beveltype" => {
                 if let Some(ref info) = text_data.info {
-                    Ok(Datum::Symbol(info.bevel_type_str().trim_start_matches('#').to_string()))
+                    Ok(Datum::Symbol(
+                        info.bevel_type_str().trim_start_matches('#').to_string(),
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "beveldepth" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Int(info.bevel_depth as i32))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "smoothness" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Int(info.smoothness as i32))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "displaymode" => {
                 if let Some(ref info) = text_data.info {
-                    Ok(Datum::Symbol(info.display_mode_str().trim_start_matches('#').to_string()))
+                    Ok(Datum::Symbol(
+                        info.display_mode_str().trim_start_matches('#').to_string(),
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "directionalpreset" => {
                 if let Some(ref info) = text_data.info {
-                    Ok(Datum::Symbol(info.directional_preset_str().trim_start_matches('#').to_string()))
+                    Ok(Datum::Symbol(
+                        info.directional_preset_str()
+                            .trim_start_matches('#')
+                            .to_string(),
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "texturetype" => {
                 if let Some(ref info) = text_data.info {
-                    Ok(Datum::Symbol(info.texture_type_str().trim_start_matches('#').to_string()))
+                    Ok(Datum::Symbol(
+                        info.texture_type_str().trim_start_matches('#').to_string(),
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "reflectivity" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Float(info.reflectivity as f64))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "directionalcolor" => {
@@ -744,7 +1105,9 @@ impl TextMemberHandlers {
                     let rgb = ((r as i32) << 16) | ((g as i32) << 8) | (b as i32);
                     Ok(Datum::Int(rgb))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "ambientcolor" => {
@@ -753,7 +1116,9 @@ impl TextMemberHandlers {
                     let rgb = ((r as i32) << 16) | ((g as i32) << 8) | (b as i32);
                     Ok(Datum::Int(rgb))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "specularcolor" => {
@@ -762,7 +1127,9 @@ impl TextMemberHandlers {
                     let rgb = ((r as i32) << 16) | ((g as i32) << 8) | (b as i32);
                     Ok(Datum::Int(rgb))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "cameraposition" => {
@@ -771,9 +1138,15 @@ impl TextMemberHandlers {
                     let x_ref = player.alloc_datum(Datum::Float(info.camera_position_x as f64));
                     let y_ref = player.alloc_datum(Datum::Float(info.camera_position_y as f64));
                     let z_ref = player.alloc_datum(Datum::Float(info.camera_position_z as f64));
-                    Ok(Datum::List(DatumType::Vector, VecDeque::from(vec![x_ref, y_ref, z_ref]), false))
+                    Ok(Datum::List(
+                        DatumType::Vector,
+                        VecDeque::from(vec![x_ref, y_ref, z_ref]),
+                        false,
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "camerarotation" => {
@@ -782,87 +1155,116 @@ impl TextMemberHandlers {
                     let x_ref = player.alloc_datum(Datum::Float(info.camera_rotation_x as f64));
                     let y_ref = player.alloc_datum(Datum::Float(info.camera_rotation_y as f64));
                     let z_ref = player.alloc_datum(Datum::Float(info.camera_rotation_z as f64));
-                    Ok(Datum::List(DatumType::Vector, VecDeque::from(vec![x_ref, y_ref, z_ref]), false))
+                    Ok(Datum::List(
+                        DatumType::Vector,
+                        VecDeque::from(vec![x_ref, y_ref, z_ref]),
+                        false,
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "texturemember" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::String(info.texture_member.clone()))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "editable" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.editable))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "autotab" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.auto_tab))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "directtostage" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.direct_to_stage))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "prerender" => {
                 if let Some(ref info) = text_data.info {
-                    Ok(Datum::Symbol(info.pre_render_str().trim_start_matches('#').to_string()))
+                    Ok(Datum::Symbol(
+                        info.pre_render_str().trim_start_matches('#').to_string(),
+                    ))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "savebitmap" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.save_bitmap))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "kerning" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.kerning))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "kerningthreshold" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Int(info.kerning_threshold as i32))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "usehypertextstyles" => {
                 if let Some(ref info) = text_data.info {
                     Ok(datum_bool(info.use_hypertext_styles))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "antialiasthreshold" => {
                 if let Some(ref info) = text_data.info {
                     Ok(Datum::Int(info.anti_alias_threshold as i32))
                 } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
+                    Err(ScriptError::new(
+                        "TextInfo not available for this member".to_string(),
+                    ))
                 }
             }
             "scrolltop" => {
-                if let Some(ref info) = text_data.info {
-                    Ok(Datum::Int(info.scroll_top as i32))
-                } else {
-                    Err(ScriptError::new("TextInfo not available for this member".to_string()))
-                }
+                let scroll_top = text_data
+                    .info
+                    .as_ref()
+                    .map(|info| info.scroll_top)
+                    .unwrap_or(text_data.scroll_top);
+                Ok(Datum::Int(scroll_top as i32))
             }
             "centerregpoint" => {
                 if let Some(ref info) = text_data.info {
@@ -893,14 +1295,23 @@ impl TextMemberHandlers {
                 let mut preferred_font_size: Option<u16> = None;
                 if !text_data.html_styled_spans.is_empty() {
                     let first_style = &text_data.html_styled_spans[0].style;
-                    let font_size = first_style.font_size
+                    let font_size = first_style
+                        .font_size
                         .filter(|&s| s > 0)
-                        .or_else(|| if text_data.font_size > 0 { Some(text_data.font_size as i32) } else { None })
+                        .or_else(|| {
+                            if text_data.font_size > 0 {
+                                Some(text_data.font_size as i32)
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(12) as u16;
                     let font_name = if !text_data.font.is_empty() {
                         text_data.font.clone()
                     } else {
-                        first_style.font_face.clone()
+                        first_style
+                            .font_face
+                            .clone()
                             .filter(|f| !f.is_empty())
                             .unwrap_or_else(|| "Arial".to_string())
                     };
@@ -924,10 +1335,19 @@ impl TextMemberHandlers {
 
                 // Load font to determine if it's PFR
                 let font = {
-                    let font_name = preferred_font_name.as_deref()
-                        .or(if !text_data.font.is_empty() { Some(text_data.font.as_str()) } else { None });
-                    let font_size = preferred_font_size
-                        .or(if text_data.font_size > 0 { Some(text_data.font_size) } else { None });
+                    let font_name =
+                        preferred_font_name
+                            .as_deref()
+                            .or(if !text_data.font.is_empty() {
+                                Some(text_data.font.as_str())
+                            } else {
+                                None
+                            });
+                    let font_size = preferred_font_size.or(if text_data.font_size > 0 {
+                        Some(text_data.font_size)
+                    } else {
+                        None
+                    });
                     let mut loaded = if let Some(name) = font_name {
                         player.font_manager.get_font_with_cast_and_bitmap(
                             name,
@@ -952,8 +1372,11 @@ impl TextMemberHandlers {
                             }
                         }
                     }
-                    loaded.or_else(|| player.font_manager.get_system_font())
-                        .ok_or_else(|| ScriptError::new("No font available for text rendering".to_string()))?
+                    loaded
+                        .or_else(|| player.font_manager.get_system_font())
+                        .ok_or_else(|| {
+                            ScriptError::new("No font available for text rendering".to_string())
+                        })?
                 };
                 let is_pfr_font = font.char_widths.is_some();
 
@@ -962,10 +1385,18 @@ impl TextMemberHandlers {
                 let explicit_box_width = if text_data.width > 0 {
                     Some(text_data.width)
                 } else if let Some(ref info) = text_data.info {
-                    if info.width > 0 { Some(info.width as u16) } else { None }
+                    if info.width > 0 {
+                        Some(info.width as u16)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
+                let text_has_breaks =
+                    text_data.text.contains('\n') || text_data.text.contains('\r');
+                let effective_word_wrap =
+                    text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
 
                 // Decide the measurement path. When the member will render via
                 // Canvas2D (non-PFR, or standard-font with prefer_native), measure
@@ -973,10 +1404,19 @@ impl TextMemberHandlers {
                 // the actual rendered bitmap — PFR wrap points disagree with
                 // Canvas2D's wider browser-font metrics and would size the bitmap
                 // for the wrong line count.
-                let requested_font_for_measure = preferred_font_name.as_deref()
+                let requested_font_for_measure = preferred_font_name
+                    .as_deref()
                     .filter(|n| !n.is_empty())
-                    .or(if !text_data.font.is_empty() { Some(text_data.font.as_str()) } else { None })
+                    .or(if !text_data.font.is_empty() {
+                        Some(text_data.font.as_str())
+                    } else {
+                        None
+                    })
                     .unwrap_or("Arial");
+                let native_font_for_measure = resolve_director_native_font_name(
+                    Some(&member.name),
+                    requested_font_for_measure,
+                );
                 let measure_with_canvas = !is_pfr_font;
                 let member_style_bits: u8 = {
                     let mut s = 0u8;
@@ -995,16 +1435,20 @@ impl TextMemberHandlers {
                     let font_size = preferred_font_size.unwrap_or(12);
                     FontMemberHandlers::measure_text_native_styled(
                         &text_data.text,
-                        requested_font_for_measure,
+                        &native_font_for_measure,
                         font_size,
                         Some(member_style_bits),
-                        text_data.word_wrap,
-                        if text_data.width > 0 { text_data.width as i32 } else { 0 },
+                        effective_word_wrap,
+                        if text_data.width > 0 {
+                            text_data.width as i32
+                        } else {
+                            0
+                        },
                         text_data.top_spacing,
                         text_data.bottom_spacing,
                         text_data.fixed_line_space,
                     )
-                } else if text_data.word_wrap && explicit_box_width.map_or(false, |w| w > 0) {
+                } else if effective_word_wrap && explicit_box_width.map_or(false, |w| w > 0) {
                     // PFR font with word wrap: use measure_text_wrapped so the
                     // measured height accounts for wrapped lines. Pass char_spacing
                     // so measurement matches the renderer's `x += adv + char_spacing`.
@@ -1057,51 +1501,54 @@ impl TextMemberHandlers {
                     // a 25-px PFR cell rounds down to 1 line. CS catalog rows that
                     // wrapped to ["Premier Studio Chair - 500", "dB"] were getting
                     // a 14-px-tall bitmap that clipped the second line.
-                    let line_count = if text_data.word_wrap && explicit_box_width.map_or(false, |w| w > 0) {
-                        let max_w = explicit_box_width.unwrap() as i32;
-                        let cs = text_data.char_spacing;
-                        let space_w =
-                            font.get_char_advance(b' ') as i32 + cs;
-                        let normalised: String = text_data.text
-                            .replace("\r\n", "\n")
-                            .replace('\r', "\n");
-                        let mut count: usize = 0;
-                        for raw in normalised.split('\n') {
-                            if raw.is_empty() {
-                                count += 1;
-                                continue;
-                            }
-                            let mut current_w: i32 = 0;
-                            let mut had_word = false;
-                            for word in raw.split(' ') {
-                                if word.is_empty() { continue; }
-                                let word_w: i32 = word
-                                    .chars()
-                                    .map(|c| font.get_char_advance(c as u8) as i32 + cs)
-                                    .sum();
-                                let candidate = if !had_word {
-                                    word_w
-                                } else {
-                                    current_w + space_w + word_w
-                                };
-                                if candidate <= max_w || !had_word {
-                                    current_w = candidate;
-                                    had_word = true;
-                                } else {
+                    let line_count =
+                        if effective_word_wrap && explicit_box_width.map_or(false, |w| w > 0) {
+                            let max_w = explicit_box_width.unwrap() as i32;
+                            let cs = text_data.char_spacing;
+                            let space_w = font.get_char_advance(b' ') as i32 + cs;
+                            let normalised: String =
+                                text_data.text.replace("\r\n", "\n").replace('\r', "\n");
+                            let mut count: usize = 0;
+                            for raw in normalised.split('\n') {
+                                if raw.is_empty() {
                                     count += 1;
-                                    current_w = word_w;
+                                    continue;
                                 }
+                                let mut current_w: i32 = 0;
+                                let mut had_word = false;
+                                for word in raw.split(' ') {
+                                    if word.is_empty() {
+                                        continue;
+                                    }
+                                    let word_w: i32 = word
+                                        .chars()
+                                        .map(|c| font.get_char_advance(c as u8) as i32 + cs)
+                                        .sum();
+                                    let candidate = if !had_word {
+                                        word_w
+                                    } else {
+                                        current_w + space_w + word_w
+                                    };
+                                    if candidate <= max_w || !had_word {
+                                        current_w = candidate;
+                                        had_word = true;
+                                    } else {
+                                        count += 1;
+                                        current_w = word_w;
+                                    }
+                                }
+                                count += 1;
                             }
-                            count += 1;
-                        }
-                        count.max(1)
-                    } else {
-                        text_data.text
-                            .replace("\r\n", "\n")
-                            .chars()
-                            .filter(|c| *c == '\r' || *c == '\n')
-                            .count() + 1
-                    };
+                            count.max(1)
+                        } else {
+                            text_data
+                                .text
+                                .replace("\r\n", "\n")
+                                .chars()
+                                .filter(|c| *c == '\r' || *c == '\n')
+                                .count()
+                                + 1
+                        };
                     let line_h = (nominal as f32 * 1.4).round() as u16;
                     // See `.rect` getter for rationale on folding
                     // top_spacing + bottom_spacing into line_step.
@@ -1171,7 +1618,10 @@ impl TextMemberHandlers {
 
                 if use_native && !is_pfr_font {
                     // Native Canvas2D rendering for standard fonts
-                    let font_name_str = preferred_font_name.as_deref().unwrap_or("Arial");
+                    let font_name_str = resolve_director_native_font_name(
+                        Some(&member.name),
+                        preferred_font_name.as_deref().unwrap_or("Arial"),
+                    );
                     let font_size_val = preferred_font_size.unwrap_or(12);
                     // Use the member's actual foreColor for .image rendering.
                     // Director renders text members with their foreColor on their bgColor.
@@ -1195,32 +1645,40 @@ impl TextMemberHandlers {
                     // Nones from the spans with member-level defaults so each span
                     // has a concrete font / size / color for the renderer.
                     let spans: Vec<StyledSpan> = if text_data.html_styled_spans.len() >= 2 {
-                        text_data.html_styled_spans.iter().map(|sp| {
-                            let mut s = sp.style.clone();
-                            if s.font_face.is_none() {
-                                s.font_face = Some(font_name_str.to_string());
-                            }
-                            if s.font_size.is_none() {
-                                s.font_size = Some(font_size_val as i32);
-                            }
-                            if s.color.is_none() {
-                                s.color = Some(default_color_u32);
-                            }
-                            // Member-level fontStyle defaults apply only when the
-                            // span has no overrides of its own. We can't perfectly
-                            // tell "no override" from "explicitly off" at this
-                            // layer, but the chunk-style setters set bold/italic/
-                            // underline explicitly whenever Lingo writes fontStyle,
-                            // so the OR-with-defaults here just carries the member-
-                            // wide `[#underline]` CS sets before per-chunk writes.
-                            s.bold = s.bold || default_bold;
-                            s.italic = s.italic || default_italic;
-                            s.underline = s.underline || default_underline;
-                            StyledSpan { text: sp.text.clone(), style: s }
-                        }).collect()
+                        text_data
+                            .html_styled_spans
+                            .iter()
+                            .map(|sp| {
+                                let mut s = sp.style.clone();
+                                s.font_face = Some(resolve_director_native_font_name(
+                                    Some(&member.name),
+                                    s.font_face.as_deref().unwrap_or(&font_name_str),
+                                ));
+                                if s.font_size.is_none() {
+                                    s.font_size = Some(font_size_val as i32);
+                                }
+                                if s.color.is_none() {
+                                    s.color = Some(default_color_u32);
+                                }
+                                // Member-level fontStyle defaults apply only when the
+                                // span has no overrides of its own. We can't perfectly
+                                // tell "no override" from "explicitly off" at this
+                                // layer, but the chunk-style setters set bold/italic/
+                                // underline explicitly whenever Lingo writes fontStyle,
+                                // so the OR-with-defaults here just carries the member-
+                                // wide `[#underline]` CS sets before per-chunk writes.
+                                s.bold = s.bold || default_bold;
+                                s.italic = s.italic || default_italic;
+                                s.underline = s.underline || default_underline;
+                                StyledSpan {
+                                    text: sp.text.clone(),
+                                    style: s,
+                                }
+                            })
+                            .collect()
                     } else {
                         let mut style = HtmlStyle::default();
-                        style.font_face = Some(font_name_str.to_string());
+                        style.font_face = Some(font_name_str);
                         style.font_size = Some(font_size_val as i32);
                         style.color = Some(default_color_u32);
                         style.bold = default_bold;
@@ -1240,7 +1698,7 @@ impl TextMemberHandlers {
                         box_height as i32,
                         alignment,
                         box_width as i32,
-                        text_data.word_wrap,
+                        effective_word_wrap,
                         None,
                         text_data.fixed_line_space,
                         text_data.top_spacing,
@@ -1272,7 +1730,8 @@ impl TextMemberHandlers {
                         original_dst_rect: None,
                         bg_color_explicit: false,
                         fore_color_explicit: false,
-                        ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
+                        ink9_mask_bitmap: None,
+                        ink9_mask_offset: (0, 0),
                     };
 
                     use crate::player::bitmap::bitmap::resolve_color_ref;
@@ -1294,7 +1753,9 @@ impl TextMemberHandlers {
                     let line_height = (font.char_height as i32 - 1).max(1);
 
                     // Get char_spacing from styled spans (XMED data)
-                    let char_spacing: i32 = text_data.html_styled_spans.first()
+                    let char_spacing: i32 = text_data
+                        .html_styled_spans
+                        .first()
                         .map(|s| s.style.char_spacing)
                         .unwrap_or(0);
 
@@ -1332,9 +1793,11 @@ impl TextMemberHandlers {
                         let mut prev_was_cr = false;
                         for span in &text_data.html_styled_spans {
                             let col = if let Some(c) = span.style.color {
-                                (((c >> 16) & 0xFF) as u8,
-                                 ((c >> 8) & 0xFF) as u8,
-                                 (c & 0xFF) as u8)
+                                (
+                                    ((c >> 16) & 0xFF) as u8,
+                                    ((c >> 8) & 0xFF) as u8,
+                                    (c & 0xFF) as u8,
+                                )
                             } else {
                                 text_color
                             };
@@ -1371,156 +1834,189 @@ impl TextMemberHandlers {
                         .map(|t| (t.tab_type.clone(), t.position as i32))
                         .collect();
 
-                    let mut flush_line = |line: &str, line_char_offset: usize, y_pos: i32, bitmap: &mut Bitmap| {
-                        // Helper: width of a substring (character advances).
-                        let segment_width = |s: &str| -> i32 {
-                            s.chars()
-                                .map(|c| font.get_char_advance(c as u8) as i32 + char_spacing)
-                                .sum::<i32>()
-                        };
-
-                        // Split the line into tab-delimited segments. Each segment
-                        // starts at a tab-stop position (or 0 for the first one).
-                        // Director tab-stop semantics applied here:
-                        //   - #left:    next segment renders starting at the stop
-                        //   - #right:   next segment renders ending at the stop
-                        //   - #center:  next segment centred on the stop
-                        //   - #decimal: treated as #right for now (CS doesn't use it)
-                        // Without tab stops we fall back to advance-as-glyph (TAB
-                        // glyphs in PFR atlases are usually zero-width).
-                        let segments: Vec<&str> = line.split('\t').collect();
-                        let mut segment_starts: Vec<i32> = Vec::with_capacity(segments.len());
-
-                        // Compute the line's logical width for alignment when there
-                        // are no tabs OR when tabs leave the line left-anchored.
-                        let logical_line_width: i32 = if segments.len() == 1 {
-                            segment_width(line)
-                        } else {
-                            let mut acc = 0i32;
-                            for (i, seg) in segments.iter().enumerate() {
-                                let seg_w = segment_width(seg);
-                                if i == 0 {
-                                    acc = seg_w;
-                                } else if let Some((tab_type, tab_pos)) = line_tab_stops.get(i - 1) {
-                                    acc = match tab_type.as_str() {
-                                        "right" => *tab_pos,
-                                        "center" => (*tab_pos + seg_w / 2).max(acc),
-                                        _ => (*tab_pos + seg_w).max(acc + seg_w),
-                                    };
-                                } else {
-                                    acc += seg_w;
-                                }
-                            }
-                            acc
-                        };
-
-                        // Apply line-level alignment offset (only meaningful when no
-                        // right-type tabs anchor the right edge — tabs already
-                        // place segments at fixed positions).
-                        let has_right_tab = line_tab_stops
-                            .iter()
-                            .any(|(t, _)| t == "right");
-                        let line_offset = if has_right_tab {
-                            0
-                        } else {
-                            match alignment {
-                                TextAlignment::Center => ((max_width - logical_line_width) / 2).max(0),
-                                TextAlignment::Right => (max_width - logical_line_width).max(0),
-                                _ => 0,
-                            }
-                        };
-
-                        // First segment always starts at line_offset (no preceding tab).
-                        segment_starts.push(line_offset);
-                        let mut cursor_x = line_offset + segment_width(segments[0]);
-                        for i in 1..segments.len() {
-                            let seg_w = segment_width(segments[i]);
-                            let stop_x = match line_tab_stops.get(i - 1) {
-                                Some((tab_type, tab_pos)) => match tab_type.as_str() {
-                                    "right" => (*tab_pos - seg_w).max(cursor_x),
-                                    "center" => (*tab_pos - seg_w / 2).max(cursor_x),
-                                    _ => (*tab_pos).max(cursor_x), // #left / #decimal
-                                },
-                                None => cursor_x, // no more tab stops — render inline
+                    let mut flush_line =
+                        |line: &str, line_char_offset: usize, y_pos: i32, bitmap: &mut Bitmap| {
+                            // Helper: width of a substring (character advances).
+                            let segment_width = |s: &str| -> i32 {
+                                s.chars()
+                                    .map(|c| font.get_char_advance(c as u8) as i32 + char_spacing)
+                                    .sum::<i32>()
                             };
-                            segment_starts.push(stop_x);
-                            cursor_x = stop_x + seg_w;
-                        }
 
-                        // Walk the line again to draw, skipping `\t` chars and using
-                        // the precomputed segment starts.
-                        let mut current_segment = 0usize;
-                        let mut x = segment_starts[0];
-                        for (ch_idx, ch) in line.chars().enumerate() {
-                            if ch == '\t' {
-                                current_segment += 1;
-                                if let Some(&sx) = segment_starts.get(current_segment) {
-                                    x = sx;
-                                }
-                                continue;
-                            }
-                            let adv = font.get_char_advance_for(ch) as i32;
-                            let per = per_char
-                                .get(line_char_offset + ch_idx)
-                                .copied()
-                                .unwrap_or(default_per_char);
-                            // Use tight copy for PFR fonts when cell width is much larger
-                            // than character advance, to prevent transparent cell areas from
-                            // overlapping and erasing adjacent characters.
-                            let use_tight = is_pfr_font && (font.char_width as i32) > (adv * 2).max(16);
-                            let ch_params = CopyPixelsParams {
-                                blend: params.blend,
-                                ink: params.ink,
-                                color: crate::player::sprite::ColorRef::Rgb(per.color.0, per.color.1, per.color.2),
-                                bg_color: params.bg_color.clone(),
-                                mask_image: None,
-                                is_text_rendering: params.is_text_rendering,
-                                rotation: params.rotation,
-                                skew: params.skew,
-                                sprite: None,
-                                mask_offset: params.mask_offset,
-                                original_dst_rect: params.original_dst_rect.clone(),
-                                bg_color_explicit: false,
-                                fore_color_explicit: false,
-                                ink9_mask_bitmap: None, ink9_mask_offset: (0, 0),
-                            };
-                            if use_tight {
-                                bitmap_font_copy_char_tight(
-                                    &font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                                    x, y_pos, &palettes, &ch_params,
-                                );
+                            // Split the line into tab-delimited segments. Each segment
+                            // starts at a tab-stop position (or 0 for the first one).
+                            // Director tab-stop semantics applied here:
+                            //   - #left:    next segment renders starting at the stop
+                            //   - #right:   next segment renders ending at the stop
+                            //   - #center:  next segment centred on the stop
+                            //   - #decimal: treated as #right for now (CS doesn't use it)
+                            // Without tab stops we fall back to advance-as-glyph (TAB
+                            // glyphs in PFR atlases are usually zero-width).
+                            let segments: Vec<&str> = line.split('\t').collect();
+                            let mut segment_starts: Vec<i32> = Vec::with_capacity(segments.len());
+
+                            // Compute the line's logical width for alignment when there
+                            // are no tabs OR when tabs leave the line left-anchored.
+                            let logical_line_width: i32 = if segments.len() == 1 {
+                                segment_width(line)
                             } else {
-                                bitmap_font_copy_char(
-                                    &font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                                    x, y_pos, &palettes, &ch_params,
-                                );
+                                let mut acc = 0i32;
+                                for (i, seg) in segments.iter().enumerate() {
+                                    let seg_w = segment_width(seg);
+                                    if i == 0 {
+                                        acc = seg_w;
+                                    } else if let Some((tab_type, tab_pos)) =
+                                        line_tab_stops.get(i - 1)
+                                    {
+                                        acc = match tab_type.as_str() {
+                                            "right" => *tab_pos,
+                                            "center" => (*tab_pos + seg_w / 2).max(acc),
+                                            _ => (*tab_pos + seg_w).max(acc + seg_w),
+                                        };
+                                    } else {
+                                        acc += seg_w;
+                                    }
+                                }
+                                acc
+                            };
+
+                            // Apply line-level alignment offset (only meaningful when no
+                            // right-type tabs anchor the right edge — tabs already
+                            // place segments at fixed positions).
+                            let has_right_tab = line_tab_stops.iter().any(|(t, _)| t == "right");
+                            let line_offset = if has_right_tab {
+                                0
+                            } else {
+                                match alignment {
+                                    TextAlignment::Center => {
+                                        ((max_width - logical_line_width) / 2).max(0)
+                                    }
+                                    TextAlignment::Right => (max_width - logical_line_width).max(0),
+                                    _ => 0,
+                                }
+                            };
+
+                            // First segment always starts at line_offset (no preceding tab).
+                            segment_starts.push(line_offset);
+                            let mut cursor_x = line_offset + segment_width(segments[0]);
+                            for i in 1..segments.len() {
+                                let seg_w = segment_width(segments[i]);
+                                let stop_x = match line_tab_stops.get(i - 1) {
+                                    Some((tab_type, tab_pos)) => match tab_type.as_str() {
+                                        "right" => (*tab_pos - seg_w).max(cursor_x),
+                                        "center" => (*tab_pos - seg_w / 2).max(cursor_x),
+                                        _ => (*tab_pos).max(cursor_x), // #left / #decimal
+                                    },
+                                    None => cursor_x, // no more tab stops — render inline
+                                };
+                                segment_starts.push(stop_x);
+                                cursor_x = stop_x + seg_w;
                             }
-                            if per.bold {
+
+                            // Walk the line again to draw, skipping `\t` chars and using
+                            // the precomputed segment starts.
+                            let mut current_segment = 0usize;
+                            let mut x = segment_starts[0];
+                            for (ch_idx, ch) in line.chars().enumerate() {
+                                if ch == '\t' {
+                                    current_segment += 1;
+                                    if let Some(&sx) = segment_starts.get(current_segment) {
+                                        x = sx;
+                                    }
+                                    continue;
+                                }
+                                let adv = font.get_char_advance_for(ch) as i32;
+                                let per = per_char
+                                    .get(line_char_offset + ch_idx)
+                                    .copied()
+                                    .unwrap_or(default_per_char);
+                                // Use tight copy for PFR fonts when cell width is much larger
+                                // than character advance, to prevent transparent cell areas from
+                                // overlapping and erasing adjacent characters.
+                                let use_tight =
+                                    is_pfr_font && (font.char_width as i32) > (adv * 2).max(16);
+                                let ch_params = CopyPixelsParams {
+                                    blend: params.blend,
+                                    ink: params.ink,
+                                    color: crate::player::sprite::ColorRef::Rgb(
+                                        per.color.0,
+                                        per.color.1,
+                                        per.color.2,
+                                    ),
+                                    bg_color: params.bg_color.clone(),
+                                    mask_image: None,
+                                    is_text_rendering: params.is_text_rendering,
+                                    rotation: params.rotation,
+                                    skew: params.skew,
+                                    sprite: None,
+                                    mask_offset: params.mask_offset,
+                                    original_dst_rect: params.original_dst_rect.clone(),
+                                    bg_color_explicit: false,
+                                    fore_color_explicit: false,
+                                    ink9_mask_bitmap: None,
+                                    ink9_mask_offset: (0, 0),
+                                };
                                 if use_tight {
                                     bitmap_font_copy_char_tight(
-                                        &font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                                        x + 1, y_pos, &palettes, &ch_params,
+                                        &font,
+                                        font_bitmap,
+                                        crate::io::encoding::glyph_byte_for(ch),
+                                        bitmap,
+                                        x,
+                                        y_pos,
+                                        &palettes,
+                                        &ch_params,
                                     );
                                 } else {
                                     bitmap_font_copy_char(
-                                        &font, font_bitmap, crate::io::encoding::glyph_byte_for(ch), bitmap,
-                                        x + 1, y_pos, &palettes, &ch_params,
+                                        &font,
+                                        font_bitmap,
+                                        crate::io::encoding::glyph_byte_for(ch),
+                                        bitmap,
+                                        x,
+                                        y_pos,
+                                        &palettes,
+                                        &ch_params,
                                     );
                                 }
-                            }
-                            if per.underline {
-                                // Per-character underline so per-span underline
-                                // is honoured (CS uses underline on some items
-                                // only). Draw one pixel row under this glyph.
-                                let underline_y = y_pos + line_height - 1;
-                                let run_end = (x + adv + char_spacing).max(x);
-                                for ux in x..run_end {
-                                    bitmap.set_pixel(ux, underline_y, per.color, &palettes);
+                                if per.bold {
+                                    if use_tight {
+                                        bitmap_font_copy_char_tight(
+                                            &font,
+                                            font_bitmap,
+                                            crate::io::encoding::glyph_byte_for(ch),
+                                            bitmap,
+                                            x + 1,
+                                            y_pos,
+                                            &palettes,
+                                            &ch_params,
+                                        );
+                                    } else {
+                                        bitmap_font_copy_char(
+                                            &font,
+                                            font_bitmap,
+                                            crate::io::encoding::glyph_byte_for(ch),
+                                            bitmap,
+                                            x + 1,
+                                            y_pos,
+                                            &palettes,
+                                            &ch_params,
+                                        );
+                                    }
                                 }
+                                if per.underline {
+                                    // Per-character underline so per-span underline
+                                    // is honoured (CS uses underline on some items
+                                    // only). Draw one pixel row under this glyph.
+                                    let underline_y = y_pos + line_height - 1;
+                                    let run_end = (x + adv + char_spacing).max(x);
+                                    for ux in x..run_end {
+                                        bitmap.set_pixel(ux, underline_y, per.color, &palettes);
+                                    }
+                                }
+                                x += adv + char_spacing;
                             }
-                            x += adv + char_spacing;
-                        }
-                    };
+                        };
 
                     // Normalise CRLF / lone CR to \n first so a `\r\n` pair counts
                     // as ONE line break — splitting on either char individually
@@ -1529,13 +2025,12 @@ impl TextMemberHandlers {
                     // Studios' roomlist hits exactly this: every row of
                     // "London I\tGo!\r\n..." was rendering with an empty line
                     // between, doubling the visual line spacing.
-                    let normalised_text: String = text_data.text
-                        .replace("\r\n", "\n")
-                        .replace('\r', "\n");
+                    let normalised_text: String =
+                        text_data.text.replace("\r\n", "\n").replace('\r', "\n");
                     let raw_lines: Vec<&str> = normalised_text.split('\n').collect();
                     let mut lines_to_draw: Vec<String> = Vec::new();
 
-                    if text_data.word_wrap && max_width > 0 {
+                    if effective_word_wrap && max_width > 0 {
                         for raw in raw_lines {
                             if raw.is_empty() {
                                 lines_to_draw.push(String::new());
@@ -1601,7 +2096,6 @@ impl TextMemberHandlers {
                         y += line_step;
                         char_offset += line.chars().count() + 1; // +1 for the line break
                     }
-
                 } // end bitmap glyph else branch
 
                 // Honour `member.antialias = 0` by thresholding the bitmap's
@@ -1614,7 +2108,9 @@ impl TextMemberHandlers {
                 // sharp text — without the threshold the catalog list looks
                 // washed out compared to Shockwave.
                 if !text_data.anti_alias && bitmap.bit_depth == 32 {
-                    let threshold = text_data.info.as_ref()
+                    let threshold = text_data
+                        .info
+                        .as_ref()
                         .map(|i| i.anti_alias_threshold as u8)
                         .unwrap_or(128)
                         .max(1);
@@ -1640,7 +2136,9 @@ impl TextMemberHandlers {
                     // styling the destination's labels render as plain text
                     // and the visual loses the gray "Terrain:"/"Speed:"/etc
                     // labels Director emits via `\cf<n>` color runs.
-                    Ok(Datum::String(Self::generate_rtf_from_text_member(&text_data)))
+                    Ok(Datum::String(Self::generate_rtf_from_text_member(
+                        &text_data,
+                    )))
                 }
             }
             "state" => Ok(Datum::Int(4)), // 4 = loaded (all embedded members are fully loaded)
@@ -1649,21 +2147,27 @@ impl TextMemberHandlers {
             "charcount" => {
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &text_data.text, StringChunkType::Char, delimiter,
+                    &text_data.text,
+                    StringChunkType::Char,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
             "wordcount" => {
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &text_data.text, StringChunkType::Word, delimiter,
+                    &text_data.text,
+                    StringChunkType::Word,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
             "linecount" => {
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &text_data.text, StringChunkType::Line, delimiter,
+                    &text_data.text,
+                    StringChunkType::Line,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
@@ -1671,18 +2175,30 @@ impl TextMemberHandlers {
                 // Director treats paragraphs as \r-delimited, same as lines.
                 let delimiter = player.movie.item_delimiter;
                 let count = StringChunkUtils::resolve_chunk_count(
-                    &text_data.text, StringChunkType::Line, delimiter,
+                    &text_data.text,
+                    StringChunkType::Line,
+                    delimiter,
                 )?;
                 Ok(Datum::Int(count as i32))
             }
             // Runtime selection state
             "selstart" => Ok(Datum::Int(text_data.sel_start)),
             "selend" => Ok(Datum::Int(text_data.sel_end)),
+            "selection" => {
+                let sel_start = text_data.sel_start;
+                let sel_end = text_data.sel_end;
+                let mut items = VecDeque::new();
+                items.push_back(player.alloc_datum(Datum::Int(sel_start)));
+                items.push_back(player.alloc_datum(Datum::Int(sel_end)));
+                Ok(Datum::List(DatumType::List, items, false))
+            }
             "selectedtext" => {
                 let len = text_data.text.len() as i32;
                 let lo = text_data.sel_start.min(text_data.sel_end).clamp(0, len);
                 let hi = text_data.sel_start.max(text_data.sel_end).clamp(0, len);
-                Ok(Datum::String(text_data.text[lo as usize..hi as usize].to_string()))
+                Ok(Datum::String(
+                    text_data.text[lo as usize..hi as usize].to_string(),
+                ))
             }
             // Previously-unstaged stored properties
             "bottomspacing" => Ok(Datum::Int(text_data.bottom_spacing as i32)),
@@ -1696,10 +2212,8 @@ impl TextMemberHandlers {
                     let type_val = player.alloc_datum(Datum::Symbol(t.tab_type.clone()));
                     let pos_key = player.alloc_datum(Datum::Symbol("position".to_string()));
                     let pos_val = player.alloc_datum(Datum::Int(t.position));
-                    let entries: VecDeque<(DatumRef, DatumRef)> = VecDeque::from([
-                        (type_key, type_val),
-                        (pos_key, pos_val),
-                    ]);
+                    let entries: VecDeque<(DatumRef, DatumRef)> =
+                        VecDeque::from([(type_key, type_val), (pos_key, pos_val)]);
                     items.push_back(player.alloc_datum(Datum::PropList(entries, false)));
                 }
                 Ok(Datum::List(DatumType::List, items, false))
@@ -1726,17 +2240,19 @@ impl TextMemberHandlers {
                     let text_member = cast_member.member_type.as_text_mut().unwrap();
                     let new_text = value?.trim_end_matches('\0').to_string();
 
-                    let old_color = text_member.html_styled_spans.first()
+                    let old_color = text_member
+                        .html_styled_spans
+                        .first()
                         .and_then(|s| s.style.color)
                         .map(|c| format!("#{:06X}", c & 0xFFFFFF))
                         .unwrap_or_else(|| "none".to_string());
                     debug!(
                         "[text_setter] member='{}' old_color={} spans={} new_text='{}'",
-                        cast_member.name, old_color,
+                        cast_member.name,
+                        old_color,
                         text_member.html_styled_spans.len(),
                         &new_text[..new_text.len().min(30)],
                     );
-
 
                     // Update the plain text + caret state in one go.
                     text_member.set_text_preserving_caret(new_text.clone());
@@ -1893,22 +2409,27 @@ impl TextMemberHandlers {
                 |player| value.string_value(),
                 |cast_member, value| {
                     let html_string = value?;
-                    let spans = HtmlParser::parse_html(&html_string).map_err(|e| {
-                        ScriptError::new(format!("Failed to parse HTML: {}", e))
-                    })?;
+                    let spans = HtmlParser::parse_html(&html_string)
+                        .map_err(|e| ScriptError::new(format!("Failed to parse HTML: {}", e)))?;
                     let text_member = cast_member.member_type.as_text_mut().unwrap();
 
-                    let old_color = text_member.html_styled_spans.first()
+                    let old_color = text_member
+                        .html_styled_spans
+                        .first()
                         .and_then(|s| s.style.color)
                         .map(|c| format!("#{:06X}", c & 0xFFFFFF))
                         .unwrap_or_else(|| "none".to_string());
-                    let new_color = spans.first()
+                    let new_color = spans
+                        .first()
                         .and_then(|s| s.style.color)
                         .map(|c| format!("#{:06X}", c & 0xFFFFFF))
                         .unwrap_or_else(|| "none".to_string());
                     debug!(
                         "[html_setter] member='{}' old_color={} new_color={} new_spans={} html='{}'",
-                        cast_member.name, old_color, new_color, spans.len(),
+                        cast_member.name,
+                        old_color,
+                        new_color,
+                        spans.len(),
                         &html_string[..html_string.len().min(80)],
                     );
 
@@ -1916,7 +2437,8 @@ impl TextMemberHandlers {
                     text_member.html_source = html_string.clone();
 
                     // Extract plain text from all spans
-                    text_member.set_text_preserving_caret(spans.iter().map(|s| s.text.clone()).collect());
+                    text_member
+                        .set_text_preserving_caret(spans.iter().map(|s| s.text.clone()).collect());
 
                     // Ensure the HTML-derived text ends with a paragraph
                     // terminator. Director appends a trailing `\r` to
@@ -1930,19 +2452,24 @@ impl TextMemberHandlers {
                     // content + 1 trailing empty), so sprite_rect grows
                     // to ~90 px instead of ~108 and the last line gets
                     // clipped.
-                    if !text_member.text.ends_with('\r')
-                        && !text_member.text.ends_with('\n')
-                    {
+                    if !text_member.text.ends_with('\r') && !text_member.text.ends_with('\n') {
                         text_member.text.push('\n');
                     }
 
                     // Extract alignment from <p align="..."> or <center> tag
                     let html_lower = html_string.to_lowercase();
-                    if html_lower.contains("align=\"center\"") || html_lower.contains("align='center'") || html_lower.contains("<center") {
+                    if html_lower.contains("align=\"center\"")
+                        || html_lower.contains("align='center'")
+                        || html_lower.contains("<center")
+                    {
                         text_member.alignment = "center".to_string();
-                    } else if html_lower.contains("align=\"right\"") || html_lower.contains("align='right'") {
+                    } else if html_lower.contains("align=\"right\"")
+                        || html_lower.contains("align='right'")
+                    {
                         text_member.alignment = "right".to_string();
-                    } else if html_lower.contains("align=\"left\"") || html_lower.contains("align='left'") {
+                    } else if html_lower.contains("align=\"left\"")
+                        || html_lower.contains("align='left'")
+                    {
                         text_member.alignment = "left".to_string();
                     }
 
@@ -1966,7 +2493,8 @@ impl TextMemberHandlers {
                             }
 
                             // Try text="..." for foreground color
-                            if let Some(color_str) = HtmlParser::extract_tag_attr(body_tag, "text") {
+                            if let Some(color_str) = HtmlParser::extract_tag_attr(body_tag, "text")
+                            {
                                 if let Some(color) = HtmlParser::parse_color(&color_str) {
                                     cast_member.color = crate::player::sprite::ColorRef::Rgb(
                                         ((color >> 16) & 0xFF) as u8,
@@ -2076,7 +2604,8 @@ impl TextMemberHandlers {
                         let b = (color_val & 0xFF) as u8;
                         cast_member.color = crate::player::sprite::ColorRef::Rgb(r, g, b);
                     } else {
-                        cast_member.color = crate::player::sprite::ColorRef::PaletteIndex(color_val as u8);
+                        cast_member.color =
+                            crate::player::sprite::ColorRef::PaletteIndex(color_val as u8);
                     }
                     Ok(())
                 },
@@ -2093,7 +2622,8 @@ impl TextMemberHandlers {
                         let b = (color_val & 0xFF) as u8;
                         cast_member.bg_color = crate::player::sprite::ColorRef::Rgb(r, g, b);
                     } else {
-                        cast_member.bg_color = crate::player::sprite::ColorRef::PaletteIndex(color_val as u8);
+                        cast_member.bg_color =
+                            crate::player::sprite::ColorRef::PaletteIndex(color_val as u8);
                     }
                     Ok(())
                 },
@@ -2102,7 +2632,11 @@ impl TextMemberHandlers {
                 member_ref,
                 |player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_text_mut().unwrap().fixed_line_space = value? as u16;
+                    cast_member
+                        .member_type
+                        .as_text_mut()
+                        .unwrap()
+                        .fixed_line_space = value? as u16;
                     Ok(())
                 },
             ),
@@ -2142,7 +2676,11 @@ impl TextMemberHandlers {
             ),
             "reflectivity" => borrow_member_mut(
                 member_ref,
-                |player| value.float_value().or_else(|_| value.int_value().map(|i| i as f64)),
+                |player| {
+                    value
+                        .float_value()
+                        .or_else(|_| value.int_value().map(|i| i as f64))
+                },
                 |cast_member, value| {
                     let text_member = cast_member.member_type.as_text_mut().unwrap();
                     if let Some(ref mut info) = text_member.info {
@@ -2281,7 +2819,9 @@ impl TextMemberHandlers {
                         let z = player.get_datum(&list[2]).float_value()?;
                         Ok((x, y, z))
                     } else {
-                        Err(ScriptError::new("cameraPosition requires a vector with 3 elements".to_string()))
+                        Err(ScriptError::new(
+                            "cameraPosition requires a vector with 3 elements".to_string(),
+                        ))
                     }
                 },
                 |cast_member, value| {
@@ -2305,7 +2845,9 @@ impl TextMemberHandlers {
                         let z = player.get_datum(&list[2]).float_value()?;
                         Ok((x, y, z))
                     } else {
-                        Err(ScriptError::new("cameraRotation requires a vector with 3 elements".to_string()))
+                        Err(ScriptError::new(
+                            "cameraRotation requires a vector with 3 elements".to_string(),
+                        ))
                     }
                 },
                 |cast_member, value| {
@@ -2468,8 +3010,10 @@ impl TextMemberHandlers {
                 |player| value.int_value(),
                 |cast_member, value| {
                     let text_member = cast_member.member_type.as_text_mut().unwrap();
+                    let scroll_top = value? as u32;
+                    text_member.scroll_top = scroll_top;
                     if let Some(ref mut info) = text_member.info {
-                        info.scroll_top = value? as u32;
+                        info.scroll_top = scroll_top;
                     }
                     Ok(())
                 },
@@ -2525,7 +3069,8 @@ impl TextMemberHandlers {
                         if let Some(sz) = first.style.font_size.filter(|s| *s > 0) {
                             text_member.font_size = sz as u16;
                         }
-                        if let Some(face) = first.style.font_face.as_ref().filter(|f| !f.is_empty()) {
+                        if let Some(face) = first.style.font_face.as_ref().filter(|f| !f.is_empty())
+                        {
                             text_member.font = face.clone();
                         }
                     }
@@ -2555,7 +3100,11 @@ impl TextMemberHandlers {
                 member_ref,
                 |_player| value.int_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_text_mut().unwrap().bottom_spacing = value? as i16;
+                    cast_member
+                        .member_type
+                        .as_text_mut()
+                        .unwrap()
+                        .bottom_spacing = value? as i16;
                     Ok(())
                 },
             ),
@@ -2572,6 +3121,28 @@ impl TextMemberHandlers {
                 |_player| value.int_value(),
                 |cast_member, value| {
                     cast_member.member_type.as_text_mut().unwrap().sel_end = value?;
+                    Ok(())
+                },
+            ),
+            "selection" => borrow_member_mut(
+                member_ref,
+                |player| {
+                    let items = value.to_list()?;
+                    if items.len() < 2 {
+                        return Err(ScriptError::new(
+                            "selection requires a two-item list".to_string(),
+                        ));
+                    }
+                    let start = player.get_datum(&items[0]).int_value()?;
+                    let end = player.get_datum(&items[1]).int_value()?;
+                    Ok((start, end))
+                },
+                |cast_member, value| {
+                    let (start, end) = value?;
+                    let text = cast_member.member_type.as_text_mut().unwrap();
+                    text.sel_start = start;
+                    text.sel_end = end;
+                    text.sel_anchor = start;
                     Ok(())
                 },
             ),
@@ -2596,7 +3167,11 @@ impl TextMemberHandlers {
                 member_ref,
                 |_player| value.string_value(),
                 |cast_member, value| {
-                    cast_member.member_type.as_text_mut().unwrap().anti_alias_type = value?;
+                    cast_member
+                        .member_type
+                        .as_text_mut()
+                        .unwrap()
+                        .anti_alias_type = value?;
                     Ok(())
                 },
             ),
@@ -2620,14 +3195,21 @@ impl TextMemberHandlers {
                                 let mut tab_type = "left".to_string();
                                 let mut position = 0i32;
                                 for (key_ref, val_ref) in &entries {
-                                    let key = player.get_datum(key_ref).string_value().unwrap_or_default();
+                                    let key = player
+                                        .get_datum(key_ref)
+                                        .string_value()
+                                        .unwrap_or_default();
                                     match key.as_str() {
                                         "type" => {
-                                            let t = player.get_datum(val_ref).string_value().unwrap_or_default();
+                                            let t = player
+                                                .get_datum(val_ref)
+                                                .string_value()
+                                                .unwrap_or_default();
                                             tab_type = t;
                                         }
                                         "position" => {
-                                            position = player.get_datum(val_ref).int_value().unwrap_or(0);
+                                            position =
+                                                player.get_datum(val_ref).int_value().unwrap_or(0);
                                         }
                                         _ => {}
                                     }
@@ -2755,7 +3337,10 @@ impl TextMemberHandlers {
 
         // Minimal stylesheet. Director emits this; some RTF readers
         // require it for default-style fallback.
-        rtf.push_str(&format!("{{\\stylesheet{{\\s0\\fs{} Normal Text;}}}}", default_size_halfpts));
+        rtf.push_str(&format!(
+            "{{\\stylesheet{{\\s0\\fs{} Normal Text;}}}}",
+            default_size_halfpts
+        ));
 
         // Document margins (twips) — Director's defaults.
         rtf.push_str("\\margl1800 \\margr1800 \\margt1440 \\margb1440 ");
@@ -2810,12 +3395,26 @@ impl TextMemberHandlers {
                     break;
                 }
             }
-            let par_info = text_data.par_infos.get(active_idx as usize)
+            let par_info = text_data
+                .par_infos
+                .get(active_idx as usize)
                 .cloned()
                 .unwrap_or_default();
-            let sb = if par_info.top_spacing > 0 { par_info.top_spacing * 20 } else { 100 };
-            let sa = if par_info.bottom_spacing > 0 { par_info.bottom_spacing * 20 } else { 100 };
-            let sl = if par_info.line_spacing > 0 { par_info.line_spacing * 20 } else { 100 };
+            let sb = if par_info.top_spacing > 0 {
+                par_info.top_spacing * 20
+            } else {
+                100
+            };
+            let sa = if par_info.bottom_spacing > 0 {
+                par_info.bottom_spacing * 20
+            } else {
+                100
+            };
+            let sl = if par_info.line_spacing > 0 {
+                par_info.line_spacing * 20
+            } else {
+                100
+            };
             (sb, sa, sl)
         };
 
@@ -2833,15 +3432,21 @@ impl TextMemberHandlers {
             let mut text_pos: u32 = 0;
             for (idx, span) in spans.iter().enumerate() {
                 let span_start = text_pos;
-                let font_idx = span.style.font_face
+                let font_idx = span
+                    .style
+                    .font_face
                     .as_ref()
                     .and_then(|f| fonts.iter().position(|x| x == f))
                     .unwrap_or(primary_font_idx);
-                let color_idx = span.style.color
+                let color_idx = span
+                    .style
+                    .color
                     .map(|c| c & 0x00FFFFFF)
                     .and_then(|c| colors.iter().position(|x| *x == c))
                     .unwrap_or(0);
-                let size_halfpts = span.style.font_size
+                let size_halfpts = span
+                    .style
+                    .font_size
                     .map(|sz| sz.max(1) * 2)
                     .unwrap_or(default_size_halfpts);
                 let (sb, sa, sl) = par_spacing_at(span_start);
@@ -2853,10 +3458,8 @@ impl TextMemberHandlers {
                 // and size; colored/bold/etc. runs inherit `\fs<default>`
                 // from the outer context so they emit only `\f<n>` and
                 // skip `\fs<n>` to match Director's compact output.
-                let is_styled_label = color_idx != 0
-                    || span.style.bold
-                    || span.style.italic
-                    || span.style.underline;
+                let is_styled_label =
+                    color_idx != 0 || span.style.bold || span.style.italic || span.style.underline;
                 let emit_size = !is_styled_label || size_halfpts != default_size_halfpts;
                 if !is_styled_label {
                     rtf.push_str("\\plain");
@@ -2880,8 +3483,7 @@ impl TextMemberHandlers {
                 rtf.push_str(&format!("\\sb{}\\sa{}\\sl{} ", sb, sa, sl));
 
                 let is_final_span = idx + 1 == span_count;
-                let span_ends_with_break = span.text.ends_with('\r')
-                    || span.text.ends_with('\n');
+                let span_ends_with_break = span.text.ends_with('\r') || span.text.ends_with('\n');
                 let needs_terminal_par = is_final_span && !span_ends_with_break;
 
                 escape_run(&span.text, &mut rtf, false);
@@ -2920,8 +3522,8 @@ impl TextMemberHandlers {
     ///  - `\:` etc. — literal char.
     ///  - `{` / `}` — push/pop style stack.
     fn parse_rtf_to_styled_text(rtf: &str) -> ParsedRtf {
-        use crate::player::handlers::datum_handlers::cast_member::font::{HtmlStyle, StyledSpan};
         use crate::director::chunks::xmedia_styled_text::{ParInfo, ParRun};
+        use crate::player::handlers::datum_handlers::cast_member::font::{HtmlStyle, StyledSpan};
 
         // First pass: extract font table and color table.
         let fonts = Self::rtf_extract_font_table(rtf);
@@ -3000,14 +3602,13 @@ impl TextMemberHandlers {
         // and color_idx → RGB.
         let frame_to_style = |frame: &Frame, fonts: &[String], colors: &[u32]| -> HtmlStyle {
             HtmlStyle {
-                font_face: frame.font_idx
+                font_face: frame
+                    .font_idx
                     .and_then(|i| fonts.get(i))
                     .filter(|f| !f.is_empty())
                     .cloned(),
                 font_size: frame.font_size_halfpts.map(|halfpts| (halfpts / 2) as i32),
-                color: frame.color_idx
-                    .and_then(|i| colors.get(i))
-                    .copied(),
+                color: frame.color_idx.and_then(|i| colors.get(i)).copied(),
                 bg_color: None,
                 bold: frame.bold,
                 italic: frame.italic,
@@ -3081,7 +3682,8 @@ impl TextMemberHandlers {
                         if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                             // Ensure run_style matches current frame.
                             if run_style.is_none() {
-                                run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                                run_style =
+                                    Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
                             }
                             run_buf.push(byte as char);
                             text.push(byte as char);
@@ -3089,7 +3691,8 @@ impl TextMemberHandlers {
                         i += 3;
                     } else if next == '\\' || next == '{' || next == '}' {
                         if run_style.is_none() {
-                            run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                            run_style =
+                                Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
                         }
                         run_buf.push(next);
                         text.push(next);
@@ -3101,7 +3704,8 @@ impl TextMemberHandlers {
                     } else if !next.is_ascii_alphabetic() {
                         // Non-letter escape (`\:`, `\-`, etc.) — emit literal.
                         if run_style.is_none() {
-                            run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                            run_style =
+                                Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
                         }
                         run_buf.push(next);
                         text.push(next);
@@ -3168,9 +3772,8 @@ impl TextMemberHandlers {
                                             Some(v) => v / 20,
                                         }
                                     };
-                                    let pt_sl = |t: Option<i32>| -> i32 {
-                                        t.map(|v| v / 20).unwrap_or(0)
-                                    };
+                                    let pt_sl =
+                                        |t: Option<i32>| -> i32 { t.map(|v| v / 20).unwrap_or(0) };
                                     let new_par = ParInfo {
                                         line_spacing: pt_sl(current_par_sl),
                                         line_height: 0,
@@ -3194,17 +3797,22 @@ impl TextMemberHandlers {
                                     // level top/bottom_spacing at every
                                     // `\par` instead of only at genuine
                                     // par_info group changes.
-                                    let existing_idx = par_infos.iter().enumerate().find_map(|(i, pi)| {
-                                        if pi.line_spacing == new_par.line_spacing
-                                            && pi.line_height == new_par.line_height
-                                            && pi.left_indent == new_par.left_indent
-                                            && pi.right_indent == new_par.right_indent
-                                            && pi.first_indent == new_par.first_indent
-                                            && pi.top_spacing == new_par.top_spacing
-                                            && pi.bottom_spacing == new_par.bottom_spacing
-                                            && pi.justification == new_par.justification
-                                        { Some(i as u16) } else { None }
-                                    });
+                                    let existing_idx =
+                                        par_infos.iter().enumerate().find_map(|(i, pi)| {
+                                            if pi.line_spacing == new_par.line_spacing
+                                                && pi.line_height == new_par.line_height
+                                                && pi.left_indent == new_par.left_indent
+                                                && pi.right_indent == new_par.right_indent
+                                                && pi.first_indent == new_par.first_indent
+                                                && pi.top_spacing == new_par.top_spacing
+                                                && pi.bottom_spacing == new_par.bottom_spacing
+                                                && pi.justification == new_par.justification
+                                            {
+                                                Some(i as u16)
+                                            } else {
+                                                None
+                                            }
+                                        });
                                     match existing_idx {
                                         Some(idx) => idx,
                                         None => {
@@ -3243,7 +3851,11 @@ impl TextMemberHandlers {
                                 // its terminating break the same way the
                                 // generator emits).
                                 if run_style.is_none() {
-                                    run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                                    run_style = Some(frame_to_style(
+                                        stack.last().unwrap(),
+                                        &fonts,
+                                        &colors,
+                                    ));
                                 }
                                 run_buf.push('\r');
                                 text.push('\r');
@@ -3251,7 +3863,11 @@ impl TextMemberHandlers {
                             }
                             "tab" => {
                                 if run_style.is_none() {
-                                    run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                                    run_style = Some(frame_to_style(
+                                        stack.last().unwrap(),
+                                        &fonts,
+                                        &colors,
+                                    ));
                                 }
                                 run_buf.push('\t');
                             }
@@ -3334,7 +3950,8 @@ impl TextMemberHandlers {
                         // run so style changes flush the previous run
                         // before applying.
                         if run_style.is_none() {
-                            run_style = Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
+                            run_style =
+                                Some(frame_to_style(stack.last().unwrap(), &fonts, &colors));
                         }
                         run_buf.push(ch);
                         text.push(ch);
@@ -3571,7 +4188,7 @@ impl TextMemberHandlers {
                 '{' => {
                     depth += 1;
                     // Check if this group starts with a known skip keyword
-                    let rest: String = chars[i+1..len.min(i+20)].iter().collect();
+                    let rest: String = chars[i + 1..len.min(i + 20)].iter().collect();
                     if rest.starts_with("\\fonttbl")
                         || rest.starts_with("\\colortbl")
                         || rest.starts_with("\\stylesheet")
@@ -3591,11 +4208,13 @@ impl TextMemberHandlers {
                 }
                 '\\' if skip_depth.is_none() => {
                     i += 1;
-                    if i >= len { break; }
+                    if i >= len {
+                        break;
+                    }
                     let next = chars[i];
                     if next == '\'' && i + 2 < len {
                         // \'XX hex escape
-                        let hex: String = chars[i+1..i+3].iter().collect();
+                        let hex: String = chars[i + 1..i + 3].iter().collect();
                         if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                             result.push(byte as char);
                         }
@@ -3615,7 +4234,9 @@ impl TextMemberHandlers {
                         }
                         // Skip optional numeric parameter (including negative sign)
                         if i < len && (chars[i] == '-' || chars[i].is_ascii_digit()) {
-                            if chars[i] == '-' { i += 1; }
+                            if chars[i] == '-' {
+                                i += 1;
+                            }
                             while i < len && chars[i].is_ascii_digit() {
                                 i += 1;
                             }

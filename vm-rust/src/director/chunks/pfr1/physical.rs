@@ -1,7 +1,6 @@
 /// Physical Font Section Parser + Delta-encoded Character Records
-
 use super::bit_reader::PfrBitReader;
-use super::types::{PhysicalFontRecord, CharacterRecord};
+use super::types::{CharacterRecord, PhysicalFontRecord};
 
 /// Parse the physical font section
 pub fn parse_physical_font(
@@ -54,7 +53,9 @@ pub fn parse_physical_font(
     let _vertical_escapement = reader.read_bit();
 
     record.flags = 0;
-    if proportional_escapement { record.flags |= 0x04; }
+    if proportional_escapement {
+        record.flags |= 0x04;
+    }
     record.two_byte_char_code = two_byte_char_code;
 
     // Standard set width when proportionalEscapement == false
@@ -137,7 +138,9 @@ pub fn parse_physical_font(
                         let mut font_id_bytes = Vec::new();
                         for _ in 0..item_size {
                             let ch = reader.read_u8();
-                            if ch == 0 { break; }
+                            if ch == 0 {
+                                break;
+                            }
                             font_id_bytes.push(ch);
                         }
                         record.font_id = String::from_utf8_lossy(&font_id_bytes).to_string();
@@ -249,7 +252,12 @@ pub fn parse_physical_font(
     let n_characters = reader.read_u16() as usize;
 
     // PFR1 delta-encoded character records
-    parse_character_records_pfr1(&mut reader, &mut record, n_characters, proportional_escapement);
+    parse_character_records_pfr1(
+        &mut reader,
+        &mut record,
+        n_characters,
+        proportional_escapement,
+    );
 
     Ok(record)
 }
@@ -437,7 +445,8 @@ fn parse_private_records_from_aux_data(aux_data: &[u8], record: &mut PhysicalFon
     }
 
     // Parse TLV records: 2-byte length, 2-byte type, then payload
-    let mut private_records: std::collections::HashMap<u16, Vec<Vec<u8>>> = std::collections::HashMap::new();
+    let mut private_records: std::collections::HashMap<u16, Vec<Vec<u8>>> =
+        std::collections::HashMap::new();
     let mut off = 0;
     while off + 3 < aux_data.len() {
         let len = ((aux_data[off] as usize) << 8) | (aux_data[off + 1] as usize);
@@ -456,7 +465,10 @@ fn parse_private_records_from_aux_data(aux_data: &[u8], record: &mut PhysicalFon
         }
 
         let payload = aux_data[off + 4..off + 4 + payload_len].to_vec();
-        private_records.entry(rec_type).or_insert_with(Vec::new).push(payload);
+        private_records
+            .entry(rec_type)
+            .or_insert_with(Vec::new)
+            .push(payload);
         off += len;
     }
 
@@ -502,6 +514,10 @@ fn parse_private_records_from_aux_data(aux_data: &[u8], record: &mut PhysicalFon
             v7 = t2[0][26] == 0;
         }
     }
-    if v6 { record.private_flags_492 |= 1; }
-    if !v7 { record.private_flags_492 |= 2; }
+    if v6 {
+        record.private_flags_492 |= 1;
+    }
+    if !v7 {
+        record.private_flags_492 |= 2;
+    }
 }

@@ -1,6 +1,8 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{allocator::ScriptInstanceAllocatorTrait, sprite::ColorRef, bitmap::bitmap::PaletteRef},
+    player::{
+        allocator::ScriptInstanceAllocatorTrait, bitmap::bitmap::PaletteRef, sprite::ColorRef,
+    },
 };
 
 use super::{DatumRef, DirPlayer};
@@ -9,14 +11,21 @@ pub fn format_concrete_datum(datum: &Datum, player: &DirPlayer) -> String {
     return format_concrete_datum_with_depth(datum, player, 0, usize::MAX);
 }
 
-pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth: usize, max_depth: usize) -> String {
+pub fn format_concrete_datum_with_depth(
+    datum: &Datum,
+    player: &DirPlayer,
+    depth: usize,
+    max_depth: usize,
+) -> String {
     match datum {
         Datum::String(s) => format!("\"{s}\""),
         Datum::Int(i) => i.to_string(),
         Datum::Float(f) => format_float_with_precision(*f, player),
         Datum::List(_, items, _) => {
-            let formatted_items: Vec<String> =
-                items.iter().map(|x| format_datum_with_depth(x, player, depth + 1, max_depth)).collect();
+            let formatted_items: Vec<String> = items
+                .iter()
+                .map(|x| format_datum_with_depth(x, player, depth + 1, max_depth))
+                .collect();
             format!("[{}]", formatted_items.join(", "))
         }
         Datum::VarRef(_) => "VarRef".to_string(),
@@ -30,7 +39,13 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
             }
             let formatted_entries: Vec<String> = entries
                 .iter()
-                .map(|(k, v)| format!("{}: {}", format_datum_with_depth(k, player, depth + 1, max_depth), format_datum_with_depth(v, player, depth + 1, max_depth)))
+                .map(|(k, v)| {
+                    format!(
+                        "{}: {}",
+                        format_datum_with_depth(k, player, depth + 1, max_depth),
+                        format_datum_with_depth(v, player, depth + 1, max_depth)
+                    )
+                })
                 .collect();
             format!("[{}]", formatted_entries.join(", "))
         }
@@ -120,14 +135,11 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
             )
         }
         Datum::PaletteRef(palette_ref) => match palette_ref {
-            PaletteRef::BuiltIn(builtin) => {
-                format!("{:?}", builtin).to_lowercase()
-            }
+            PaletteRef::BuiltIn(builtin) => format!("{:?}", builtin).to_lowercase(),
             PaletteRef::Member(member_ref) => {
                 format!(
                     "(member {} of castLib {})",
-                    member_ref.cast_member,
-                    member_ref.cast_lib
+                    member_ref.cast_member, member_ref.cast_lib
                 )
             }
             PaletteRef::Default => "#default".to_string(),
@@ -154,6 +166,9 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
         Datum::MouseRef => {
             format!("<_mouse>")
         }
+        Datum::GlobalRef => {
+            format!("<_global>")
+        }
         Datum::XmlRef(id) => {
             format!("<xml:{}>", id)
         }
@@ -162,7 +177,7 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
         }
         Datum::Vector(v) => {
             format!(
-                "vector({}, {}, {})", 
+                "vector({}, {}, {})",
                 format_float_with_precision(v[0], player),
                 format_float_with_precision(v[1], player),
                 format_float_with_precision(v[2], player),
@@ -187,8 +202,25 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
             format!("{}(\"{}\")", sr.object_type, sr.name)
         }
         Datum::Transform3d(m) => {
-            format!("transform({:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2})",
-                m[0],m[1],m[2],m[3], m[4],m[5],m[6],m[7], m[8],m[9],m[10],m[11], m[12],m[13],m[14],m[15])
+            format!(
+                "transform({:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2}, {:.2},{:.2},{:.2},{:.2})",
+                m[0],
+                m[1],
+                m[2],
+                m[3],
+                m[4],
+                m[5],
+                m[6],
+                m[7],
+                m[8],
+                m[9],
+                m[10],
+                m[11],
+                m[12],
+                m[13],
+                m[14],
+                m[15]
+            )
         }
         Datum::HavokObjectRef(hr) => {
             format!("{}(\"{}\")", hr.object_type, hr.name)
@@ -199,27 +231,25 @@ pub fn format_concrete_datum_with_depth(datum: &Datum, player: &DirPlayer, depth
 pub fn datum_to_string_for_concat(datum: &Datum, player: &DirPlayer) -> String {
     match datum {
         Datum::String(s) => s.clone(),
-        
+
         Datum::Symbol(s) => s.clone(),
-        
+
         // Void/Null become empty string in concatenation
         Datum::Void | Datum::Null => String::new(),
-        
+
         Datum::ColorRef(cr) => match cr {
             ColorRef::PaletteIndex(i) => format!("color({})", i),
             ColorRef::Rgb(r, g, b) => format!("rgb({}, {}, {})", r, g, b),
         },
-        
+
         // Lists/proplists: defer to format_concrete_datum so inner strings stay
         // quoted ([#name: "London I"], not [#name:London I]). Matches Director's
         // behavior and is required for round-trips through value() — without the
         // quotes, value() can't re-parse strings that contain spaces.
         Datum::List(..) | Datum::PropList(..) => format_concrete_datum(datum, player),
-        
-        Datum::StringChunk(..) => {
-            datum.string_value().unwrap_or(String::new())
-        },
-        
+
+        Datum::StringChunk(..) => datum.string_value().unwrap_or(String::new()),
+
         // For other complex types, use the standard formatter
         _ => format_concrete_datum(datum, player),
     }
@@ -230,7 +260,12 @@ pub fn format_datum(datum_ref: &DatumRef, player: &DirPlayer) -> String {
     format_concrete_datum_with_depth(datum, player, 0, usize::MAX)
 }
 
-pub fn format_datum_with_depth(datum_ref: &DatumRef, player: &DirPlayer, depth: usize, max_depth: usize) -> String {
+pub fn format_datum_with_depth(
+    datum_ref: &DatumRef,
+    player: &DirPlayer,
+    depth: usize,
+    max_depth: usize,
+) -> String {
     if depth >= max_depth {
         return format!("<{}>", datum_ref);
     }
@@ -244,22 +279,22 @@ pub fn format_float_with_precision(val: f64, player: &DirPlayer) -> String {
     let val = if val == 0.0 { 0.0 } else { val };
 
     let fp = player.float_precision as i32;
-    
+
     // Calculate how many characters the decimal notation would take
     let integer_digits = if val.abs() < 1.0 {
         1 // Just "0"
     } else {
         (val.abs().log10().floor() as i32 + 1).max(1)
     };
-    
+
     let decimal_places = if fp > 0 { fp } else { 0 };
     let total_chars = integer_digits + 1 + decimal_places; // digits + '.' + decimals
-    
+
     // Director switches to scientific notation when formatted string >= 18 chars
     if total_chars >= 18 {
         return format!("{:.14e}", val);
     }
-    
+
     // Normal formatting based on floatPrecision
     if fp > 0 {
         let p = fp.min(15) as usize;
@@ -271,9 +306,7 @@ pub fn format_float_with_precision(val: f64, player: &DirPlayer) -> String {
         let pow = 10f64.powi(p);
         let rounded = (val * pow).round() / pow;
         let s = format!("{:.*}", p as usize, rounded);
-        s.trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string()
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
     }
 }
 

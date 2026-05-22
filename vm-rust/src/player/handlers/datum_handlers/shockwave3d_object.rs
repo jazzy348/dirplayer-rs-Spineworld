@@ -1,24 +1,14 @@
-use std::collections::VecDeque;
 use log::debug;
+use std::collections::VecDeque;
 
 use crate::{
-    director::{
-        chunks::w3d::types::*,
-        lingo::datum::Datum,
-    },
-    player::{
-        cast_lib::CastMemberRef,
-        reserve_player_mut,
-        DatumRef, ScriptError,
-    },
     console_warn,
+    director::{chunks::w3d::types::*, lingo::datum::Datum},
+    player::{DatumRef, ScriptError, cast_lib::CastMemberRef, reserve_player_mut},
 };
 
 const IDENTITY_MATRIX: [f64; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 const W3D_OBJECT_LOG: bool = false;
@@ -36,15 +26,28 @@ impl Shockwave3dObjectDatumHandlers {
         reserve_player_mut(|player| {
             let s3d_ref = match player.get_datum(obj_ref) {
                 Datum::Shockwave3dObjectRef(r) => r.clone(),
-                _ => return Err(ScriptError::new("Expected Shockwave3dObjectRef".to_string())),
+                _ => {
+                    return Err(ScriptError::new(
+                        "Expected Shockwave3dObjectRef".to_string(),
+                    ));
+                }
             };
-            let member_ref = CastMemberRef { cast_lib: s3d_ref.cast_lib, cast_member: s3d_ref.cast_member };
+            let member_ref = CastMemberRef {
+                cast_lib: s3d_ref.cast_lib,
+                cast_member: s3d_ref.cast_member,
+            };
             let scene = {
-                let member = player.movie.cast_manager.find_member_by_ref(&member_ref)
+                let member = player
+                    .movie
+                    .cast_manager
+                    .find_member_by_ref(&member_ref)
                     .ok_or_else(|| ScriptError::new("3D member not found".to_string()))?;
-                let w3d = member.member_type.as_shockwave3d()
+                let w3d = member
+                    .member_type
+                    .as_shockwave3d()
                     .ok_or_else(|| ScriptError::new("Not a Shockwave3D member".to_string()))?;
-                w3d.parsed_scene.clone()
+                w3d.parsed_scene
+                    .clone()
                     .ok_or_else(|| ScriptError::new("No parsed 3D scene".to_string()))?
             };
             Self::get_prop_inner(player, &s3d_ref, &member_ref, &scene, prop_name)
@@ -396,8 +399,12 @@ impl Shockwave3dObjectDatumHandlers {
                         ));
                     }
                     r.clone()
-                },
-                _ => return Err(ScriptError::new("Expected Shockwave3dObjectRef".to_string())),
+                }
+                _ => {
+                    return Err(ScriptError::new(
+                        "Expected Shockwave3dObjectRef".to_string(),
+                    ));
+                }
             };
 
             let member_ref = crate::player::cast_lib::CastMemberRef {
@@ -1439,7 +1446,11 @@ impl Shockwave3dObjectDatumHandlers {
         reserve_player_mut(|player| {
             let s3d_ref = match player.get_datum(datum) {
                 Datum::Shockwave3dObjectRef(r) => r.clone(),
-                _ => return Err(ScriptError::new("Expected Shockwave3dObjectRef".to_string())),
+                _ => {
+                    return Err(ScriptError::new(
+                        "Expected Shockwave3dObjectRef".to_string(),
+                    ));
+                }
             };
 
             let member_ref = crate::player::cast_lib::CastMemberRef {
@@ -3610,7 +3621,9 @@ impl Shockwave3dObjectDatumHandlers {
         prop: &str,
         member_ref: &CastMemberRef,
     ) -> Result<DatumRef, ScriptError> {
-        let node = scene.nodes.iter()
+        let node = scene
+            .nodes
+            .iter()
             .find(|n| n.node_type == W3dNodeType::Model && n.name == model_name);
 
         match_ci!(prop, {
@@ -4007,9 +4020,8 @@ impl Shockwave3dObjectDatumHandlers {
         member_ref: &CastMemberRef,
     ) -> Result<DatumRef, ScriptError> {
         let shader = scene.shaders.iter().find(|s| s.name == shader_name);
-        let material = shader.and_then(|s| {
-            scene.materials.iter().find(|m| m.name == s.material_name)
-        });
+        let material =
+            shader.and_then(|s| scene.materials.iter().find(|m| m.name == s.material_name));
 
         // Default material values matching Director's DefaultShader
         let default_ambient = [63.0 / 255.0, 63.0 / 255.0, 63.0 / 255.0, 1.0];
@@ -4270,14 +4282,21 @@ impl Shockwave3dObjectDatumHandlers {
     ) -> Result<DatumRef, ScriptError> {
         let existing_ref = {
             let member = player.movie.cast_manager.find_member_by_ref(member_ref);
-            member.and_then(|m| m.member_type.as_shockwave3d())
-                .and_then(|w3d| w3d.runtime_state.shader_texture_transform_lists.get(shader_name))
+            member
+                .and_then(|m| m.member_type.as_shockwave3d())
+                .and_then(|w3d| {
+                    w3d.runtime_state
+                        .shader_texture_transform_lists
+                        .get(shader_name)
+                })
                 .cloned()
         };
         if let Some(list_ref) = existing_ref {
             Ok(list_ref)
         } else {
-            let layer_count = scene.shaders.iter()
+            let layer_count = scene
+                .shaders
+                .iter()
                 .find(|s| s.name == shader_name)
                 .map(|s| s.texture_layers.len().max(1))
                 .unwrap_or(1);
@@ -4286,12 +4305,16 @@ impl Shockwave3dObjectDatumHandlers {
                 items.push_back(player.alloc_datum(Datum::Transform3d(IDENTITY_MATRIX)));
             }
             let list_ref = player.alloc_datum(Datum::List(
-                crate::director::lingo::datum::DatumType::List, items, false,
+                crate::director::lingo::datum::DatumType::List,
+                items,
+                false,
             ));
             let shader_key = shader_name.to_string();
             if let Some(member) = player.movie.cast_manager.find_member_by_ref_mut(member_ref) {
                 if let Some(w3d) = member.member_type.as_shockwave3d_mut() {
-                    w3d.runtime_state.shader_texture_transform_lists.insert(shader_key, list_ref.clone());
+                    w3d.runtime_state
+                        .shader_texture_transform_lists
+                        .insert(shader_key, list_ref.clone());
                 }
             }
             Ok(list_ref)
@@ -4307,7 +4330,9 @@ impl Shockwave3dObjectDatumHandlers {
         prop: &str,
         member_ref: &CastMemberRef,
     ) -> Result<DatumRef, ScriptError> {
-        let node = scene.nodes.iter()
+        let node = scene
+            .nodes
+            .iter()
             .find(|n| n.node_type == W3dNodeType::View && n.name.eq_ignore_ascii_case(camera_name));
 
         match_ci!(prop, {
@@ -4634,7 +4659,11 @@ impl Shockwave3dObjectDatumHandlers {
         // Find the model's resource to get mesh info
         let node = scene.nodes.iter().find(|n| n.name == model_name);
         let resource_name = node.map(|n| {
-            if !n.model_resource_name.is_empty() { &n.model_resource_name } else { &n.resource_name }
+            if !n.model_resource_name.is_empty() {
+                &n.model_resource_name
+            } else {
+                &n.resource_name
+            }
         });
         let mesh_count = resource_name
             .and_then(|rn| scene.model_resources.get(rn.as_str()))
@@ -4740,7 +4769,10 @@ fn color_to_datum(c: [f32; 4]) -> Datum {
 
 // ─── Transform mutation helpers ───
 
-fn read_xyz_args(player: &crate::player::DirPlayer, args: &[crate::player::DatumRef]) -> (f32, f32, f32) {
+fn read_xyz_args(
+    player: &crate::player::DirPlayer,
+    args: &[crate::player::DatumRef],
+) -> (f32, f32, f32) {
     if args.len() >= 3 {
         let x = player.get_datum(&args[0]).float_value().unwrap_or(0.0) as f32;
         let y = player.get_datum(&args[1]).float_value().unwrap_or(0.0) as f32;
@@ -4758,10 +4790,7 @@ fn read_xyz_args(player: &crate::player::DirPlayer, args: &[crate::player::Datum
 }
 
 const IDENTITY: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 /// Get the member's default_rect dimensions (original content size).
@@ -4802,7 +4831,11 @@ fn get_node_transform(
             }
             // Fall back to parsed scene (case-insensitive)
             if let Some(scene) = &w3d.parsed_scene {
-                if let Some(node) = scene.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(node_name)) {
+                if let Some(node) = scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.name.eq_ignore_ascii_case(node_name))
+                {
                     return node.transform;
                 }
             }
@@ -4821,17 +4854,30 @@ fn get_world_position(
     if let Some(member) = player.movie.cast_manager.find_member_by_ref(member_ref) {
         if let Some(w3d) = member.member_type.as_shockwave3d() {
             if let Some(ref scene) = w3d.parsed_scene {
-                if let Some(node) = scene.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(node_name)) {
+                if let Some(node) = scene
+                    .nodes
+                    .iter()
+                    .find(|n| n.name.eq_ignore_ascii_case(node_name))
+                {
                     let local = get_node_transform(player, member_ref, &node.name);
                     let mut result = local;
                     let mut current_parent = node.parent_name.clone();
                     for _ in 0..20 {
-                        if current_parent.is_empty() || current_parent.eq_ignore_ascii_case("World") { break; }
-                        if let Some(pn) = scene.nodes.iter().find(|n| n.name.eq_ignore_ascii_case(&current_parent)) {
+                        if current_parent.is_empty() || current_parent.eq_ignore_ascii_case("World")
+                        {
+                            break;
+                        }
+                        if let Some(pn) = scene
+                            .nodes
+                            .iter()
+                            .find(|n| n.name.eq_ignore_ascii_case(&current_parent))
+                        {
                             let pt = get_node_transform(player, member_ref, &pn.name);
                             result = mat4_mul_f32(&pt, &result);
                             current_parent = pn.parent_name.clone();
-                        } else { break; }
+                        } else {
+                            break;
+                        }
                     }
                     return [result[12] as f64, result[13] as f64, result[14] as f64];
                 }
@@ -4883,7 +4929,10 @@ fn get_or_init_node_transform(
     // Ensure it's in the runtime overrides
     if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(member_ref) {
         if let Some(w3d) = member.member_type.as_shockwave3d_mut() {
-            w3d.runtime_state.node_transforms.entry(key).or_insert(current);
+            w3d.runtime_state
+                .node_transforms
+                .entry(key)
+                .or_insert(current);
         }
     }
     current
@@ -4906,11 +4955,16 @@ pub fn set_node_transform(
     // Get the persistent datum ref (case-insensitive lookup)
     let persistent_ref = {
         let member = player.movie.cast_manager.find_member_by_ref(member_ref);
-        member.and_then(|m| m.member_type.as_shockwave3d())
+        member
+            .and_then(|m| m.member_type.as_shockwave3d())
             .and_then(|w3d| {
-                w3d.runtime_state.node_transform_datums.get(&key)
+                w3d.runtime_state
+                    .node_transform_datums
+                    .get(&key)
                     .or_else(|| {
-                        w3d.runtime_state.node_transform_datums.iter()
+                        w3d.runtime_state
+                            .node_transform_datums
+                            .iter()
                             .find(|(k, _)| k.eq_ignore_ascii_case(&key))
                             .map(|(_, v)| v)
                     })
@@ -4942,7 +4996,10 @@ fn get_persistent_node_transform(
     if node_name.contains("overlay") {
         static PNT_LOG: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         if PNT_LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 3 {
-            log(&format!("[PNT] get_persistent_node_transform('{}')", node_name));
+            log(&format!(
+                "[PNT] get_persistent_node_transform('{}')",
+                node_name
+            ));
         }
     }
     let key = canonical_node_key(player, member_ref, node_name);
@@ -4950,11 +5007,16 @@ fn get_persistent_node_transform(
     // Check if persistent datum already exists (case-insensitive)
     let existing = {
         let member = player.movie.cast_manager.find_member_by_ref(member_ref);
-        member.and_then(|m| m.member_type.as_shockwave3d())
+        member
+            .and_then(|m| m.member_type.as_shockwave3d())
             .and_then(|w3d| {
-                w3d.runtime_state.node_transform_datums.get(&key)
+                w3d.runtime_state
+                    .node_transform_datums
+                    .get(&key)
                     .or_else(|| {
-                        w3d.runtime_state.node_transform_datums.iter()
+                        w3d.runtime_state
+                            .node_transform_datums
+                            .iter()
                             .find(|(k, _)| k.eq_ignore_ascii_case(&key))
                             .map(|(_, v)| v)
                     })
@@ -4973,7 +5035,9 @@ fn get_persistent_node_transform(
     // Store in runtime state using canonical key
     if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(member_ref) {
         if let Some(w3d) = member.member_type.as_shockwave3d_mut() {
-            w3d.runtime_state.node_transform_datums.insert(key, datum_ref.clone());
+            w3d.runtime_state
+                .node_transform_datums
+                .insert(key, datum_ref.clone());
         }
     }
     datum_ref
@@ -4984,7 +5048,9 @@ fn get_persistent_node_transform(
 pub fn sync_persistent_transforms(player: &mut crate::player::DirPlayer) {
     // Only sync Transform3d datums that were mutated in-place (dirty)
     let dirty_ids = super::transform3d::take_dirty_ids();
-    if dirty_ids.is_empty() { return; }
+    if dirty_ids.is_empty() {
+        return;
+    }
 
     // Collect entries for dirty datums only
     let mut entries: Vec<(i32, u32, String, DatumRef)> = Vec::new();
@@ -4992,19 +5058,35 @@ pub fn sync_persistent_transforms(player: &mut crate::player::DirPlayer) {
         for (member_num, member) in &cast.members {
             if let Some(w3d) = member.member_type.as_shockwave3d() {
                 for (node_name, datum_ref) in &w3d.runtime_state.node_transform_datums {
-                    entries.push((cast.number as i32, *member_num, node_name.clone(), datum_ref.clone()));
+                    entries.push((
+                        cast.number as i32,
+                        *member_num,
+                        node_name.clone(),
+                        datum_ref.clone(),
+                    ));
                 }
             }
         }
     }
 
     for (cast_lib, cast_member, node_name, datum_ref) in entries {
-        if !dirty_ids.contains(&datum_ref.unwrap()) { continue; } // Only sync dirty datums
+        if !dirty_ids.contains(&datum_ref.unwrap()) {
+            continue;
+        } // Only sync dirty datums
         if let Datum::Transform3d(m64) = player.get_datum(&datum_ref) {
             let m32: [f32; 16] = m64.map(|v| v as f32);
-            if m32.iter().any(|v| !v.is_finite()) { continue; }
-            let member_ref = CastMemberRef { cast_lib, cast_member: cast_member as i32 };
-            if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) {
+            if m32.iter().any(|v| !v.is_finite()) {
+                continue;
+            }
+            let member_ref = CastMemberRef {
+                cast_lib,
+                cast_member: cast_member as i32,
+            };
+            if let Some(member) = player
+                .movie
+                .cast_manager
+                .find_mut_member_by_ref(&member_ref)
+            {
                 if let Some(w3d) = member.member_type.as_shockwave3d_mut() {
                     w3d.runtime_state.node_transforms.insert(node_name, m32);
                 }
@@ -5022,7 +5104,12 @@ pub fn sync_shader_texture_lists(player: &mut crate::player::DirPlayer) {
         for (member_num, member) in &cast.members {
             if let Some(w3d) = member.member_type.as_shockwave3d() {
                 for (shader_name, list_ref) in &w3d.runtime_state.shader_texture_lists {
-                    entries.push((cast.number as i32, *member_num, shader_name.clone(), list_ref.clone()));
+                    entries.push((
+                        cast.number as i32,
+                        *member_num,
+                        shader_name.clone(),
+                        list_ref.clone(),
+                    ));
                 }
             }
         }
@@ -5031,20 +5118,28 @@ pub fn sync_shader_texture_lists(player: &mut crate::player::DirPlayer) {
     for (cast_lib, cast_member, shader_name, list_ref) in entries {
         // Read texture names from the persistent list
         let tex_names: Vec<String> = if let Datum::List(_, items, _) = player.get_datum(&list_ref) {
-            items.iter().map(|item_ref| {
-                match player.get_datum(item_ref) {
+            items
+                .iter()
+                .map(|item_ref| match player.get_datum(item_ref) {
                     Datum::Shockwave3dObjectRef(r) if r.object_type == "texture" => r.name.clone(),
                     Datum::String(s) => s.clone(),
                     _ => String::new(),
-                }
-            }).collect()
+                })
+                .collect()
         } else {
             continue;
         };
 
         // Update shader.texture_layers in the parsed scene
-        let member_ref = CastMemberRef { cast_lib, cast_member: cast_member as i32 };
-        if let Some(member) = player.movie.cast_manager.find_mut_member_by_ref(&member_ref) {
+        let member_ref = CastMemberRef {
+            cast_lib,
+            cast_member: cast_member as i32,
+        };
+        if let Some(member) = player
+            .movie
+            .cast_manager
+            .find_mut_member_by_ref(&member_ref)
+        {
             if let Some(w3d) = member.member_type.as_shockwave3d_mut() {
                 if let Some(scene) = w3d.scene_mut() {
                     if let Some(shader) = scene.shaders.iter_mut().find(|s| s.name == shader_name) {
@@ -5062,12 +5157,21 @@ pub fn sync_shader_texture_lists(player: &mut crate::player::DirPlayer) {
                             shader.texture_layers[i].name = name.clone();
                         }
                         // Log when shadow/lightmap layers are synced
-                        let non_empty: Vec<String> = tex_names.iter().filter(|n| !n.is_empty()).cloned().collect();
+                        let non_empty: Vec<String> = tex_names
+                            .iter()
+                            .filter(|n| !n.is_empty())
+                            .cloned()
+                            .collect();
                         if non_empty.len() > 1 {
-                            let blend_funcs: Vec<u8> = shader.texture_layers.iter().map(|l| l.blend_func).collect();
+                            let blend_funcs: Vec<u8> =
+                                shader.texture_layers.iter().map(|l| l.blend_func).collect();
                             debug!(
                                 "[W3D-SYNC] shader=\"{}\" layers={} (was {}) textures={:?} blend_funcs={:?}",
-                                shader_name, shader.texture_layers.len(), prev_len, non_empty, blend_funcs
+                                shader_name,
+                                shader.texture_layers.len(),
+                                prev_len,
+                                non_empty,
+                                blend_funcs
                             );
                         }
                     }
@@ -5081,7 +5185,9 @@ fn apply_translation(
     player: &mut crate::player::DirPlayer,
     member_ref: &crate::player::cast_lib::CastMemberRef,
     node_name: &str,
-    dx: f32, dy: f32, dz: f32,
+    dx: f32,
+    dy: f32,
+    dz: f32,
 ) {
     let mut m = get_or_init_node_transform(player, member_ref, node_name);
     m[12] += dx;
@@ -5094,7 +5200,9 @@ fn apply_rotation(
     player: &mut crate::player::DirPlayer,
     member_ref: &crate::player::cast_lib::CastMemberRef,
     node_name: &str,
-    rx_deg: f32, ry_deg: f32, rz_deg: f32,
+    rx_deg: f32,
+    ry_deg: f32,
+    rz_deg: f32,
 ) {
     let m = get_or_init_node_transform(player, member_ref, node_name);
     // Director uses left-handed coordinates where Y rotation is opposite to OpenGL's
@@ -5112,13 +5220,21 @@ fn apply_scale(
     player: &mut crate::player::DirPlayer,
     member_ref: &crate::player::cast_lib::CastMemberRef,
     node_name: &str,
-    sx: f32, sy: f32, sz: f32,
+    sx: f32,
+    sy: f32,
+    sz: f32,
 ) {
     let mut m = get_or_init_node_transform(player, member_ref, node_name);
     // Scale the rotation columns
-    for i in 0..3 { m[i] *= sx; }
-    for i in 4..7 { m[i] *= sy; }
-    for i in 8..11 { m[i] *= sz; }
+    for i in 0..3 {
+        m[i] *= sx;
+    }
+    for i in 4..7 {
+        m[i] *= sy;
+    }
+    for i in 8..11 {
+        m[i] *= sz;
+    }
     set_node_transform(player, member_ref, node_name, m);
 }
 
@@ -5126,8 +5242,12 @@ fn apply_point_at(
     player: &mut crate::player::DirPlayer,
     member_ref: &crate::player::cast_lib::CastMemberRef,
     node_name: &str,
-    tx: f32, ty: f32, tz: f32,
-    up_x: f32, up_y: f32, up_z: f32,
+    tx: f32,
+    ty: f32,
+    tz: f32,
+    up_x: f32,
+    up_y: f32,
+    up_z: f32,
 ) {
     // Flush any dirty persistent Transform3d datums to node_transforms first.
     // This ensures that if the caller just set transform.position = v on a
@@ -5138,7 +5258,8 @@ fn apply_point_at(
     // Look up custom pointAtOrientation for this node (if explicitly set)
     let custom_orientation = {
         let member = player.movie.cast_manager.find_member_by_ref(member_ref);
-        member.and_then(|m| m.member_type.as_shockwave3d())
+        member
+            .and_then(|m| m.member_type.as_shockwave3d())
             .and_then(|w3d| w3d.runtime_state.point_at_orientations.get(node_name))
             .copied()
     };
@@ -5146,7 +5267,11 @@ fn apply_point_at(
     let m = get_or_init_node_transform(player, member_ref, node_name);
     // Use WORLD position for direction computation (target is in world coordinates)
     let world_pos = get_world_position(player, member_ref, node_name);
-    let pos_w = [world_pos[0] as f32, world_pos[1] as f32, world_pos[2] as f32];
+    let pos_w = [
+        world_pos[0] as f32,
+        world_pos[1] as f32,
+        world_pos[2] as f32,
+    ];
     // Local position preserved for the output matrix
     let local_pos = [
         if m[12].is_finite() { m[12] } else { 0.0 },
@@ -5154,30 +5279,42 @@ fn apply_point_at(
         if m[14].is_finite() { m[14] } else { 0.0 },
     ];
 
-    if !tx.is_finite() || !ty.is_finite() || !tz.is_finite() { return; }
+    if !tx.is_finite() || !ty.is_finite() || !tz.is_finite() {
+        return;
+    }
 
     // Forward = toward target in world space
     let mut fwd = [tx - pos_w[0], ty - pos_w[1], tz - pos_w[2]];
-    let len = (fwd[0]*fwd[0] + fwd[1]*fwd[1] + fwd[2]*fwd[2]).sqrt();
+    let len = (fwd[0] * fwd[0] + fwd[1] * fwd[1] + fwd[2] * fwd[2]).sqrt();
     if len > 1e-6 {
-        fwd[0] /= len; fwd[1] /= len; fwd[2] /= len;
+        fwd[0] /= len;
+        fwd[1] /= len;
+        fwd[2] /= len;
     } else {
         return;
     }
 
     // Up hint from argument; fall back to world X if forward is parallel
     let mut up_hint = [up_x, up_y, up_z];
-    let dot = up_hint[0]*fwd[0] + up_hint[1]*fwd[1] + up_hint[2]*fwd[2];
+    let dot = up_hint[0] * fwd[0] + up_hint[1] * fwd[1] + up_hint[2] * fwd[2];
     if dot.abs() > 0.999 {
         up_hint = [1.0, 0.0, 0.0];
     }
 
-    let cross = |a: [f32;3], b: [f32;3]| -> [f32;3] {
-        [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    let cross = |a: [f32; 3], b: [f32; 3]| -> [f32; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
     };
-    let normalize = |v: [f32;3]| -> [f32;3] {
-        let l = (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]).sqrt();
-        if l > 1e-6 { [v[0]/l, v[1]/l, v[2]/l] } else { v }
+    let normalize = |v: [f32; 3]| -> [f32; 3] {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if l > 1e-6 {
+            [v[0] / l, v[1] / l, v[2] / l]
+        } else {
+            v
+        }
     };
 
     if let Some((front_axis, up_axis)) = custom_orientation {
@@ -5188,11 +5325,17 @@ fn apply_point_at(
         let up_world = normalize(cross(fwd, right_world));
 
         // Determine which column (0=X, 1=Y, 2=Z) each orientation axis represents
-        let dominant = |v: [f32;3]| -> (usize, f32) {
-            let ax = v[0].abs(); let ay = v[1].abs(); let az = v[2].abs();
-            if ax >= ay && ax >= az { (0, v[0].signum()) }
-            else if ay >= ax && ay >= az { (1, v[1].signum()) }
-            else { (2, v[2].signum()) }
+        let dominant = |v: [f32; 3]| -> (usize, f32) {
+            let ax = v[0].abs();
+            let ay = v[1].abs();
+            let az = v[2].abs();
+            if ax >= ay && ax >= az {
+                (0, v[0].signum())
+            } else if ay >= ax && ay >= az {
+                (1, v[1].signum())
+            } else {
+                (2, v[2].signum())
+            }
         };
 
         let (front_col, front_sign) = dominant(front_axis);
@@ -5220,7 +5363,10 @@ fn apply_point_at(
         result[right_col * 4 + 0] = right_world[0] * right_sign;
         result[right_col * 4 + 1] = right_world[1] * right_sign;
         result[right_col * 4 + 2] = right_world[2] * right_sign;
-        result[12] = local_pos[0]; result[13] = local_pos[1]; result[14] = local_pos[2]; result[15] = 1.0;
+        result[12] = local_pos[0];
+        result[13] = local_pos[1];
+        result[14] = local_pos[2];
+        result[15] = 1.0;
         set_node_transform(player, member_ref, node_name, result);
     } else {
         // Default orientation: -Z toward target, Y up (standard look-at convention).
@@ -5230,10 +5376,22 @@ fn apply_point_at(
         let up2 = normalize(cross(neg_fwd, right));
 
         let result = [
-            right[0],   right[1],   right[2],   0.0,
-            up2[0],     up2[1],     up2[2],     0.0,
-            neg_fwd[0], neg_fwd[1], neg_fwd[2], 0.0,
-            local_pos[0], local_pos[1], local_pos[2], 1.0,
+            right[0],
+            right[1],
+            right[2],
+            0.0,
+            up2[0],
+            up2[1],
+            up2[2],
+            0.0,
+            neg_fwd[0],
+            neg_fwd[1],
+            neg_fwd[2],
+            0.0,
+            local_pos[0],
+            local_pos[1],
+            local_pos[2],
+            1.0,
         ];
         set_node_transform(player, member_ref, node_name, result);
     }
@@ -5244,11 +5402,10 @@ fn mat4_mul_f32(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut r = [0.0f32; 16];
     for col in 0..4 {
         for row in 0..4 {
-            r[col * 4 + row] =
-                a[0 * 4 + row] * b[col * 4 + 0] +
-                a[1 * 4 + row] * b[col * 4 + 1] +
-                a[2 * 4 + row] * b[col * 4 + 2] +
-                a[3 * 4 + row] * b[col * 4 + 3];
+            r[col * 4 + row] = a[0 * 4 + row] * b[col * 4 + 0]
+                + a[1 * 4 + row] * b[col * 4 + 1]
+                + a[2 * 4 + row] * b[col * 4 + 2]
+                + a[3 * 4 + row] * b[col * 4 + 3];
         }
     }
     r
@@ -5265,10 +5422,22 @@ fn euler_to_matrix_f32(rx_deg: f32, ry_deg: f32, rz_deg: f32) -> [f32; 16] {
 
     // R = Rz * Ry * Rx, true column-major: m[col*4+row]
     [
-        cy*cz,              cy*sz,              -sy,               0.0,  // col 0
-        sx*sy*cz - cx*sz,   sx*sy*sz + cx*cz,   sx*cy,            0.0,  // col 1
-        cx*sy*cz + sx*sz,   cx*sy*sz - sx*cz,   cx*cy,            0.0,  // col 2
-        0.0,                0.0,                0.0,               1.0,  // col 3
+        cy * cz,
+        cy * sz,
+        -sy,
+        0.0, // col 0
+        sx * sy * cz - cx * sz,
+        sx * sy * sz + cx * cz,
+        sx * cy,
+        0.0, // col 1
+        cx * sy * cz + sx * sz,
+        cx * sy * sz - sx * cz,
+        cx * cy,
+        0.0, // col 2
+        0.0,
+        0.0,
+        0.0,
+        1.0, // col 3
     ]
 }
 
@@ -5277,33 +5446,37 @@ fn invert_transform_f32(m: &[f32; 16]) -> [f32; 16] {
     // Column-major: R[row][col] = m[col*4 + row]
     let (tx, ty, tz) = (m[12], m[13], m[14]);
     // -R^T * t
-    let itx = -(m[0]*tx + m[1]*ty + m[2]*tz);
-    let ity = -(m[4]*tx + m[5]*ty + m[6]*tz);
-    let itz = -(m[8]*tx + m[9]*ty + m[10]*tz);
+    let itx = -(m[0] * tx + m[1] * ty + m[2] * tz);
+    let ity = -(m[4] * tx + m[5] * ty + m[6] * tz);
+    let itz = -(m[8] * tx + m[9] * ty + m[10] * tz);
     [
-        m[0], m[4], m[8],  0.0,  // R^T col 0
-        m[1], m[5], m[9],  0.0,  // R^T col 1
-        m[2], m[6], m[10], 0.0,  // R^T col 2
-        itx,  ity,  itz,   1.0,
+        m[0], m[4], m[8], 0.0, // R^T col 0
+        m[1], m[5], m[9], 0.0, // R^T col 1
+        m[2], m[6], m[10], 0.0, // R^T col 2
+        itx, ity, itz, 1.0,
     ]
 }
 
 fn mat4_mul_vec4(m: &[f32; 16], v: &[f32; 4]) -> [f32; 4] {
     [
-        m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3],
-        m[1]*v[0] + m[5]*v[1] + m[9]*v[2]  + m[13]*v[3],
-        m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3],
-        m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3],
+        m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12] * v[3],
+        m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13] * v[3],
+        m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14] * v[3],
+        m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3],
     ]
 }
 
 /// Get texture dimensions from scene data. Returns (width, height).
 fn get_texture_dimensions(scene: &W3dScene, texture_name: &str) -> (u32, u32) {
     // Try exact name, then lowercase
-    let data = scene.texture_images.get(texture_name)
+    let data = scene
+        .texture_images
+        .get(texture_name)
         .or_else(|| scene.texture_images.get(&texture_name.to_lowercase()));
     if let Some(data) = data {
-        if data.len() < 4 { return (256, 256); }
+        if data.len() < 4 {
+            return (256, 256);
+        }
         // Check for JPEG
         if data[0] == 0xFF && data[1] == 0xD8 {
             if let Ok(img) = image::load_from_memory(data) {
@@ -5332,9 +5505,21 @@ fn build_perspective_f32(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [f32
     let f = 1.0 / (fov_deg.to_radians() * 0.5).tan();
     let nf = 1.0 / (near - far);
     [
-        f / aspect, 0.0, 0.0,               0.0,
-        0.0,        f,   0.0,               0.0,
-        0.0,        0.0, (far + near) * nf, -1.0,
-        0.0,        0.0, 2.0 * far * near * nf, 0.0,
+        f / aspect,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        f,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        (far + near) * nf,
+        -1.0,
+        0.0,
+        0.0,
+        2.0 * far * near * nf,
+        0.0,
     ]
 }

@@ -3,14 +3,11 @@ use std::collections::VecDeque;
 use crate::{
     director::lingo::datum::{Datum, FlashObjectRef},
     player::{
-        handlers::datum_handlers::date::DateObject,
-        reserve_player_mut,
-        DatumRef,
-        ScriptError,
-    }
+        DatumRef, ScriptError, handlers::datum_handlers::date::DateObject, reserve_player_mut,
+    },
 };
-use wasm_bindgen::prelude::*;
 use log::warn;
+use wasm_bindgen::prelude::*;
 
 // JS bridge names use the `dirplayer_` prefix so this fork's globals don't
 // collide with stock Ruffle if both are loaded on the same page (e.g. via a
@@ -19,13 +16,27 @@ use log::warn;
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_name = "dirplayer_ruffleGetVariable", catch)]
-    fn ruffle_get_variable_global(cast_lib: i32, cast_member: i32, path: &str) -> Result<JsValue, JsValue>;
+    fn ruffle_get_variable_global(
+        cast_lib: i32,
+        cast_member: i32,
+        path: &str,
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(js_name = "dirplayer_ruffleSetVariable", catch)]
-    fn ruffle_set_variable_global(cast_lib: i32, cast_member: i32, path: &str, value: &str) -> Result<JsValue, JsValue>;
+    fn ruffle_set_variable_global(
+        cast_lib: i32,
+        cast_member: i32,
+        path: &str,
+        value: &str,
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(js_name = "dirplayer_ruffleCallFunction", catch)]
-    fn ruffle_call_function_global(cast_lib: i32, cast_member: i32, path: &str, args_xml: &str) -> Result<JsValue, JsValue>;
+    fn ruffle_call_function_global(
+        cast_lib: i32,
+        cast_member: i32,
+        path: &str,
+        args_xml: &str,
+    ) -> Result<JsValue, JsValue>;
 
 }
 
@@ -61,17 +72,21 @@ impl FlashObjectDatumHandlers {
                         } else if let Some(b) = result.as_bool() {
                             Ok(player.alloc_datum(Datum::Int(if b { 1 } else { 0 })))
                         } else {
-                            let new_flash_ref = FlashObjectRef::from_path_with_member(&full_path, cl, cm);
+                            let new_flash_ref =
+                                FlashObjectRef::from_path_with_member(&full_path, cl, cm);
                             Ok(player.alloc_datum(Datum::FlashObjectRef(new_flash_ref)))
                         }
                     }
                     Err(_) => {
-                        let new_flash_ref = FlashObjectRef::from_path_with_member(&full_path, cl, cm);
+                        let new_flash_ref =
+                            FlashObjectRef::from_path_with_member(&full_path, cl, cm);
                         Ok(player.alloc_datum(Datum::FlashObjectRef(new_flash_ref)))
                     }
                 }
             } else {
-                Err(ScriptError::new("Expected FlashObjectRef, got different datum type".to_string()))
+                Err(ScriptError::new(
+                    "Expected FlashObjectRef, got different datum type".to_string(),
+                ))
             }
         })
     }
@@ -101,31 +116,40 @@ impl FlashObjectDatumHandlers {
             }
             let args_str = format!("[{}]", js_args_parts.join(","));
 
-            match ruffle_call_function_global(flash_ref.cast_lib, flash_ref.cast_member, &method_path, &args_str) {
+            match ruffle_call_function_global(
+                flash_ref.cast_lib,
+                flash_ref.cast_member,
+                &method_path,
+                &args_str,
+            ) {
                 Ok(result) => {
                     // Special handling for getGatewayConnection
                     if handler_name == "getGatewayConnection" {
-                        let gateway_ref = FlashObjectRef::from_path_with_member("_level0.oGatewayConnection", flash_ref.cast_lib, flash_ref.cast_member);
+                        let gateway_ref = FlashObjectRef::from_path_with_member(
+                            "_level0.oGatewayConnection",
+                            flash_ref.cast_lib,
+                            flash_ref.cast_member,
+                        );
                         return Ok(player.alloc_datum(Datum::FlashObjectRef(gateway_ref)));
                     }
 
-                    convert_js_result_to_lingo_datum(player, result, &flash_ref.path, flash_ref.cast_lib, flash_ref.cast_member)
+                    convert_js_result_to_lingo_datum(
+                        player,
+                        result,
+                        &flash_ref.path,
+                        flash_ref.cast_lib,
+                        flash_ref.cast_member,
+                    )
                 }
                 Err(e) => {
-                    warn!(
-                        "FlashObject.call WASM ERROR {}: {:?}", method_path, e
-                    );
+                    warn!("FlashObject.call WASM ERROR {}: {:?}", method_path, e);
                     Ok(player.alloc_datum(Datum::Void))
                 }
             }
         })
     }
 
-    pub fn set_prop(
-        datum: &DatumRef,
-        prop_name: &str,
-        value: &Datum,
-    ) -> Result<(), ScriptError> {
+    pub fn set_prop(datum: &DatumRef, prop_name: &str, value: &Datum) -> Result<(), ScriptError> {
         reserve_player_mut(|player| {
             let flash_ref = {
                 let datum_value = player.get_datum(datum);
@@ -145,19 +169,29 @@ impl FlashObjectDatumHandlers {
                 _ => "null".to_string(),
             };
 
-            match ruffle_set_variable_global(flash_ref.cast_lib, flash_ref.cast_member, &prop_path, &value_str) {
+            match ruffle_set_variable_global(
+                flash_ref.cast_lib,
+                flash_ref.cast_member,
+                &prop_path,
+                &value_str,
+            ) {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     warn!("Failed to set Flash property {}: {:?}", prop_path, e);
-                    Err(ScriptError::new(format!("Failed to set Flash property {}.{}", flash_ref.path, prop_name)))
+                    Err(ScriptError::new(format!(
+                        "Failed to set Flash property {}.{}",
+                        flash_ref.path, prop_name
+                    )))
                 }
             }
         })
     }
-
 }
 
-fn convert_lingo_datum_to_json_ref(player: &crate::player::DirPlayer, datum_ref: &DatumRef) -> String {
+fn convert_lingo_datum_to_json_ref(
+    player: &crate::player::DirPlayer,
+    datum_ref: &DatumRef,
+) -> String {
     let datum = player.get_datum(datum_ref);
     convert_lingo_datum_to_json_inner(player, datum)
 }
@@ -168,13 +202,14 @@ fn convert_lingo_datum_to_json_inner(player: &crate::player::DirPlayer, datum: &
         Datum::Float(f) => f.to_string(),
         Datum::String(s) => {
             // JSON-escape the string
-            let escaped = s.replace('\\', "\\\\")
+            let escaped = s
+                .replace('\\', "\\\\")
                 .replace('"', "\\\"")
                 .replace('\n', "\\n")
                 .replace('\r', "\\r")
                 .replace('\t', "\\t");
             format!("\"{}\"", escaped)
-        },
+        }
         Datum::Symbol(s) => format!("\"#{}\"", s),
         // Match Adobe's Flash Asset Xtra: Lingo Void crosses into AS as the
         // numeric value 0, not null. CS's outgoing AV packets need this:
@@ -191,13 +226,14 @@ fn convert_lingo_datum_to_json_inner(player: &crate::player::DirPlayer, datum: &
         Datum::Void => "0".to_string(),
         Datum::FlashObjectRef(flash_ref) => {
             format!("\"__ruffle_path:{}\"", flash_ref.path)
-        },
+        }
         Datum::List(_, items, _) => {
-            let parts: Vec<String> = items.iter()
+            let parts: Vec<String> = items
+                .iter()
                 .map(|item_ref| convert_lingo_datum_to_json_ref(player, item_ref))
                 .collect();
             format!("[{}]", parts.join(","))
-        },
+        }
         _ => "null".to_string(),
     }
 }
@@ -255,9 +291,10 @@ fn convert_js_result_to_lingo_datum(
     // .push() mutates a local list and the AS array stays empty. Keep it as
     // a FlashObjectRef instead so .push round-trips back to AS.
     if js_sys::Array::is_array(&result) {
-        let stored_path = js_sys::Reflect::get(&result, &JsValue::from_str("__dirplayer_stored_path"))
-            .ok()
-            .and_then(|v| v.as_string());
+        let stored_path =
+            js_sys::Reflect::get(&result, &JsValue::from_str("__dirplayer_stored_path"))
+                .ok()
+                .and_then(|v| v.as_string());
         if let Some(path) = stored_path {
             let flash_ref = FlashObjectRef::from_path_with_member(&path, cast_lib, cast_member);
             return Ok(player.alloc_datum(Datum::FlashObjectRef(flash_ref)));
@@ -266,7 +303,13 @@ fn convert_js_result_to_lingo_datum(
         let mut items = VecDeque::new();
         for i in 0..array.length() {
             let item = array.get(i);
-            let item_ref = convert_js_result_to_lingo_datum(player, item, context_path, cast_lib, cast_member)?;
+            let item_ref = convert_js_result_to_lingo_datum(
+                player,
+                item,
+                context_path,
+                cast_lib,
+                cast_member,
+            )?;
             items.push_back(item_ref);
         }
         return Ok(player.alloc_datum(Datum::List(
@@ -278,9 +321,10 @@ fn convert_js_result_to_lingo_datum(
 
     if result.is_object() {
         // Check if Ruffle stored the object and included the path
-        let stored_path = js_sys::Reflect::get(&result, &JsValue::from_str("__dirplayer_stored_path"))
-            .ok()
-            .and_then(|v| v.as_string());
+        let stored_path =
+            js_sys::Reflect::get(&result, &JsValue::from_str("__dirplayer_stored_path"))
+                .ok()
+                .and_then(|v| v.as_string());
 
         if let Some(path) = stored_path {
             let flash_ref = FlashObjectRef::from_path_with_member(&path, cast_lib, cast_member);
@@ -294,7 +338,10 @@ fn convert_js_result_to_lingo_datum(
             current + 1
         });
         let object_path = format!("_level0.__dirplayer_ref_{}", instance_id);
-        warn!("FlashObject: no stored path, using fallback {}", object_path);
+        warn!(
+            "FlashObject: no stored path, using fallback {}",
+            object_path
+        );
         let flash_ref = FlashObjectRef::from_path_with_member(&object_path, cast_lib, cast_member);
         return Ok(player.alloc_datum(Datum::FlashObjectRef(flash_ref)));
     }

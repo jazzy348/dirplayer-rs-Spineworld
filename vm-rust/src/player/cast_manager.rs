@@ -20,14 +20,18 @@ use crate::player::FontManager;
 use crate::player::font::FontRef;
 
 use super::{
+    ScriptError,
     allocator::DatumAllocator,
-    bitmap::{bitmap::PaletteRef, manager::{BitmapManager, BitmapRef}, palette_map::PaletteMap},
+    bitmap::{
+        bitmap::PaletteRef,
+        manager::{BitmapManager, BitmapRef},
+        palette_map::PaletteMap,
+    },
     cast_lib::{CastLibState, CastMemberRef, INVALID_CAST_MEMBER_REF},
     cast_member::{CastMember, CastMemberType},
     handlers::datum_handlers::cast_member_ref::CastMemberRefHandlers,
     net_manager::NetManager,
     script::Script,
-    ScriptError,
 };
 
 pub struct CastManager {
@@ -81,8 +85,13 @@ impl CastManager {
             let cast_def = dir.casts.iter().find(|cast| cast.id == cast_entry.id);
             debug!(
                 "MCsL entry {}: name='{}' file_path='{}' id={} min={} max={} preload={} has_cast_def={}",
-                index, cast_entry.name, cast_entry.file_path, cast_entry.id,
-                cast_entry.min_member, cast_entry.max_member, cast_entry.preload_settings,
+                index,
+                cast_entry.name,
+                cast_entry.file_path,
+                cast_entry.id,
+                cast_entry.min_member,
+                cast_entry.max_member,
+                cast_entry.preload_settings,
                 cast_def.is_some()
             );
 
@@ -97,7 +106,9 @@ impl CastManager {
                     // Embedded casts: fileName should reference the parent movie (like real Shockwave player).
                     // This ensures Lingo scripts checking fileName.char[end-2..end] = "dcr" work correctly.
                     match &net_manager.base_path {
-                        Some(base) => base.join(&dir.file_name).map_or("".to_string(), |u| u.to_string()),
+                        Some(base) => base
+                            .join(&dir.file_name)
+                            .map_or("".to_string(), |u| u.to_string()),
                         None => dir.file_name.to_string(),
                     }
                 } else {
@@ -158,11 +169,15 @@ impl CastManager {
                             // Check if the target member exists as a Palette in the specified castLib.
                             // We must check the member TYPE, not just existence — castlib 2 might
                             // have member #41 as a bitmap, while the actual palette #41 is in castlib 6.
-                            let target_cast = self.casts.iter()
+                            let target_cast = self
+                                .casts
+                                .iter()
                                 .find(|c| c.number == current_cast_lib as u32);
                             let is_palette = target_cast
                                 .and_then(|c| c.find_member_by_number(target_member as u32))
-                                .map_or(false, |m| matches!(m.member_type, CastMemberType::Palette(_)));
+                                .map_or(false, |m| {
+                                    matches!(m.member_type, CastMemberType::Palette(_))
+                                });
                             if !is_palette {
                                 debug!(
                                     "palette resolve: bitmap #{} in castLib {} refs palette member {} in castLib {} — not a palette, will search other castLibs",
@@ -187,8 +202,11 @@ impl CastManager {
         for (bitmap_ref, target_member, _current_cast_lib) in to_resolve {
             let mut found = false;
             for cast in self.casts.iter().rev() {
-                let is_palette = cast.find_member_by_number(target_member as u32)
-                    .map_or(false, |m| matches!(m.member_type, CastMemberType::Palette(_)));
+                let is_palette = cast
+                    .find_member_by_number(target_member as u32)
+                    .map_or(false, |m| {
+                        matches!(m.member_type, CastMemberType::Palette(_))
+                    });
                 if is_palette {
                     debug!(
                         "palette resolve: found palette member {} in castLib {}",
@@ -222,7 +240,12 @@ impl CastManager {
     ) {
         for cast in self.casts.iter_mut() {
             if cast.is_external && cast.state == CastLibState::None && !cast.file_name.is_empty() {
-                debug!("Cast {} ({}) - Preload Mode: {}", cast.number, ascii_safe(&cast.file_name), cast.preload_mode);
+                debug!(
+                    "Cast {} ({}) - Preload Mode: {}",
+                    cast.number,
+                    ascii_safe(&cast.file_name),
+                    cast.preload_mode
+                );
                 match cast.preload_mode {
                     0 | 1 => {
                         // Preload: When Needed / After frame one
@@ -257,11 +280,7 @@ impl CastManager {
         let n_casts = self.casts.len();
         match self.casts.get_mut(number as usize - 1) {
             Some(cast) => cast,
-            None => panic!(
-                "Cast index out of bounds: {} (# casts={})",
-                number,
-                n_casts
-            ),
+            None => panic!("Cast index out of bounds: {} (# casts={})", number, n_casts),
         }
     }
 
@@ -405,9 +424,7 @@ impl CastManager {
         } else {
             warn!(
                 "Cast number or name invalid: {}",
-                cast_name_or_num
-                    .map(|x| x.type_str())
-                    .unwrap_or("None")
+                cast_name_or_num.map(|x| x.type_str()).unwrap_or("None")
             );
             None
         };
@@ -466,7 +483,7 @@ impl CastManager {
                         member_name_or_num.type_str()
                     ))))
                 }
-            },
+            }
         };
 
         match member_ref {
@@ -505,7 +522,10 @@ impl CastManager {
         self.find_member_by_slot_number(slot_number)
     }
 
-    pub fn find_member_by_ref_mut(&mut self, member_ref: &CastMemberRef) -> Option<&mut CastMember> {
+    pub fn find_member_by_ref_mut(
+        &mut self,
+        member_ref: &CastMemberRef,
+    ) -> Option<&mut CastMember> {
         if member_ref.cast_lib > 0 {
             let cast = self.casts.get_mut(member_ref.cast_lib as usize - 1)?;
             return cast.find_mut_member_by_number(member_ref.cast_member as u32);
@@ -599,7 +619,8 @@ impl CastManager {
                 } else {
                     Err(ScriptError::new(format!(
                         "Cast member '{}' is not a field or text member (type: {:?})",
-                        member.name, member.member_type.member_type_id()
+                        member.name,
+                        member.member_type.member_type_id()
                     )))
                 }
             }
@@ -655,8 +676,11 @@ impl CastManager {
             for cast in &self.casts {
                 for script_rc in cast.scripts.values() {
                     if let ScriptType::Movie = script_rc.script_type {
-                        let handler_names: Vec<String> = script_rc.handlers.iter()
-                            .map(|(name, _)| name.to_string()).collect();
+                        let handler_names: Vec<String> = script_rc
+                            .handlers
+                            .iter()
+                            .map(|(name, _)| name.to_string())
+                            .collect();
                         result.push(script_rc.clone());
                     }
                 }
@@ -709,10 +733,15 @@ impl CastManager {
 
                     if let Some(bitmap_ref) = font_data.bitmap_ref {
                         // DEDUPE: if this bitmap font already exists, just ensure id mappings and skip
-                        if let Some(existing_ref) = Self::has_pfr_bitmap(font_manager, bitmap_ref as u32) {
+                        if let Some(existing_ref) =
+                            Self::has_pfr_bitmap(font_manager, bitmap_ref as u32)
+                        {
                             // Don't overwrite existing mappings; only insert if missing
                             if font_id > 0 {
-                                font_manager.font_by_id.entry(font_id).or_insert(existing_ref);
+                                font_manager
+                                    .font_by_id
+                                    .entry(font_id)
+                                    .or_insert(existing_ref);
                             }
                             font_manager
                                 .font_by_id
@@ -790,7 +819,9 @@ impl CastManager {
                                 || member_name_upper.contains("ITALIC")
                                 || member_name_upper.contains("OBLIQUE");
                             if !is_styled_variant {
-                                if let Some(prefix_end) = pfr_name.find(|c: char| c == '_' || c == '*' || c == ' ') {
+                                if let Some(prefix_end) =
+                                    pfr_name.find(|c: char| c == '_' || c == '*' || c == ' ')
+                                {
                                     let prefix = &pfr_name[..prefix_end];
                                     if prefix.len() > 1 && prefix != *font_name {
                                         aliases.push(prefix.to_string());
@@ -817,11 +848,19 @@ impl CastManager {
                             font_manager.font_by_id.entry(font_id).or_insert(font_ref);
                         }
                         // Also map by member number (STXT formatting runs reference fonts by member number)
-                        font_manager.font_by_id.entry(member_number as u16).or_insert(font_ref);
+                        font_manager
+                            .font_by_id
+                            .entry(member_number as u16)
+                            .or_insert(font_ref);
 
                         log::debug!(
                             "Loaded PFR font '{}': ref={}, id={}, member={}, char_size={}x{}, first_char={}",
-                            font_name, font_ref, font_id, member_number, char_width, char_height,
+                            font_name,
+                            font_ref,
+                            font_id,
+                            member_number,
+                            char_width,
+                            char_height,
                             font_data.first_char_num.unwrap_or(32)
                         );
 
@@ -861,8 +900,17 @@ impl CastManager {
                             let rc_font = Rc::new(font_data_clone.clone());
 
                             // Create cache keys
-                            let full_key = format!("{}_{}_{}", font_name.clone().to_ascii_lowercase(), font_size, font_style);
-                            let size_key = format!("{}_{}_0", font_name.clone().to_ascii_lowercase(), font_size);
+                            let full_key = format!(
+                                "{}_{}_{}",
+                                font_name.clone().to_ascii_lowercase(),
+                                font_size,
+                                font_style
+                            );
+                            let size_key = format!(
+                                "{}_{}_0",
+                                font_name.clone().to_ascii_lowercase(),
+                                font_size
+                            );
                             let name_key = font_name.clone().to_ascii_lowercase();
 
                             // DEDUPE: already cached => don't create a new FontRef
@@ -875,7 +923,10 @@ impl CastManager {
 
                                 if let Some(existing_ref) = existing_ref {
                                     if font_id > 0 {
-                                        font_manager.font_by_id.entry(font_id).or_insert(existing_ref);
+                                        font_manager
+                                            .font_by_id
+                                            .entry(font_id)
+                                            .or_insert(existing_ref);
                                     }
                                     font_manager
                                         .font_by_id
@@ -890,13 +941,16 @@ impl CastManager {
                             // Store in cache
                             font_manager
                                 .font_cache
-                                .entry(full_key).or_insert_with(|| Rc::clone(&rc_font));
+                                .entry(full_key)
+                                .or_insert_with(|| Rc::clone(&rc_font));
                             font_manager
                                 .font_cache
-                                .entry(name_key).or_insert_with(|| Rc::clone(&rc_font));
+                                .entry(name_key)
+                                .or_insert_with(|| Rc::clone(&rc_font));
                             font_manager
                                 .font_cache
-                                .entry(size_key).or_insert_with(|| Rc::clone(&rc_font));
+                                .entry(size_key)
+                                .or_insert_with(|| Rc::clone(&rc_font));
 
                             // Store by FontRef
                             let font_ref = font_manager.font_counter;
@@ -906,12 +960,18 @@ impl CastManager {
                             if font_id > 0 {
                                 font_manager.font_by_id.entry(font_id).or_insert(font_ref);
                             }
-                            font_manager.font_by_id.entry(member_number as u16).or_insert(font_ref);
+                            font_manager
+                                .font_by_id
+                                .entry(member_number as u16)
+                                .or_insert(font_ref);
 
                             log::debug!(
                                 "Loaded scaled font '{}': ref={}, member={}, char_size={}x{}",
-                                font_name, font_ref, member_number,
-                                font_data_clone.char_width, font_data_clone.char_height
+                                font_name,
+                                font_ref,
+                                member_number,
+                                font_data_clone.char_width,
+                                font_data_clone.char_height
                             );
 
                             loaded_count += 1;
@@ -930,7 +990,8 @@ impl CastManager {
         if loaded_count > 0 {
             log::debug!(
                 "Font loading complete: {} loaded, {} skipped, {} cache entries, {} id mappings",
-                loaded_count, skipped_count,
+                loaded_count,
+                skipped_count,
                 font_manager.font_cache.len(),
                 font_manager.font_by_id.len()
             );
@@ -940,7 +1001,8 @@ impl CastManager {
             debug!("Font cache keys: {:?}", keys);
 
             // Log font_by_id mappings
-            let id_mappings: Vec<(&u16, &crate::player::font::FontRef)> = font_manager.font_by_id.iter().collect();
+            let id_mappings: Vec<(&u16, &crate::player::font::FontRef)> =
+                font_manager.font_by_id.iter().collect();
             debug!("Font by_id mappings: {:?}", id_mappings);
         }
     }

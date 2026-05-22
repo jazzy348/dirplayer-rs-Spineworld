@@ -36,23 +36,37 @@ pub trait JsHostBridge: Any {
     fn member(&mut self, args: &[JsValue]) -> JsValue;
 
     /// `castLib(name_or_number)` — cast-library proxy.
-    fn cast_lib(&mut self, args: &[JsValue]) -> JsValue { let _ = args; JsValue::Undefined }
+    fn cast_lib(&mut self, args: &[JsValue]) -> JsValue {
+        let _ = args;
+        JsValue::Undefined
+    }
 
     /// `go(frame, movie?)` — navigate the score.
-    fn go(&mut self, args: &[JsValue]) -> Result<JsValue, JsError> { let _ = args; Ok(JsValue::Undefined) }
+    fn go(&mut self, args: &[JsValue]) -> Result<JsValue, JsError> {
+        let _ = args;
+        Ok(JsValue::Undefined)
+    }
 
     /// `puppetSprite(channel, enabled)` — toggle sprite puppetry.
-    fn puppet_sprite(&mut self, args: &[JsValue]) -> Result<JsValue, JsError> { let _ = args; Ok(JsValue::Undefined) }
+    fn puppet_sprite(&mut self, args: &[JsValue]) -> Result<JsValue, JsError> {
+        let _ = args;
+        Ok(JsValue::Undefined)
+    }
 
     /// `updateStage()` — force a redraw.
-    fn update_stage(&mut self) -> Result<JsValue, JsError> { Ok(JsValue::Undefined) }
+    fn update_stage(&mut self) -> Result<JsValue, JsError> {
+        Ok(JsValue::Undefined)
+    }
 
     /// Generic Lingo-verb fallback. The interpreter looks up unknown global
     /// names by routing through here so movies that use less-common verbs
     /// (like `put`, `quit`, `pass`, `nothing`) keep working.
     fn call_global(&mut self, name: &str, args: &[JsValue]) -> Result<JsValue, JsError> {
         let _ = (name, args);
-        Err(JsError::new(format!("Director global not exposed to JS: {}", name)))
+        Err(JsError::new(format!(
+            "Director global not exposed to JS: {}",
+            name
+        )))
     }
 }
 
@@ -61,11 +75,19 @@ pub trait JsHostBridge: Any {
 pub struct StubBridge;
 impl JsHostBridge for StubBridge {
     fn trace(&mut self, args: &[JsValue]) {
-        let s = args.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" ");
+        let s = args
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
         log::info!("[js-trace] {}", s);
     }
-    fn sprite(&mut self, _channel: i32) -> JsValue { JsValue::Undefined }
-    fn member(&mut self, _args: &[JsValue]) -> JsValue { JsValue::Undefined }
+    fn sprite(&mut self, _channel: i32) -> JsValue {
+        JsValue::Undefined
+    }
+    fn member(&mut self, _args: &[JsValue]) -> JsValue {
+        JsValue::Undefined
+    }
 }
 
 /// Recording bridge — capture every call so tests can assert on what JS did.
@@ -80,26 +102,37 @@ pub struct RecordingBridge {
 
 impl JsHostBridge for RecordingBridge {
     fn trace(&mut self, args: &[JsValue]) {
-        self.traces.push(args.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" "));
+        self.traces.push(
+            args.iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
     }
     fn sprite(&mut self, channel: i32) -> JsValue {
         self.sprite_calls.push(channel);
         // Return a fresh JsObject the JS can write into — lets `.locH = 10`
         // succeed without erroring. The next layer up will wire real proxies.
-        JsValue::Object(std::rc::Rc::new(std::cell::RefCell::new(super::value::JsObject {
-            class_name: "_sprite",
-            ..super::value::JsObject::new()
-        })))
+        JsValue::Object(std::rc::Rc::new(std::cell::RefCell::new(
+            super::value::JsObject {
+                class_name: "_sprite",
+                ..super::value::JsObject::new()
+            },
+        )))
     }
     fn member(&mut self, args: &[JsValue]) -> JsValue {
-        self.member_calls.push(args.iter().map(|v| v.to_string()).collect());
-        JsValue::Object(std::rc::Rc::new(std::cell::RefCell::new(super::value::JsObject {
-            class_name: "_member",
-            ..super::value::JsObject::new()
-        })))
+        self.member_calls
+            .push(args.iter().map(|v| v.to_string()).collect());
+        JsValue::Object(std::rc::Rc::new(std::cell::RefCell::new(
+            super::value::JsObject {
+                class_name: "_member",
+                ..super::value::JsObject::new()
+            },
+        )))
     }
     fn go(&mut self, args: &[JsValue]) -> Result<JsValue, JsError> {
-        self.go_calls.push(args.iter().map(|v| v.to_string()).collect());
+        self.go_calls
+            .push(args.iter().map(|v| v.to_string()).collect());
         Ok(JsValue::Undefined)
     }
     fn update_stage(&mut self) -> Result<JsValue, JsError> {

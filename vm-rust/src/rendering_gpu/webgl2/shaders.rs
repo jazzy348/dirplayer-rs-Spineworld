@@ -100,7 +100,10 @@ impl ShaderManager {
 
         // Compile shader for each ink mode
         programs.insert(InkMode::Copy, Self::compile_ink_copy(context)?);
-        programs.insert(InkMode::BackgroundTransparent, Self::compile_ink_bg_transparent(context)?);
+        programs.insert(
+            InkMode::BackgroundTransparent,
+            Self::compile_ink_bg_transparent(context)?,
+        );
         programs.insert(InkMode::AddPin, Self::compile_ink_add_pin(context)?);
         programs.insert(InkMode::SubPin, Self::compile_ink_sub_pin(context)?);
         programs.insert(InkMode::Darken, Self::compile_ink_darken(context)?);
@@ -120,7 +123,9 @@ impl ShaderManager {
 
     /// Get shader program for ink mode, falling back to Copy if not found
     pub fn get_program(&self, ink: InkMode) -> Option<&ShaderProgram> {
-        self.programs.get(&ink).or_else(|| self.programs.get(&InkMode::Copy))
+        self.programs
+            .get(&ink)
+            .or_else(|| self.programs.get(&InkMode::Copy))
     }
 
     /// Get the effective ink mode (the one that will actually be used after fallback)
@@ -531,7 +536,7 @@ void main() {
         Self::compile_program(context, Self::vertex_shader_source(), frag_source)
     }
 
-        /// Compile Ink 37 (Light) shader
+    /// Compile Ink 37 (Light) shader
     /// Light: MAX(src, dst) per channel. bgColor pixels are transparent.
     /// Uses GL_MAX blend equation for per-channel max.
     fn compile_ink_light(context: &WebGL2Context) -> Result<ShaderProgram, JsValue> {
@@ -648,14 +653,10 @@ void main() {
     ) -> Result<ShaderProgram, JsValue> {
         let gl = context.gl();
 
-        let vert_shader = context.compile_shader(
-            WebGl2RenderingContext::VERTEX_SHADER,
-            vert_source,
-        )?;
-        let frag_shader = context.compile_shader(
-            WebGl2RenderingContext::FRAGMENT_SHADER,
-            frag_source,
-        )?;
+        let vert_shader =
+            context.compile_shader(WebGl2RenderingContext::VERTEX_SHADER, vert_source)?;
+        let frag_shader =
+            context.compile_shader(WebGl2RenderingContext::FRAGMENT_SHADER, frag_source)?;
 
         let program = context.link_program(&vert_shader, &frag_shader)?;
 

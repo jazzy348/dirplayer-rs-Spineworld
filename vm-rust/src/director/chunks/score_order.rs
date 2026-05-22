@@ -37,7 +37,8 @@ impl SordChunk {
         let codec = u16::from_be_bytes([header[16], header[17]]);
         let flags = u16::from_be_bytes([header[18], header[19]]);
 
-        debug!("Parsed Sord header:\n marker={} channels={} bits={} sample_rate={} offset={} length={} codec={} flags={}",
+        debug!(
+            "Parsed Sord header:\n marker={} channels={} bits={} sample_rate={} offset={} length={} codec={} flags={}",
             marker, channels, bits_per_sample, sample_rate, data_offset, data_length, codec, flags
         );
 

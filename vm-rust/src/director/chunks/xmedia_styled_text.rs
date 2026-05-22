@@ -1,6 +1,8 @@
-use log::debug;
 use crate::io::encoding::win1252_byte_to_char;
-use crate::player::handlers::datum_handlers::cast_member::font::{StyledSpan, HtmlStyle, TextAlignment};
+use crate::player::handlers::datum_handlers::cast_member::font::{
+    HtmlStyle, StyledSpan, TextAlignment,
+};
+use log::debug;
 
 impl XmedStyledText {
     /// Resolve the active `par_info` for a given text byte/char position.
@@ -149,7 +151,7 @@ struct Section1Data {
 impl Default for Section1Data {
     fn default() -> Self {
         Section1Data {
-            doc_version: 262145,  // Default modern version
+            doc_version: 262145, // Default modern version
             width: 0,
             height: 0,
             page_height: 0,
@@ -217,9 +219,9 @@ struct XmedStyle {
     underline: bool,
     color: Option<u32>,
     word_wrap: bool,
-    fore_color: u32,  // dword56 from Section 7 (used in PropertyExtractor line 65)
-    back_color: u32,  // dword5E from Section 7 (used in PropertyExtractor lines 66-67)
-    kerning: i32,     // dword98 from Section 7 (stored as fixed-point * 65536, divide to get value)
+    fore_color: u32,   // dword56 from Section 7 (used in PropertyExtractor line 65)
+    back_color: u32,   // dword5E from Section 7 (used in PropertyExtractor lines 66-67)
+    kerning: i32, // dword98 from Section 7 (stored as fixed-point * 65536, divide to get value)
     char_spacing: i32, // dword9C from Section 7 (stored as fixed-point * 65536, divide to get pixels)
     /// True if this style's `word0` (font index) was within the parsed
     /// Section 9 font-name table when the style was loaded. Used by the
@@ -288,8 +290,15 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
 
     // Show first 40 bytes as hex for debugging
     let preview_len = data.len().min(40);
-    let hex_preview: Vec<String> = data[0..preview_len].iter().map(|b| format!("{:02X}", b)).collect();
-    debug!("  First {} bytes (hex): {}", preview_len, hex_preview.join(" "));
+    let hex_preview: Vec<String> = data[0..preview_len]
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect();
+    debug!(
+        "  First {} bytes (hex): {}",
+        preview_len,
+        hex_preview.join(" ")
+    );
 
     // Parse sections
     // - The magic "FFFF00000006" is PART OF the first 20-byte section header
@@ -313,7 +322,10 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
 
         // Check for end marker (header contains non-hex characters)
         if !header_str.chars().all(|c| c.is_ascii_hexdigit()) {
-            debug!("    Reached end of sections at offset {} (non-ASCII header)", offset);
+            debug!(
+                "    Reached end of sections at offset {} (non-ASCII header)",
+                offset
+            );
             debug!("Reached end of sections at offset {}", offset);
             break;
         }
@@ -328,7 +340,10 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
         let mut key = match u16::from_str_radix(key_str, 16) {
             Ok(k) => k,
             Err(e) => {
-                debug!("Invalid section key '{}' at offset {}: {}", key_str, offset, e);
+                debug!(
+                    "Invalid section key '{}' at offset {}: {}",
+                    key_str, offset, e
+                );
                 break;
             }
         };
@@ -340,7 +355,12 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
         let byte_count = match usize::from_str_radix(count_str, 16) {
             Ok(c) => c,
             Err(e) => {
-                debug!("Invalid byte count '{}' at offset {}: {}", count_str, offset + 4, e);
+                debug!(
+                    "Invalid byte count '{}' at offset {}: {}",
+                    count_str,
+                    offset + 4,
+                    e
+                );
                 break;
             }
         };
@@ -348,15 +368,22 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
         let section_type = u16::from_str_radix(type_str, 16).unwrap_or(0);
         let decl_len = usize::from_str_radix(decl_len_str, 16).unwrap_or(0);
 
-        debug!("Section 0x{:04X}: {} bytes, type={}, decl_len={} (header: {})",
-                                         key, byte_count, section_type, decl_len, header_str);
+        debug!(
+            "Section 0x{:04X}: {} bytes, type={}, decl_len={} (header: {})",
+            key, byte_count, section_type, decl_len, header_str
+        );
 
         offset += 20; // Skip 20-byte ASCII header
 
         // Read exactly 'byte_count' bytes of section data
         if offset + byte_count > data.len() {
-            debug!("Section 0x{:04X} extends beyond data (needs {} bytes at offset {}, have {} remaining)",
-                                             key, byte_count, offset, data.len() - offset);
+            debug!(
+                "Section 0x{:04X} extends beyond data (needs {} bytes at offset {}, have {} remaining)",
+                key,
+                byte_count,
+                offset,
+                data.len() - offset
+            );
             let remaining = data.len() - offset;
             if remaining > 0 {
                 sections.insert(key, data[offset..offset + remaining].to_vec());
@@ -407,8 +434,13 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
     };
 
     let text_data = if !section2_texts.is_empty() {
-        debug!("Found text in Section 2 ({} chunk(s))", section2_texts.len());
-        Section3Data { text: section2_texts.join("\r") }
+        debug!(
+            "Found text in Section 2 ({} chunk(s))",
+            section2_texts.len()
+        );
+        Section3Data {
+            text: section2_texts.join("\r"),
+        }
     } else if let Some(section3) = sections.get(&0x0003) {
         debug!("Found text in Section 3");
         parse_section_3(section3)?
@@ -497,13 +529,15 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
     if !section2_boundaries.is_empty() {
         for run in &mut all_char_runs {
             // Count how many chunk boundaries are <= this position
-            let shift = section2_boundaries.iter()
+            let shift = section2_boundaries
+                .iter()
                 .filter(|&&b| b <= run.position)
                 .count() as u32;
             run.position += shift;
         }
         for run in &mut section5_char_runs {
-            let shift = section2_boundaries.iter()
+            let shift = section2_boundaries
+                .iter()
                 .filter(|&&b| b <= run.position)
                 .count() as u32;
             run.position += shift;
@@ -622,23 +656,44 @@ pub fn parse_xmed(data: &[u8]) -> Result<XmedStyledText, String> {
         0
     };
 
-    debug!("Using style {} from first character run: font='{}', size={}, bold={}, word_wrap={}",
-                                     active_style_index, active_style.font_name, active_style.font_size,
-                                     active_style.bold, active_style.word_wrap);
+    debug!(
+        "Using style {} from first character run: font='{}', size={}, bold={}, word_wrap={}",
+        active_style_index,
+        active_style.font_name,
+        active_style.font_size,
+        active_style.bold,
+        active_style.word_wrap
+    );
 
-    debug!("  Parsed: {} chars, {} spans, alignment: {:?}, word_wrap: {}, line_space: {}",
-           text_data.text.len(), styled_spans.len(), alignment, word_wrap, fixed_line_space);
+    debug!(
+        "  Parsed: {} chars, {} spans, alignment: {:?}, word_wrap: {}, line_space: {}",
+        text_data.text.len(),
+        styled_spans.len(),
+        alignment,
+        word_wrap,
+        fixed_line_space
+    );
 
     debug!(
         "XmedStyledText result: text='{}' alignment={:?} word_wrap={} fixed_line_space={} \
          width={} height={} page_height={} line_height={} line_count={} \
          left_indent={} right_indent={} first_indent={} line_spacing={} \
          top_spacing={} bottom_spacing={} styled_spans={}",
-        text_data.text, alignment, word_wrap, fixed_line_space,
-        section1_data.width, section1_data.height, section1_data.page_height,
-        paragraph_info.line_height, paragraph_info.line_count,
-        paragraph_info.left_indent, paragraph_info.right_indent, paragraph_info.first_indent,
-        paragraph_info.line_spacing, paragraph_info.top_spacing, paragraph_info.bottom_spacing,
+        text_data.text,
+        alignment,
+        word_wrap,
+        fixed_line_space,
+        section1_data.width,
+        section1_data.height,
+        section1_data.page_height,
+        paragraph_info.line_height,
+        paragraph_info.line_count,
+        paragraph_info.left_indent,
+        paragraph_info.right_indent,
+        paragraph_info.first_indent,
+        paragraph_info.line_spacing,
+        paragraph_info.top_spacing,
+        paragraph_info.bottom_spacing,
         styled_spans.len(),
     );
 
@@ -839,19 +894,30 @@ fn parse_section_1(data: &[u8]) -> Result<Section1Data, String> {
 
     // Debug: show raw bytes
     let preview_len = data.len().min(20);
-    let hex_preview: Vec<String> = data[0..preview_len].iter().map(|b| format!("{:02X}", b)).collect();
-    debug!("Section 1 parse: {} bytes, first {}: {}",
-                                     data.len(), preview_len, hex_preview.join(" "));
+    let hex_preview: Vec<String> = data[0..preview_len]
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect();
+    debug!(
+        "Section 1 parse: {} bytes, first {}: {}",
+        data.len(),
+        preview_len,
+        hex_preview.join(" ")
+    );
 
     // 1. int4 (doc version) - line 851
     section1.doc_version = packer.unpack_num();
     debug!("    Section1: doc_version={}", section1.doc_version);
 
     // 2. dwordC - line 857
-    if packer.remaining() >= 2 { packer.unpack_num(); }
+    if packer.remaining() >= 2 {
+        packer.unpack_num();
+    }
 
     // 3. dword14 value - line 860
-    if packer.remaining() >= 2 { packer.unpack_num(); }
+    if packer.remaining() >= 2 {
+        packer.unpack_num();
+    }
 
     // 4. if (int4 >= 65547) dword18 - lines 864-868
     if section1.doc_version >= 65547 && packer.remaining() >= 2 {
@@ -861,15 +927,23 @@ fn parse_section_1(data: &[u8]) -> Result<Section1Data, String> {
     // 5. if (int4 >= 65552) - lines 871-885
     if section1.doc_version >= 65552 {
         // dword20
-        if packer.remaining() >= 2 { packer.unpack_num(); }
+        if packer.remaining() >= 2 {
+            packer.unpack_num();
+        }
         // dword418
-        if packer.remaining() >= 2 { packer.unpack_num(); }
+        if packer.remaining() >= 2 {
+            packer.unpack_num();
+        }
         // dword41C
-        if packer.remaining() >= 2 { packer.unpack_num(); }
+        if packer.remaining() >= 2 {
+            packer.unpack_num();
+        }
     }
 
     // 6. dwordB0 - line 888
-    if packer.remaining() >= 2 { packer.unpack_num(); }
+    if packer.remaining() >= 2 {
+        packer.unpack_num();
+    }
 
     // 7. dword48 (width) - line 889
     if packer.remaining() >= 2 {
@@ -886,7 +960,10 @@ fn parse_section_1(data: &[u8]) -> Result<Section1Data, String> {
     // 9. dword90 (pageHeight) - line 891
     if packer.remaining() >= 2 {
         section1.page_height = packer.unpack_num();
-        debug!("    Section1: pageHeight (dword90)={}", section1.page_height);
+        debug!(
+            "    Section1: pageHeight (dword90)={}",
+            section1.page_height
+        );
     }
 
     // Values [11..29] - skip 19 intermediate values to reach bg_color at [30-32]
@@ -908,8 +985,10 @@ fn parse_section_1(data: &[u8]) -> Result<Section1Data, String> {
                 let g = ((bg_g >> 8) & 0xFF) as u8;
                 let b = ((bg_b >> 8) & 0xFF) as u8;
                 section1.bg_color = Some((r, g, b));
-                debug!("    Section1: bg_color=({}, {}, {}) from raw ({:#06X}, {:#06X}, {:#06X})",
-                    r, g, b, bg_r, bg_g, bg_b);
+                debug!(
+                    "    Section1: bg_color=({}, {}, {}) from raw ({:#06X}, {:#06X}, {:#06X})",
+                    r, g, b, bg_r, bg_g, bg_b
+                );
             }
         }
     }
@@ -929,9 +1008,15 @@ fn parse_section_1(data: &[u8]) -> Result<Section1Data, String> {
         }
     }
 
-    debug!("Section 1: version={}, width={}, height={}, pageHeight={}, bg_color={:?}, html_size={}",
-        section1.doc_version, section1.width, section1.height, section1.page_height,
-        section1.bg_color, section1.html_font_size_attr);
+    debug!(
+        "Section 1: version={}, width={}, height={}, pageHeight={}, bg_color={:?}, html_size={}",
+        section1.doc_version,
+        section1.width,
+        section1.height,
+        section1.page_height,
+        section1.bg_color,
+        section1.html_font_size_attr
+    );
 
     Ok(section1)
 }
@@ -956,7 +1041,10 @@ fn parse_section_6(data: &[u8]) -> Result<Section6Data, String> {
 
         let style_index = packer.unpack_num() as u16;
 
-        debug!("    CharRun: position={}, style_index={}", position, style_index);
+        debug!(
+            "    CharRun: position={}, style_index={}",
+            position, style_index
+        );
 
         char_runs.push(CharRun {
             position,
@@ -999,7 +1087,10 @@ impl Packer {
 
     /// Check if character is hex digit or minus sign
     fn is_hex_or_minus(c: u8) -> bool {
-        (c >= b'0' && c <= b'9') || (c >= b'A' && c <= b'F') || (c >= b'a' && c <= b'f') || c == b'-'
+        (c >= b'0' && c <= b'9')
+            || (c >= b'A' && c <= b'F')
+            || (c >= b'a' && c <= b'f')
+            || c == b'-'
     }
 
     /// Unpack a single number from the packed data
@@ -1013,7 +1104,10 @@ impl Packer {
         if self.repeat_count > 0 {
             self.repeat_count -= 1;
             if debug {
-                debug!("    [Packer] Repeat mode, returning last_value={}", self.last_value);
+                debug!(
+                    "    [Packer] Repeat mode, returning last_value={}",
+                    self.last_value
+                );
             }
             return self.last_value;
         }
@@ -1027,8 +1121,16 @@ impl Packer {
 
         let ctrl = self.data[self.pos];
         if debug {
-            debug!("    [Packer] pos={}, ctrl=0x{:02X} ('{}')",
-                self.pos, ctrl, if ctrl >= 0x20 && ctrl < 0x7F { ctrl as char } else { '?' });
+            debug!(
+                "    [Packer] pos={}, ctrl=0x{:02X} ('{}')",
+                self.pos,
+                ctrl,
+                if ctrl >= 0x20 && ctrl < 0x7F {
+                    ctrl as char
+                } else {
+                    '?'
+                }
+            );
         }
         self.pos += 1;
 
@@ -1062,7 +1164,11 @@ impl Packer {
                 let hex_bytes = &self.data[num_start..self.pos];
                 let hex_str = String::from_utf8_lossy(hex_bytes);
                 if debug {
-                    debug!("    [Packer] Hex string: '{}' ({} chars)", hex_str, hex_str.len());
+                    debug!(
+                        "    [Packer] Hex string: '{}' ({} chars)",
+                        hex_str,
+                        hex_str.len()
+                    );
                 }
 
                 let negative = hex_str.starts_with('-');
@@ -1131,7 +1237,10 @@ impl Packer {
                 let bytes_consumed = 1 + size_str.len() + 1 + size; // marker + hex + comma + data
                 self.pos += size;
 
-                debug!("    UnpackRefcon (PtrBytes): size={}, consumed {} bytes", size, bytes_consumed);
+                debug!(
+                    "    UnpackRefcon (PtrBytes): size={}, consumed {} bytes",
+                    size, bytes_consumed
+                );
                 return bytes_consumed as i32;
             }
         }
@@ -1143,30 +1252,50 @@ impl Packer {
 
 /// Parse Section 7 - Style Definitions
 /// Uses Packer to extract variable-length encoded style data
-fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Result<Section7Data, String> {
+fn parse_section_7(
+    data: &[u8],
+    font_names: &[String],
+    doc_version: i32,
+) -> Result<Section7Data, String> {
     let mut packer = Packer::new(data.to_vec());
     let mut styles: Vec<XmedStyle> = Vec::new();
 
     // Log raw first bytes for debugging color/style issues
     let preview_len = data.len().min(40);
-    let hex_preview: Vec<String> = data[0..preview_len].iter().map(|b| format!("{:02X}", b)).collect();
-    debug!(" Section 7 (styles): {} bytes, first {}: {}",
-                                     data.len(), preview_len, hex_preview.join(" "));
+    let hex_preview: Vec<String> = data[0..preview_len]
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect();
+    debug!(
+        " Section 7 (styles): {} bytes, first {}: {}",
+        data.len(),
+        preview_len,
+        hex_preview.join(" ")
+    );
     // Read style count
     let style_count = packer.unpack_num();
 
     // style_count is a hint but the packed data often contains more styles than declared.
     // Character runs (Section 0x0004) can reference styles beyond style_count, so we must
     // parse all styles present in the packed data, not just the declared count.
-    debug!(" Section 7: count={}, doc_version={}, remaining={}", style_count, doc_version, packer.remaining());
+    debug!(
+        " Section 7: count={}, doc_version={}, remaining={}",
+        style_count,
+        doc_version,
+        packer.remaining()
+    );
 
     let mut style_idx = 0;
     while style_idx < 100 && packer.remaining() > 4 {
         let mut style = XmedStyle::default();
         let mut parse_failed = false;
 
-        debug!("    Style {}: pos={}, remaining={} bytes",
-                                         style_idx, packer.pos, packer.remaining());
+        debug!(
+            "    Style {}: pos={}, remaining={} bytes",
+            style_idx,
+            packer.pos,
+            packer.remaining()
+        );
 
         if !parse_failed && packer.remaining() >= 2 {
             let font_index = packer.unpack_num();
@@ -1184,14 +1313,25 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
                 style.font_name = prev.font_name.clone();
                 style.font_index_valid = false;
             }
-            debug!("    Style {}: word0={} -> font='{}' valid={}",
-                                             style_idx, font_index, style.font_name,
-                                             style.font_index_valid);
-        } else { parse_failed = true; }
+            debug!(
+                "    Style {}: word0={} -> font='{}' valid={}",
+                style_idx, font_index, style.font_name, style.font_index_valid
+            );
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
         if !parse_failed && packer.remaining() >= 2 {
             let font_size = packer.unpack_num();
@@ -1199,7 +1339,9 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
                 style.font_size = font_size as u16;
             }
             debug!("    Style {}: word46 (fontSize)={}", style_idx, font_size);
-        } else { parse_failed = true; }
+        } else {
+            parse_failed = true;
+        }
 
         if !parse_failed && packer.remaining() >= 2 {
             let word_wrap_value = packer.unpack_num();
@@ -1211,16 +1353,37 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
             // expose the raw value for the member.fontSize logic.
             style.word_wrap = word_wrap_value != 0;
             style.word48_raw = word_wrap_value;
-            debug!("    Style {}: word48_raw={} → word_wrap={}", style_idx, word_wrap_value, style.word_wrap);
-        } else { parse_failed = true; }
+            debug!(
+                "    Style {}: word48_raw={} → word_wrap={}",
+                style_idx, word_wrap_value, style.word_wrap
+            );
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
         // 10-11. pgUnpackColor (foreColor) - line 1295 (4 values)
         // Color format: c1=R, c2=G, c3=B, c4=unused
@@ -1229,17 +1392,17 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         for _ in 0..4u8 {
             if !parse_failed && packer.remaining() >= 2 {
                 color_values.push(packer.unpack_num());
-            } else { parse_failed = true; break; }
+            } else {
+                parse_failed = true;
+                break;
+            }
         }
         if color_values.len() >= 4 {
             let c1 = color_values[0] as u32;
             let c2 = color_values[1] as u32;
             let c3 = color_values[2] as u32;
             let _c4 = color_values[3] as u32;
-            style.fore_color = (0xFF << 24) |
-                               ((c1 >> 8) << 16) |
-                               ((c2 >> 8) << 8) |
-                               (c3 >> 8);
+            style.fore_color = (0xFF << 24) | ((c1 >> 8) << 16) | ((c2 >> 8) << 8) | (c3 >> 8);
             style.color = Some(style.fore_color);
         }
 
@@ -1249,21 +1412,23 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         for _ in 0..4u8 {
             if !parse_failed && packer.remaining() >= 2 {
                 back_color_values.push(packer.unpack_num());
-            } else { parse_failed = true; break; }
+            } else {
+                parse_failed = true;
+                break;
+            }
         }
         if back_color_values.len() >= 4 {
             let c1 = back_color_values[0] as u32;
             let c2 = back_color_values[1] as u32;
             let c3 = back_color_values[2] as u32;
             let _c4 = back_color_values[3] as u32;
-            style.back_color = (0xFF << 24) |
-                               ((c1 >> 8) << 16) |
-                               ((c2 >> 8) << 8) |
-                               (c3 >> 8);
+            style.back_color = (0xFF << 24) | ((c1 >> 8) << 16) | ((c2 >> 8) << 8) | (c3 >> 8);
         }
 
-        debug!("    Style {}: foreColor=0x{:08X}, backColor=0x{:08X}",
-                                         style_idx, style.fore_color, style.back_color);
+        debug!(
+            "    Style {}: foreColor=0x{:08X}, backColor=0x{:08X}",
+            style_idx, style.fore_color, style.back_color
+        );
 
         // 14. if (int4 < 65547) dword78 - line 1299-1302
         if !parse_failed && doc_version < 65547 && packer.remaining() >= 2 {
@@ -1299,23 +1464,31 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
                     let real_size = (value as i64) / 65536;
                     if real_size > 0 && real_size <= 200 {
                         style.font_size = real_size as u16;
-                        debug!("    Style {}: dword84 (real fontSize)={} (raw={})",
-                                                         style_idx, real_size, value);
+                        debug!(
+                            "    Style {}: dword84 (real fontSize)={} (raw={})",
+                            style_idx, real_size, value
+                        );
                     }
                 }
                 // dword98 is at index 6, contains kerning as fixed-point (value * 65536)
                 if i == 6 {
-                    style.kerning = value / 65536;  // Convert from fixed-point
-                    debug!("    Style {}: dword98 (kerning)={} (raw={})",
-                                                     style_idx, style.kerning, value);
+                    style.kerning = value / 65536; // Convert from fixed-point
+                    debug!(
+                        "    Style {}: dword98 (kerning)={} (raw={})",
+                        style_idx, style.kerning, value
+                    );
                 }
                 // dword9C is at index 7, contains charSpacing as fixed-point (value * 65536)
                 if i == 7 {
-                    style.char_spacing = value / 65536;  // Convert from fixed-point
-                    debug!("    Style {}: dword9C (charSpacing)={} (raw={})",
-                                                     style_idx, style.char_spacing, value);
+                    style.char_spacing = value / 65536; // Convert from fixed-point
+                    debug!(
+                        "    Style {}: dword9C (charSpacing)={} (raw={})",
+                        style_idx, style.char_spacing, value
+                    );
                 }
-            } else { parse_failed = true; }
+            } else {
+                parse_failed = true;
+            }
         }
 
         // 26. if (int4 < 65547) dword68 again - lines 1316-1319
@@ -1331,14 +1504,24 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         // 28. UnpackRefcon - line 1327
         if !parse_failed && packer.remaining() >= 2 {
             packer.unpack_refcon(doc_version);
-        } else { parse_failed = true; }
+        } else {
+            parse_failed = true;
+        }
 
         // 29. dword120 - line 1329
-        if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+        if !parse_failed && packer.remaining() >= 2 {
+            packer.unpack_num();
+        } else {
+            parse_failed = true;
+        }
 
         // 30. gapB4 = UnpackNumber(8, 2) - line 1331 (8 values)
         for _ in 0..8 {
-            if !parse_failed && packer.remaining() >= 2 { packer.unpack_num(); } else { parse_failed = true; }
+            if !parse_failed && packer.remaining() >= 2 {
+                packer.unpack_num();
+            } else {
+                parse_failed = true;
+            }
         }
 
         // 31. gap2 = UnpackNumber(32, 1) - line 1336 (32 values) - CRITICAL for bold/italic/underline!
@@ -1346,8 +1529,12 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         let gap2_count = if doc_version >= 257 { 32 } else { 32 - 16 }; // v3 & 0xF0 = -16 when v3=-1
 
         if !parse_failed {
-            debug!("    Style {}: Reading gap2 ({} values), remaining {} bytes",
-                                             style_idx, gap2_count, packer.remaining());
+            debug!(
+                "    Style {}: Reading gap2 ({} values), remaining {} bytes",
+                style_idx,
+                gap2_count,
+                packer.remaining()
+            );
             let mut gap2 = Vec::new();
             for i in 0..gap2_count {
                 if packer.remaining() >= 2 {
@@ -1368,9 +1555,10 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
                 style.bold = gap2[0] != 0;
                 style.italic = gap2[1] != 0;
                 style.underline = gap2[2] != 0;
-                debug!("    Style {}: gap2[0-2]=[{},{},{}] -> bold={}, italic={}, underline={}",
-                                                 style_idx, gap2[0], gap2[1], gap2[2],
-                                                 style.bold, style.italic, style.underline);
+                debug!(
+                    "    Style {}: gap2[0-2]=[{},{},{}] -> bold={}, italic={}, underline={}",
+                    style_idx, gap2[0], gap2[1], gap2[2], style.bold, style.italic, style.underline
+                );
             }
         }
 
@@ -1382,7 +1570,9 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         // 33-36. if (int4 >= 65552) dwordB0, word4E, word50, word54 - lines 1348-1354
         if !parse_failed && doc_version >= 65552 {
             for _ in 0..4 {
-                if packer.remaining() >= 2 { packer.unpack_num(); }
+                if packer.remaining() >= 2 {
+                    packer.unpack_num();
+                }
             }
         }
 
@@ -1391,9 +1581,10 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
             packer.unpack_num();
         }
 
-        debug!("    Style {}: FINAL -> font='{}', size={}, bold={}, italic={}, underline={}",
-                                         style_idx, style.font_name, style.font_size,
-                                         style.bold, style.italic, style.underline);
+        debug!(
+            "    Style {}: FINAL -> font='{}', size={}, bold={}, italic={}, underline={}",
+            style_idx, style.font_name, style.font_size, style.bold, style.italic, style.underline
+        );
 
         if parse_failed {
             debug!("    Style {}: parse failed, stopping", style_idx);
@@ -1403,9 +1594,17 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         style_idx += 1;
     }
 
-    debug!("   Section 7: Parsed {} style(s) (initial count was {})", styles.len(), style_count);
+    debug!(
+        "   Section 7: Parsed {} style(s) (initial count was {})",
+        styles.len(),
+        style_count
+    );
 
-    let declared_style_count = if style_count > 0 { style_count as usize } else { 0 };
+    let declared_style_count = if style_count > 0 {
+        style_count as usize
+    } else {
+        0
+    };
 
     // If the section header declared zero styles, no font_size info is
     // authored — every style we parsed came from stray bytes past the
@@ -1425,9 +1624,16 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
         styles.push(XmedStyle::default());
     }
 
-    debug!("    Section 7: Parsed {} style(s), declared={}", styles.len(), declared_style_count);
+    debug!(
+        "    Section 7: Parsed {} style(s), declared={}",
+        styles.len(),
+        declared_style_count
+    );
 
-    Ok(Section7Data { styles, declared_style_count })
+    Ok(Section7Data {
+        styles,
+        declared_style_count,
+    })
 }
 
 /// Paragraph formatting values from Section 8
@@ -1435,8 +1641,8 @@ fn parse_section_7(data: &[u8], font_names: &[String], doc_version: i32) -> Resu
 struct ParagraphInfo {
     alignment: TextAlignment,
     // Field properties (from Section 8[0])
-    line_height: i32,      // word2
-    line_count: i32,       // dword274
+    line_height: i32, // word2
+    line_count: i32,  // dword274
     // Paragraph formatting
     left_indent: i32,
     right_indent: i32,
@@ -1481,19 +1687,31 @@ fn parse_section_8(data: &[u8], doc_version: i32) -> Result<ParagraphInfo, Strin
     let alignment_byte = data[36];
     info.alignment = match alignment_byte {
         0x01 | 0x31 => {
-            debug!("  Paragraph alignment: Center (byte[36]=0x{:02X})", alignment_byte);
+            debug!(
+                "  Paragraph alignment: Center (byte[36]=0x{:02X})",
+                alignment_byte
+            );
             TextAlignment::Center
         }
         0x02 | 0x32 => {
-            debug!("  Paragraph alignment: Right (byte[36]=0x{:02X})", alignment_byte);
+            debug!(
+                "  Paragraph alignment: Right (byte[36]=0x{:02X})",
+                alignment_byte
+            );
             TextAlignment::Right
         }
         0x03 | 0x33 => {
-            debug!("  Paragraph alignment: Justify (byte[36]=0x{:02X})", alignment_byte);
+            debug!(
+                "  Paragraph alignment: Justify (byte[36]=0x{:02X})",
+                alignment_byte
+            );
             TextAlignment::Justify
         }
         _ => {
-            debug!("  Paragraph alignment: Left (byte[36]=0x{:02X} unknown)", alignment_byte);
+            debug!(
+                "  Paragraph alignment: Left (byte[36]=0x{:02X} unknown)",
+                alignment_byte
+            );
             TextAlignment::Left
         }
     };
@@ -1528,10 +1746,7 @@ fn parse_section_8(data: &[u8], doc_version: i32) -> Result<ParagraphInfo, Strin
     // - word2 = lineHeight (index 1)
     if values.len() >= 2 {
         info.line_height = values[1];
-        debug!(
-            "Field properties: lineHeight={}",
-            info.line_height
-        );
+        debug!("Field properties: lineHeight={}", info.line_height);
     }
 
     // Look for paragraph formatting values in the decoded stream
@@ -1573,8 +1788,12 @@ fn parse_section_8(data: &[u8], doc_version: i32) -> Result<ParagraphInfo, Strin
 
             debug!(
                 "Paragraph formatting: LeftIndent={}, RightIndent={}, FirstIndent={}, LineSpacing={}, TopSpacing={}, BottomSpacing={}",
-                info.left_indent, info.right_indent, info.first_indent,
-                info.line_spacing, info.top_spacing, info.bottom_spacing
+                info.left_indent,
+                info.right_indent,
+                info.first_indent,
+                info.line_spacing,
+                info.top_spacing,
+                info.bottom_spacing
             );
         }
     }
@@ -1610,17 +1829,25 @@ fn parse_section_8_par_infos(data: &[u8], doc_version: i32) -> Vec<ParInfo> {
         // dword270 (LineSpacing) ← target field
         info.line_spacing = packer.unpack_num();
         // dword274 if version >= 65547
-        if doc_version >= 65547 { packer.unpack_num(); }
+        if doc_version >= 65547 {
+            packer.unpack_num();
+        }
         // dword278..dword294 (8 values)
-        for _ in 0..8 { packer.unpack_num(); }
+        for _ in 0..8 {
+            packer.unpack_num();
+        }
         // wordC if version >= 65552
-        if doc_version >= 65552 { packer.unpack_num(); }
+        if doc_version >= 65552 {
+            packer.unpack_num();
+        }
         // UnpackRefcon (variable)
         packer.unpack_refcon(doc_version);
         // dword2E8
         packer.unpack_num();
         // gap2A8 (8 values)
-        for _ in 0..8 { packer.unpack_num(); }
+        for _ in 0..8 {
+            packer.unpack_num();
+        }
         // wordE: extra inner loop count
         let word_e = packer.unpack_num();
         let sizea = word_e;
@@ -1640,9 +1867,13 @@ fn parse_section_8_par_infos(data: &[u8], doc_version: i32) -> Vec<ParInfo> {
             }
         }
         // dword258 if version >= 8
-        if doc_version >= 8 { packer.unpack_num(); }
+        if doc_version >= 8 {
+            packer.unpack_num();
+        }
         // word4 (FirstIndent) if version >= 65548
-        if doc_version >= 65548 { packer.unpack_num(); }
+        if doc_version >= 65548 {
+            packer.unpack_num();
+        }
         // dword298, word6 (TopSpacing), word8 (BottomSpacing), wordA if version >= 65552
         if doc_version >= 65552 {
             packer.unpack_num();
@@ -1651,13 +1882,19 @@ fn parse_section_8_par_infos(data: &[u8], doc_version: i32) -> Vec<ParInfo> {
             packer.unpack_num();
         }
         // dword254 if version >= 65555
-        if doc_version >= 65555 { packer.unpack_num(); }
+        if doc_version >= 65555 {
+            packer.unpack_num();
+        }
         // dword210..238 (9 values) if version >= 131075
         if doc_version >= 131075 {
-            for _ in 0..9 { packer.unpack_num(); }
+            for _ in 0..9 {
+                packer.unpack_num();
+            }
         }
         // dword29C if version >= 131090
-        if doc_version >= 131090 { packer.unpack_num(); }
+        if doc_version >= 131090 {
+            packer.unpack_num();
+        }
         // dword244, 240, 24C, 248 if version >= 131090
         if doc_version >= 131090 {
             packer.unpack_num();
@@ -1665,19 +1902,30 @@ fn parse_section_8_par_infos(data: &[u8], doc_version: i32) -> Vec<ParInfo> {
             packer.unpack_num();
             packer.unpack_num();
             // dword218 if version >= 196614
-            if doc_version >= 196614 { packer.unpack_num(); }
+            if doc_version >= 196614 {
+                packer.unpack_num();
+            }
             // dword234 — extra read in the >=196615 branch
-            if doc_version >= 196615 { packer.unpack_num(); }
+            if doc_version >= 196615 {
+                packer.unpack_num();
+            }
             // dword23C if version >= 196616
-            if doc_version >= 196616 { packer.unpack_num(); }
+            if doc_version >= 196616 {
+                packer.unpack_num();
+            }
         }
 
         // Safety: if no progress made, abort to avoid infinite loop.
-        if packer.pos == start_pos { break; }
+        if packer.pos == start_pos {
+            break;
+        }
 
         debug!(
             "  par_info[{}] line_spacing={} top_spacing={} bottom_spacing={}",
-            par_infos.len(), info.line_spacing, info.top_spacing, info.bottom_spacing
+            par_infos.len(),
+            info.line_spacing,
+            info.top_spacing,
+            info.bottom_spacing
         );
         par_infos.push(info);
     }
@@ -1695,7 +1943,10 @@ struct FontInfo {
 /// Parse Section 9 - Font Definitions
 /// Font names stored using PgUnpackPtrBytes format: 00 [hex_size] [font_name_bytes]
 fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String> {
-    debug!("  Parsing Section 9 (Font Definitions): {} bytes", data.len());
+    debug!(
+        "  Parsing Section 9 (Font Definitions): {} bytes",
+        data.len()
+    );
 
     let mut font_names = Vec::new();
     let mut font_infos = Vec::new();
@@ -1724,7 +1975,10 @@ fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String>
         // Read FIRST font name for this entry
         match read_font_name(data, &mut offset, entry_idx, 0) {
             Ok(Some(name)) => {
-                debug!("    Entry {}, Name 1: '{}' at offset {}", entry_idx, name, offset);
+                debug!(
+                    "    Entry {}, Name 1: '{}' at offset {}",
+                    entry_idx, name, offset
+                );
                 font_names.push(name);
             }
             Ok(None) => {
@@ -1741,7 +1995,10 @@ fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String>
             match read_font_name(data, &mut offset, entry_idx, 1) {
                 Ok(Some(name)) => {
                     if !name.is_empty() {
-                        debug!("    Entry {}, Name 2: '{}' (unusual - second name not empty!)", entry_idx, name);
+                        debug!(
+                            "    Entry {}, Name 2: '{}' (unusual - second name not empty!)",
+                            entry_idx, name
+                        );
                         font_names.push(name);
                     }
                 }
@@ -1756,22 +2013,28 @@ fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String>
         }
 
         // Read properties section by parsing with Packer to advance offset correctly
-        let (kerning, anti_alias) = match read_font_properties(data, &mut offset, entry_idx, doc_version) {
-            Ok((font_style, anti_alias_val, kerning_val)) => {
-                // Properties read successfully, offset now points to next entry
-                // Extract boolean values
-                let kerning = kerning_val > 0;
-                let anti_alias = anti_alias_val > 0;
+        let (kerning, anti_alias) =
+            match read_font_properties(data, &mut offset, entry_idx, doc_version) {
+                Ok((font_style, anti_alias_val, kerning_val)) => {
+                    // Properties read successfully, offset now points to next entry
+                    // Extract boolean values
+                    let kerning = kerning_val > 0;
+                    let anti_alias = anti_alias_val > 0;
 
-                debug!("    Entry {}: kerning={}, antiAlias={}",
-                                                 entry_idx, kerning, anti_alias);
-                (kerning, anti_alias)
-            }
-            Err(e) => {
-                debug!("    Entry {}: Error reading properties: {}, stopping", entry_idx, e);
-                break;
-            }
-        };
+                    debug!(
+                        "    Entry {}: kerning={}, antiAlias={}",
+                        entry_idx, kerning, anti_alias
+                    );
+                    (kerning, anti_alias)
+                }
+                Err(e) => {
+                    debug!(
+                        "    Entry {}: Error reading properties: {}, stopping",
+                        entry_idx, e
+                    );
+                    break;
+                }
+            };
 
         // Store font info with properties if we have a font name for this entry
         if entry_idx < font_names.len() {
@@ -1784,14 +2047,20 @@ fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String>
         entry_idx += 1;
     }
 
-    debug!("[Section9] Parsed {} entries, font_names={:?}", entry_idx, font_names);
+    debug!(
+        "[Section9] Parsed {} entries, font_names={:?}",
+        entry_idx, font_names
+    );
 
     if font_names.is_empty() {
         debug!("    Section 9: No fonts parsed, using default 'Arial'");
         font_names.push("Arial".to_string());
     }
 
-    debug!("   Section 9: Parsed {} font name(s) with properties", font_names.len());
+    debug!(
+        "   Section 9: Parsed {} font name(s) with properties",
+        font_names.len()
+    );
 
     // For now, just return font names for compatibility with Section 7 parsing
     // TODO: Expose kerning and anti_alias properties in XmedStyledText or StyledSpan
@@ -1800,9 +2069,18 @@ fn parse_section_9(data: &[u8], doc_version: i32) -> Result<Vec<String>, String>
 
 /// Read font properties section and advance offset
 /// Returns (font_style, anti_alias, kerning)
-fn read_font_properties(data: &[u8], offset: &mut usize, entry_idx: usize, doc_version: i32) -> Result<(u16, u16, u16), String> {
+fn read_font_properties(
+    data: &[u8],
+    offset: &mut usize,
+    entry_idx: usize,
+    doc_version: i32,
+) -> Result<(u16, u16, u16), String> {
     if *offset >= data.len() {
-        return Err(format!("Offset {} beyond data length {}", offset, data.len()));
+        return Err(format!(
+            "Offset {} beyond data length {}",
+            offset,
+            data.len()
+        ));
     }
 
     let start_offset = *offset;
@@ -1811,15 +2089,34 @@ fn read_font_properties(data: &[u8], offset: &mut usize, entry_idx: usize, doc_v
     let remaining_data = data[*offset..].to_vec();
     let mut packer = Packer::new(remaining_data);
 
-    debug!("    Entry {}: Reading properties, doc_version={}", entry_idx, doc_version);
+    debug!(
+        "    Entry {}: Reading properties, doc_version={}",
+        entry_idx, doc_version
+    );
 
-    let word80 = if packer.remaining() >= 2 { packer.unpack_num() as u16 } else { 0 };
+    let word80 = if packer.remaining() >= 2 {
+        packer.unpack_num() as u16
+    } else {
+        0
+    };
 
-    let word82 = if packer.remaining() >= 2 { packer.unpack_num() as u16 } else { 0 };
+    let word82 = if packer.remaining() >= 2 {
+        packer.unpack_num() as u16
+    } else {
+        0
+    };
 
-    let word84 = if packer.remaining() >= 2 { packer.unpack_num() as u16 } else { 0 };
+    let word84 = if packer.remaining() >= 2 {
+        packer.unpack_num() as u16
+    } else {
+        0
+    };
 
-    let word88 = if packer.remaining() >= 2 { packer.unpack_num() as u16 } else { 0 };
+    let word88 = if packer.remaining() >= 2 {
+        packer.unpack_num() as u16
+    } else {
+        0
+    };
 
     let word8a = if doc_version >= 65552 && packer.remaining() >= 2 {
         packer.unpack_num() as u16
@@ -1827,7 +2124,11 @@ fn read_font_properties(data: &[u8], offset: &mut usize, entry_idx: usize, doc_v
         0
     };
 
-    let _dword90 = if packer.remaining() >= 2 { packer.unpack_num() as u32 } else { 0 };
+    let _dword90 = if packer.remaining() >= 2 {
+        packer.unpack_num() as u32
+    } else {
+        0
+    };
 
     if packer.remaining() >= 2 {
         packer.unpack_refcon(doc_version);
@@ -1843,25 +2144,40 @@ fn read_font_properties(data: &[u8], offset: &mut usize, entry_idx: usize, doc_v
     }
 
     if doc_version >= 256 {
-        if packer.remaining() >= 2 { packer.unpack_num(); } // dword8C
-        if packer.remaining() >= 2 { packer.unpack_num(); } // word86
+        if packer.remaining() >= 2 {
+            packer.unpack_num();
+        } // dword8C
+        if packer.remaining() >= 2 {
+            packer.unpack_num();
+        } // word86
     }
 
     // Advance offset by how much the packer consumed
     let consumed = packer.pos;
     *offset += consumed;
 
-    debug!("    Entry {}: fontStyle=0x{:04X}, fontSize={}, kerning=0x{:04X}, antiAlias=0x{:04X}, consumed {} bytes",
-                                     entry_idx, word80, word82, word88, word8a, consumed);
+    debug!(
+        "    Entry {}: fontStyle=0x{:04X}, fontSize={}, kerning=0x{:04X}, antiAlias=0x{:04X}, consumed {} bytes",
+        entry_idx, word80, word82, word88, word8a, consumed
+    );
 
     Ok((word80, word8a, word88))
 }
 
 /// Helper function to read a single font name using PgUnpackPtrBytes format
 /// Returns Ok(Some(name)) if found, Ok(None) if empty, Err if parse error
-fn read_font_name(data: &[u8], offset: &mut usize, entry_idx: usize, name_idx: usize) -> Result<Option<String>, String> {
+fn read_font_name(
+    data: &[u8],
+    offset: &mut usize,
+    entry_idx: usize,
+    name_idx: usize,
+) -> Result<Option<String>, String> {
     if *offset >= data.len() {
-        return Err(format!("Offset {} beyond data length {}", offset, data.len()));
+        return Err(format!(
+            "Offset {} beyond data length {}",
+            offset,
+            data.len()
+        ));
     }
 
     // Check for 0x00 marker
@@ -1897,8 +2213,12 @@ fn read_font_name(data: &[u8], offset: &mut usize, entry_idx: usize, name_idx: u
 
     // Read font name bytes
     if *offset + size > data.len() {
-        return Err(format!("Not enough data: need {} bytes at offset {}, have {} remaining",
-                          size, *offset, data.len() - *offset));
+        return Err(format!(
+            "Not enough data: need {} bytes at offset {}, have {} remaining",
+            size,
+            *offset,
+            data.len() - *offset
+        ));
     }
 
     let font_bytes = &data[*offset..*offset + size];
@@ -1911,7 +2231,9 @@ fn read_font_name(data: &[u8], offset: &mut usize, entry_idx: usize, name_idx: u
             String::from_utf8_lossy(&font_bytes[1..1 + name_len]).to_string()
         } else {
             // Fallback: just trim nulls from entire buffer
-            String::from_utf8_lossy(font_bytes).trim_end_matches('\0').to_string()
+            String::from_utf8_lossy(font_bytes)
+                .trim_end_matches('\0')
+                .to_string()
         }
     } else {
         // No length byte or zero length - empty font name
@@ -1970,7 +2292,11 @@ fn create_styled_spans(
         }
 
         let start = char_byte_offsets[char_start];
-        let end = if char_end >= char_count { text.len() } else { char_byte_offsets[char_end] };
+        let end = if char_end >= char_count {
+            text.len()
+        } else {
+            char_byte_offsets[char_end]
+        };
         let span_text = text[start..end].to_string();
         if span_text.is_empty() {
             continue;
@@ -1994,15 +2320,27 @@ fn create_styled_spans(
         // because dword84 already carries the correct point size for the
         // default style too.
         let html_style = xmed_style_to_html_style(style);
-        let color_hex = html_style.color.map(|c| format!("#{:06X}", c & 0xFFFFFF)).unwrap_or_else(|| "none".to_string());
-        let bg_hex = html_style.bg_color.map(|c| format!("#{:06X}", c & 0xFFFFFF)).unwrap_or_else(|| "none".to_string());
+        let color_hex = html_style
+            .color
+            .map(|c| format!("#{:06X}", c & 0xFFFFFF))
+            .unwrap_or_else(|| "none".to_string());
+        let bg_hex = html_style
+            .bg_color
+            .map(|c| format!("#{:06X}", c & 0xFFFFFF))
+            .unwrap_or_else(|| "none".to_string());
         debug!(
             "  StyledSpan[{}]: chars[{}..{}]='{}' style_index={} color={} bg={} font='{}' size={:?} bold={} italic={}",
-            i, start, end, &span_text[..span_text.len().min(40)],
-            style_index, color_hex, bg_hex,
+            i,
+            start,
+            end,
+            &span_text[..span_text.len().min(40)],
+            style_index,
+            color_hex,
+            bg_hex,
             html_style.font_face.as_deref().unwrap_or("?"),
             html_style.font_size,
-            html_style.bold, html_style.italic,
+            html_style.bold,
+            html_style.italic,
         );
 
         spans.push(StyledSpan {

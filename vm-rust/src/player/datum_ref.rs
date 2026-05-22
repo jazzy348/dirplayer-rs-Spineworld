@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use super::{allocator::{DatumAllocatorTrait, ALLOCATOR_RESETTING}, PLAYER_OPT};
+use super::{
+    PLAYER_OPT,
+    allocator::{ALLOCATOR_RESETTING, DatumAllocatorTrait},
+};
 
 pub type DatumId = usize;
 

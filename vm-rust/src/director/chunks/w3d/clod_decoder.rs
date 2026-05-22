@@ -2,7 +2,6 @@
 /// Ported from CLODMeshDecoder.cs.
 ///
 /// Decodes compressed progressive meshes from IFX CompressedGeom (0xFFFFFF49) blocks.
-
 use log::debug;
 
 use super::bitstream::IFXBitStreamCompressed;
@@ -103,16 +102,27 @@ impl ClodMeshDecoder {
 
         // Log mesh info for debugging
         if !self.meshes.is_empty() {
-            let attrs: Vec<String> = self.meshes.iter().map(|m| format!("0x{:X}", m.vertex_attributes)).collect();
+            let attrs: Vec<String> = self
+                .meshes
+                .iter()
+                .map(|m| format!("0x{:X}", m.vertex_attributes))
+                .collect();
             debug!(
                 "[W3D CLOD] \"{}\" updates={} meshes={} vertAttrs=[{}] nbr={}",
-                name, update_count, self.meshes.len(), attrs.join(","), self.has_neighbor_mesh
+                name,
+                update_count,
+                self.meshes.len(),
+                attrs.join(","),
+                self.has_neighbor_mesh
             );
         }
 
         // Safety: update_count should never be huge
         if update_count > 100000 {
-            return Err(format!("CLOD decode_block: unreasonable update_count={}", update_count));
+            return Err(format!(
+                "CLOD decode_block: unreasonable update_count={}",
+                update_count
+            ));
         }
 
         if self.meshes.len() <= 1 {
@@ -121,7 +131,10 @@ impl ClodMeshDecoder {
                 if let Err(e) = self.decode_mesh_update(&mut bs, 0) {
                     debug!(
                         "[W3D CLOD] decode failed \"{}\" update {}/{}: {} ({} verts, {} faces so far)",
-                        name, u, update_count, e,
+                        name,
+                        u,
+                        update_count,
+                        e,
                         self.meshes.get(0).map(|m| m.positions.len()).unwrap_or(0),
                         self.meshes.get(0).map(|m| m.faces.len()).unwrap_or(0),
                     );
@@ -179,7 +192,11 @@ impl ClodMeshDecoder {
     }
 
     /// Decode a single mesh update (position, normal, texcoord, face data).
-    fn decode_mesh_update(&mut self, bs: &mut IFXBitStreamCompressed, mesh_idx: usize) -> Result<(), String> {
+    fn decode_mesh_update(
+        &mut self,
+        bs: &mut IFXBitStreamCompressed,
+        mesh_idx: usize,
+    ) -> Result<(), String> {
         // Read header
         let num_new_verts = bs.read_compressed_u32(1);
         let num_patch_records = bs.read_compressed_u32(3);
@@ -187,7 +204,11 @@ impl ClodMeshDecoder {
         let num_sorted_faces = bs.read_compressed_u32(4);
 
         // Safety bounds
-        if num_new_verts > 50000 || num_patch_records > 50000 || num_face_corner_updates > 50000 || num_sorted_faces > 50000 {
+        if num_new_verts > 50000
+            || num_patch_records > 50000
+            || num_face_corner_updates > 50000
+            || num_sorted_faces > 50000
+        {
             return Err(format!(
                 "CLOD update header out of range: verts={} patches={} faces={} sorted={}",
                 num_new_verts, num_patch_records, num_face_corner_updates, num_sorted_faces
@@ -265,7 +286,11 @@ impl ClodMeshDecoder {
     }
 
     /// Decode a new vertex (position, normal, texcoord, bones).
-    fn decode_new_vertex(&mut self, bs: &mut IFXBitStreamCompressed, mesh_idx: usize) -> Result<(), String> {
+    fn decode_new_vertex(
+        &mut self,
+        bs: &mut IFXBitStreamCompressed,
+        mesh_idx: usize,
+    ) -> Result<(), String> {
         // ─── Position ───
         let pred_mode = bs.read_compressed_u8(6);
         let (mut pred_x, mut pred_y, mut pred_z) = (0.0f32, 0.0f32, 0.0f32);
@@ -342,7 +367,8 @@ impl ClodMeshDecoder {
         let theta = (theta_mag as f64 * self.normal_iq as f64).min(1.0);
 
         let sin_theta = ((1.0f64 - theta) * (theta + 1.0)).sqrt();
-        let az_ctx = (sin_theta * std::f64::consts::FRAC_PI_2 / self.normal_iq as f64 + 0.5) as u32 + 1025;
+        let az_ctx =
+            (sin_theta * std::f64::consts::FRAC_PI_2 / self.normal_iq as f64 + 0.5) as u32 + 1025;
         let az_mag = bs.read_compressed_u32(az_ctx);
 
         let (mut local_x, mut local_y, mut local_z): (f64, f64, f64);
@@ -363,9 +389,15 @@ impl ClodMeshDecoder {
         }
 
         // Apply signs
-        if (norm_sign & 1) != 0 { local_x = -local_x; }
-        if (norm_sign & 2) != 0 { local_y = -local_y; }
-        if (norm_sign & 4) != 0 { local_z = -local_z; }
+        if (norm_sign & 1) != 0 {
+            local_x = -local_x;
+        }
+        if (norm_sign & 2) != 0 {
+            local_y = -local_y;
+        }
+        if (norm_sign & 4) != 0 {
+            local_z = -local_z;
+        }
 
         // Rotate from tangent space to world space (using f64 like C#)
         let (nx, ny, nz);
@@ -417,7 +449,9 @@ impl ClodMeshDecoder {
                     };
                     if face_idx < face_source.len() && (tc_pred_mode as usize) < 3 {
                         let corner_vert = face_source[face_idx][tc_pred_mode as usize] as usize;
-                        if layer < mesh.tex_coords.len() && corner_vert < mesh.tex_coords[layer].len() {
+                        if layer < mesh.tex_coords.len()
+                            && corner_vert < mesh.tex_coords[layer].len()
+                        {
                             let tc = mesh.tex_coords[layer][corner_vert];
                             pred_u = tc[0];
                             pred_v = tc[1];
@@ -476,7 +510,11 @@ impl ClodMeshDecoder {
     }
 
     /// Decode a patch record (face corner replacement).
-    fn decode_new_face_record(&mut self, bs: &mut IFXBitStreamCompressed, mesh_idx: usize) -> Result<(), String> {
+    fn decode_new_face_record(
+        &mut self,
+        bs: &mut IFXBitStreamCompressed,
+        mesh_idx: usize,
+    ) -> Result<(), String> {
         let match_idx = bs.read_compressed_u32(21) as usize;
         let mesh = &self.meshes[mesh_idx];
         let match_face_index = if match_idx < mesh.sorted_faces.len() {
@@ -520,7 +558,11 @@ impl ClodMeshDecoder {
     }
 
     /// Decode a face corner update (new triangle).
-    fn decode_face_corner_update(&mut self, bs: &mut IFXBitStreamCompressed, mesh_idx: usize) -> Result<(), String> {
+    fn decode_face_corner_update(
+        &mut self,
+        bs: &mut IFXBitStreamCompressed,
+        mesh_idx: usize,
+    ) -> Result<(), String> {
         let mut corners = [0u32; 3];
 
         for c in 0..3 {
@@ -576,7 +618,11 @@ impl ClodMeshDecoder {
     }
 
     /// Read neighbor mesh data for a newly created face.
-    fn read_neighbor_mesh_data(&mut self, bs: &mut IFXBitStreamCompressed, mesh_idx: usize) -> Result<(), String> {
+    fn read_neighbor_mesh_data(
+        &mut self,
+        bs: &mut IFXBitStreamCompressed,
+        mesh_idx: usize,
+    ) -> Result<(), String> {
         let mut nbr = NeighborFaceState::default();
         nbr.face_flags_raw = bs.read_compressed_u8(29);
 
@@ -651,18 +697,16 @@ impl ClodMeshDecoder {
         self.meshes
             .iter()
             .enumerate()
-            .map(|(i, mesh)| {
-                ClodDecodedMesh {
-                    name: format!("mesh_{}", i),
-                    positions: mesh.positions.clone(),
-                    normals: mesh.normals.clone(),
-                    tex_coords: mesh.tex_coords.clone(),
-                    faces: mesh.faces.clone(),
-                    diffuse_colors: Vec::new(),
-                    specular_colors: Vec::new(),
-                    bone_indices: mesh.bone_indices.clone(),
-                    bone_weights: mesh.bone_weights.clone(),
-                }
+            .map(|(i, mesh)| ClodDecodedMesh {
+                name: format!("mesh_{}", i),
+                positions: mesh.positions.clone(),
+                normals: mesh.normals.clone(),
+                tex_coords: mesh.tex_coords.clone(),
+                faces: mesh.faces.clone(),
+                diffuse_colors: Vec::new(),
+                specular_colors: Vec::new(),
+                bone_indices: mesh.bone_indices.clone(),
+                bone_weights: mesh.bone_weights.clone(),
             })
             .collect()
     }
@@ -731,9 +775,11 @@ impl ClodMeshDecoder {
                 let vc = vert_count as u32;
                 faces.retain(|f| f[0] < vc && f[1] < vc && f[2] < vc);
 
-                let tc = mesh.tex_coords.iter().map(|layer| {
-                    layer[..vert_count.min(layer.len())].to_vec()
-                }).collect();
+                let tc = mesh
+                    .tex_coords
+                    .iter()
+                    .map(|layer| layer[..vert_count.min(layer.len())].to_vec())
+                    .collect();
 
                 ClodDecodedMesh {
                     name: format!("mesh_{}", i),
@@ -743,8 +789,10 @@ impl ClodMeshDecoder {
                     faces,
                     diffuse_colors: Vec::new(),
                     specular_colors: Vec::new(),
-                    bone_indices: mesh.bone_indices[..vert_count.min(mesh.bone_indices.len())].to_vec(),
-                    bone_weights: mesh.bone_weights[..vert_count.min(mesh.bone_weights.len())].to_vec(),
+                    bone_indices: mesh.bone_indices[..vert_count.min(mesh.bone_indices.len())]
+                        .to_vec(),
+                    bone_weights: mesh.bone_weights[..vert_count.min(mesh.bone_weights.len())]
+                        .to_vec(),
                 }
             })
             .collect()
@@ -783,6 +831,10 @@ impl ClodMeshDecoder {
 
     /// Get the maximum number of resolution steps across all meshes
     pub fn max_resolution_steps(&self) -> usize {
-        self.meshes.iter().map(|m| m.step_records.len()).max().unwrap_or(0)
+        self.meshes
+            .iter()
+            .map(|m| m.step_records.len())
+            .max()
+            .unwrap_or(0)
     }
 }

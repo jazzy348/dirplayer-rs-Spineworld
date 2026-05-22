@@ -82,19 +82,19 @@ impl QuadGeometry {
         // Position attribute (location = 0)
         gl.enable_vertex_attrib_array(0);
         gl.vertex_attrib_pointer_with_i32(
-            0,     // location
-            2,     // size (vec2)
+            0, // location
+            2, // size (vec2)
             WebGl2RenderingContext::FLOAT,
             false, // normalized
             stride,
-            0,     // offset
+            0, // offset
         );
 
         // Texcoord attribute (location = 1)
         gl.enable_vertex_attrib_array(1);
         gl.vertex_attrib_pointer_with_i32(
-            1,     // location
-            2,     // size (vec2)
+            1, // location
+            2, // size (vec2)
             WebGl2RenderingContext::FLOAT,
             false, // normalized
             stride,

@@ -4,13 +4,13 @@ use log::debug;
 
 use crate::player::datum_formatting::format_concrete_datum;
 use crate::{
-    director::lingo::datum::{datum_bool, Datum},
+    director::lingo::datum::{Datum, datum_bool},
     player::{
+        DatumRef, DirPlayer, ScriptError,
         allocator::{DatumAllocator, DatumAllocatorTrait},
         compare::{datum_equals, datum_less_than},
         handlers::types::TypeUtils,
-        player_duplicate_datum, reserve_player_mut, reserve_player_ref, DatumRef, DirPlayer,
-        ScriptError,
+        player_duplicate_datum, reserve_player_mut, reserve_player_ref,
     },
 };
 
@@ -62,6 +62,11 @@ impl ListDatumHandlers {
         datum_ref: &DatumRef,
         prop_name: &str,
     ) -> Result<DatumRef, ScriptError> {
+        if prop_name.eq_ignore_ascii_case("string") {
+            let value = format_concrete_datum(player.get_datum(datum_ref), player);
+            return Ok(player.alloc_datum(Datum::String(value)));
+        }
+
         let list_vec = player.get_datum(datum_ref).to_list()?;
         let result = ListDatumUtils::get_prop(&list_vec, prop_name, &player.allocator)?;
         Ok(player.alloc_datum(result))
@@ -145,19 +150,17 @@ impl ListDatumHandlers {
             //"getPos" => Self::find_pos(datum, args), TODO: Check which getPos is correct
             "join" => Self::join(datum, args),
             "getPropRef" | "getProp" => Self::get_prop_ref(datum, args),
-            "toString" => {
-                Ok(reserve_player_mut(|player| {
-                    let s = crate::player::datum_formatting::format_datum(datum, player);
-                    player.alloc_datum(Datum::String(s))
-                }))
-            },
+            "toString" => Ok(reserve_player_mut(|player| {
+                let s = crate::player::datum_formatting::format_datum(datum, player);
+                player.alloc_datum(Datum::String(s))
+            })),
             "getTypeOf" => {
                 // Flash objects have getTypeOf() for error checking.
                 // A list is never an error type, so return empty string.
                 Ok(reserve_player_mut(|player| {
                     player.alloc_datum(Datum::String("".to_string()))
                 }))
-            },
+            }
             "max" => Self::max(datum, args),
             "min" => Self::min(datum, args),
             _ => Err(ScriptError::new(format!(
@@ -288,13 +291,16 @@ impl ListDatumHandlers {
         reserve_player_mut(|player| {
             let (_, list_vec, is_sorted) = player.get_datum(datum).to_list_tuple()?;
             if is_sorted {
-                let pos = ListDatumUtils::find_index_to_add(&list_vec, &args[0], &player.allocator)?;
+                let pos =
+                    ListDatumUtils::find_index_to_add(&list_vec, &args[0], &player.allocator)?;
                 Ok(player.alloc_datum(Datum::Int(pos + 1)))
             } else {
                 let find = player.get_datum(&args[0]);
                 let position = list_vec
                     .iter()
-                    .position(|x| datum_equals(player.get_datum(&x), find, &player.allocator).unwrap())
+                    .position(|x| {
+                        datum_equals(player.get_datum(&x), find, &player.allocator).unwrap()
+                    })
                     .map(|x| x as i32);
                 let result = position.unwrap_or(-1) + 1;
                 Ok(player.alloc_datum(Datum::Int(result)))
@@ -320,14 +326,21 @@ impl ListDatumHandlers {
                                     for (mesh_idx, mesh) in md.meshes.iter().enumerate() {
                                         if let Some(ref list_ref) = mesh.texture_layer_datum_ref {
                                             if *list_ref == *datum {
-                                                found = Some((cast.number as i32, *member_num as i32, model_name.clone(), mesh_idx));
+                                                found = Some((
+                                                    cast.number as i32,
+                                                    *member_num as i32,
+                                                    model_name.clone(),
+                                                    mesh_idx,
+                                                ));
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        if found.is_some() { break; }
+                        if found.is_some() {
+                            break;
+                        }
                     }
                     found
                 };
@@ -335,32 +348,42 @@ impl ListDatumHandlers {
                 // Debug: log context search result
                 debug!(
                     "[W3D-ADD] add() no-args on list datum_id={} context={:?}",
-                    datum.unwrap(), tex_layer_context
+                    datum.unwrap(),
+                    tex_layer_context
                 );
 
                 if let Some((cast_lib, cast_member, model_name, mesh_idx)) = tex_layer_context {
                     // Get current layer count to determine the new layer index
                     let new_layer_idx = {
                         let d = player.get_datum(datum);
-                        if let Datum::List(_, items, _) = d { items.len() } else { 0 }
+                        if let Datum::List(_, items, _) = d {
+                            items.len()
+                        } else {
+                            0
+                        }
                     };
                     // Create a meshDeformTexLayer ref so set_prop dispatches correctly
                     use crate::director::lingo::datum::Shockwave3dObjectRef;
-                    let tex_layer_ref = player.alloc_datum(Datum::Shockwave3dObjectRef(Shockwave3dObjectRef {
-                        cast_lib,
-                        cast_member,
-                        object_type: "meshDeformTexLayer".to_string(),
-                        name: format!("{}:{}:{}", model_name, mesh_idx, new_layer_idx),
-                    }));
+                    let tex_layer_ref =
+                        player.alloc_datum(Datum::Shockwave3dObjectRef(Shockwave3dObjectRef {
+                            cast_lib,
+                            cast_member,
+                            object_type: "meshDeformTexLayer".to_string(),
+                            name: format!("{}:{}:{}", model_name, mesh_idx, new_layer_idx),
+                        }));
                     let (_, list_vec, _) = player.get_datum_mut(datum).to_list_mut()?;
                     list_vec.push_back(tex_layer_ref);
                 } else {
                     // Fallback: generic PropList (non-textureLayer list)
-                    let key = player.alloc_datum(Datum::Symbol("textureCoordinateList".to_string()));
+                    let key =
+                        player.alloc_datum(Datum::Symbol("textureCoordinateList".to_string()));
                     let val = player.alloc_datum(Datum::List(
-                        crate::director::lingo::datum::DatumType::List, VecDeque::new(), false,
+                        crate::director::lingo::datum::DatumType::List,
+                        VecDeque::new(),
+                        false,
                     ));
-                    let prop_list = player.alloc_datum(Datum::PropList(VecDeque::from(vec![(key, val)]), false));
+                    let prop_list = player
+                        .alloc_datum(Datum::PropList(VecDeque::from(vec![(key, val)]), false));
                     let (_, list_vec, _) = player.get_datum_mut(datum).to_list_mut()?;
                     list_vec.push_back(prop_list);
                 }
@@ -477,11 +500,40 @@ impl ListDatumHandlers {
                 return Ok(DatumRef::Void);
             }
 
-            let position = player.get_datum(&args[0]).int_value()? - 1;
-            let item_ref = &args[1];
+            if args.is_empty() {
+                return Err(ScriptError::new(
+                    "addAt requires at least 1 argument".to_string(),
+                ));
+            }
 
-            let (_, list_vec, _) = player.get_datum_mut(datum).to_list_mut()?;
-            list_vec.insert(position as usize, item_ref.clone());
+            if args.len() == 1 {
+                let (_, list_vec, is_sorted) = player.get_datum_mut(datum).to_list_mut()?;
+                list_vec.push_back(args[0].clone());
+                *is_sorted = false;
+                player.note_actor_list_mutation(datum);
+                player.note_script_instance_list_mutation(datum);
+                return Ok(DatumRef::Void);
+            }
+
+            let position = player.get_datum(&args[0]).int_value()?;
+            if position < 1 {
+                return Err(ScriptError::new("Index out of bounds".to_string()));
+            }
+
+            let index = (position - 1) as usize;
+            let current_len = player.get_datum(datum).to_list()?.len();
+            let padding_count = index.saturating_sub(current_len);
+            let padding = (0..padding_count)
+                .map(|_| player.alloc_datum(Datum::Int(0)))
+                .collect::<Vec<_>>();
+
+            let (_, list_vec, is_sorted) = player.get_datum_mut(datum).to_list_mut()?;
+            while list_vec.len() < index {
+                list_vec.push_back(padding[list_vec.len() - current_len].clone());
+            }
+
+            list_vec.insert(index, args[1].clone());
+            *is_sorted = false;
             player.note_actor_list_mutation(datum);
             player.note_script_instance_list_mutation(datum);
             Ok(DatumRef::Void)
@@ -494,7 +546,7 @@ impl ListDatumHandlers {
             if datum_value.is_void() {
                 return Ok(DatumRef::Void);
             }
-            
+
             let item = &args[0];
             let (_, list_vec, _) = player.get_datum_mut(datum).to_list_mut()?;
             list_vec.push_back(item.clone());

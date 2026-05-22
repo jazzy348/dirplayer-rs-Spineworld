@@ -1,9 +1,6 @@
 use crate::{
     director::lingo::datum::Datum,
-    player::{
-        cast_lib::CastMemberRef, reserve_player_mut, DatumRef, ScriptError,
-        ScriptErrorCode,
-    },
+    player::{DatumRef, ScriptError, ScriptErrorCode, cast_lib::CastMemberRef, reserve_player_mut},
 };
 
 pub struct CastLibDatumHandlers {}
@@ -29,12 +26,19 @@ impl CastLibDatumHandlers {
         reserve_player_mut(|player| {
             let cast_lib_num = match player.get_datum(datum) {
                 Datum::CastLib(num) => *num,
-                _ => return Err(ScriptError::new("count: datum is not a castLib".to_string())),
+                _ => {
+                    return Err(ScriptError::new(
+                        "count: datum is not a castLib".to_string(),
+                    ));
+                }
             };
 
             // count(#member) returns the number of cast members
             if !args.is_empty() {
-                let prop = player.get_datum(&args[0]).string_value().unwrap_or_default();
+                let prop = player
+                    .get_datum(&args[0])
+                    .string_value()
+                    .unwrap_or_default();
                 if prop.eq_ignore_ascii_case("member") {
                     let cast = player.movie.cast_manager.get_cast(cast_lib_num)?;
                     return Ok(player.alloc_datum(Datum::Int(cast.members.len() as i32)));
@@ -54,7 +58,7 @@ impl CastLibDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "getPropRef: datum is not a castLib".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -89,16 +93,17 @@ impl CastLibDatumHandlers {
                             })
                         }
                         Datum::Int(num) => {
-                            cast.find_member_by_number(*num as u32).map(|member| CastMemberRef {
-                                cast_lib: cast_lib_num as i32,
-                                cast_member: member.number as i32,
-                            })
+                            cast.find_member_by_number(*num as u32)
+                                .map(|member| CastMemberRef {
+                                    cast_lib: cast_lib_num as i32,
+                                    cast_member: member.number as i32,
+                                })
                         }
                         _ => {
                             return Err(ScriptError::new(format!(
                                 "getPropRef(#member, ...) expects a string or int, got {}",
                                 member_name_or_num.type_str()
-                            )))
+                            )));
                         }
                     };
 
@@ -128,13 +133,17 @@ impl CastLibDatumHandlers {
                 _ => {
                     return Err(ScriptError::new(
                         "findEmpty: datum is not a castLib".to_string(),
-                    ))
+                    ));
                 }
             };
 
             let (c_start, c_end) = match &player.movie.file {
                 Some(file) => (file.config.min_member as u32, file.config.max_member as u32),
-                None => return Err(ScriptError::new("findEmpty: no movie file loaded".to_string())),
+                None => {
+                    return Err(ScriptError::new(
+                        "findEmpty: no movie file loaded".to_string(),
+                    ));
+                }
             };
 
             let start = if !args.is_empty() {
@@ -143,7 +152,11 @@ impl CastLibDatumHandlers {
                 if member_num > c_end {
                     return Ok(player.alloc_datum(Datum::Int(member_num as i32)));
                 }
-                if member_num > c_start { member_num } else { c_start }
+                if member_num > c_start {
+                    member_num
+                } else {
+                    c_start
+                }
             } else {
                 c_start
             };

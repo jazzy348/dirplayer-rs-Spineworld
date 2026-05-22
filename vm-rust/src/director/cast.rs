@@ -8,7 +8,7 @@ use crate::director::{file::get_children_of_chunk, utils::fourcc_to_string};
 
 use super::{
     chunks::{
-        cast_member::CastMemberDef, key_table::KeyTableChunk, script::ScriptChunk, ChunkContainer,
+        ChunkContainer, cast_member::CastMemberDef, key_table::KeyTableChunk, script::ScriptChunk,
     },
     file::{
         get_cast_member_chunk, get_chunk, get_script_chunk, get_script_context_chunk,
@@ -86,14 +86,19 @@ impl CastDef {
             let member = get_cast_member_chunk(reader, chunk_container, rifx, section_id);
             let children_entries = get_children_of_chunk(&section_id, key_table);
 
-            let member_name = member.member_info.as_ref()
+            let member_name = member
+                .member_info
+                .as_ref()
                 .map(|info| info.name.clone())
                 .unwrap_or_default();
 
             // Map the CASt chunk itself and all its children to this member
             section_to_member.insert(section_id, (member_id as u32, member_name.clone()));
             for child_entry in &children_entries {
-                section_to_member.insert(child_entry.section_id, (member_id as u32, member_name.clone()));
+                section_to_member.insert(
+                    child_entry.section_id,
+                    (member_id as u32, member_name.clone()),
+                );
             }
 
             let children = children_entries

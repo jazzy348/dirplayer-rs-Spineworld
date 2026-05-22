@@ -1,6 +1,6 @@
 use crate::{
-    director::lingo::datum::{datum_bool, Datum},
-    player::{reserve_player_mut, DatumRef, DirPlayer, ScriptError},
+    director::lingo::datum::{Datum, datum_bool},
+    player::{DatumRef, DirPlayer, ScriptError, reserve_player_mut},
 };
 
 pub struct PointDatumHandlers {}
@@ -58,7 +58,8 @@ impl PointDatumHandlers {
             }
 
             let i = (index - 1) as usize;
-            let component = Datum::inline_component_to_datum(vals[i], Datum::inline_is_float(flags, i));
+            let component =
+                Datum::inline_component_to_datum(vals[i], Datum::inline_is_float(flags, i));
             Ok(player.alloc_datum(component))
         })
     }
@@ -91,10 +92,19 @@ impl PointDatumHandlers {
         let (vals, flags) = player.get_datum(datum).to_point_inline()?;
 
         match prop {
-            "locH" => Ok(Datum::inline_component_to_datum(vals[0], Datum::inline_is_float(flags, 0))),
-            "locV" => Ok(Datum::inline_component_to_datum(vals[1], Datum::inline_is_float(flags, 1))),
-            "ilk"  => Ok(Datum::Symbol("point".to_string())),
-            _ => Err(ScriptError::new(format!("Cannot get point property {}", prop))),
+            "locH" => Ok(Datum::inline_component_to_datum(
+                vals[0],
+                Datum::inline_is_float(flags, 0),
+            )),
+            "locV" => Ok(Datum::inline_component_to_datum(
+                vals[1],
+                Datum::inline_is_float(flags, 1),
+            )),
+            "ilk" => Ok(Datum::Symbol("point".to_string())),
+            _ => Err(ScriptError::new(format!(
+                "Cannot get point property {}",
+                prop
+            ))),
         }
     }
 
@@ -110,7 +120,12 @@ impl PointDatumHandlers {
         let idx = match prop {
             "locH" => 0usize,
             "locV" => 1usize,
-            _ => return Err(ScriptError::new(format!("Cannot set point property {}", prop))),
+            _ => {
+                return Err(ScriptError::new(format!(
+                    "Cannot set point property {}",
+                    prop
+                )));
+            }
         };
 
         let (vals, flags) = player.get_datum_mut(datum).to_point_inline_mut()?;

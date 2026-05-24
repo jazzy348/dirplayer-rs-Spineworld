@@ -44,11 +44,15 @@ use crate::player::score_keyframes::SpritePathKeyframes;
 use crate::rendering_gpu::{DynamicRenderer, Renderer};
 
 pub(crate) fn is_non_visual_collision_mask_sprite(
-    _channel_num: i16,
+    channel_num: i16,
     member: &crate::player::cast_member::CastMember,
 ) -> bool {
+    if !matches!(member.member_type, CastMemberType::Bitmap(_)) {
+        return false;
+    }
+
     member.name.eq_ignore_ascii_case("mask")
-        && matches!(member.member_type, CastMemberType::Bitmap(_))
+        || (channel_num == 3 && member.name.eq_ignore_ascii_case("shad"))
 }
 
 /// 500ms-on, 500ms-off caret blink phase derived from wall time. The renderer

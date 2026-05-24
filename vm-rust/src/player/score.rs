@@ -4106,20 +4106,34 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                 // changes, or when the same member slot now points at newly
                 // loaded cast media with different intrinsic dimensions.
                 if member_changed || intrinsic_size_changed {
+                    // A non-puppeted score sprite keeps its authored rectangle
+                    // when Lingo swaps the cast member. Room transitions rely on
+                    // this: the score channel supplies the display size, while
+                    // the room CCT supplies the new bitmap.
+                    let preserve_score_size = member_changed
+                        && !sprite.puppet
+                        && sprite.has_size_changed
+                        && sprite.width > 0
+                        && sprite.height > 0;
+
                     if sprite.puppet {
                         sprite.reset_for_member_change();
                     }
-                    // FurniFactory2-style scaling guard: if the sprite's current
+                    // FurniFactory2-style scaling guard: if the sprite's explicit
                     // dimensions are exactly 2× the new member's intrinsic size,
                     // a `1_resize` beginSprite handler (or equivalent) has
                     // already doubled this sprite — don't snap it back to 1×
                     // just because a hover handler swapped the member.
                     let sprite_is_doubled = intrinsic_size
                         .map(|(w, h)| {
-                            w > 0 && h > 0 && sprite.width == w * 2 && sprite.height == h * 2
+                            w > 0
+                                && h > 0
+                                && sprite.has_size_changed
+                                && sprite.width == w * 2
+                                && sprite.height == h * 2
                         })
                         .unwrap_or(false);
-                    if !sprite_is_doubled {
+                    if !sprite_is_doubled && !preserve_score_size {
                         if let Some((w, h)) = intrinsic_size {
                             if w > 0 && h > 0 {
                                 sprite.width = w;

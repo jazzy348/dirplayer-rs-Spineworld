@@ -72,7 +72,12 @@ pub(crate) fn sprite_accepts_keyboard_focus(player: &mut DirPlayer, sprite_id: i
         player
             .allocator
             .get_script_instance_opt(instance_ref)
-            .and_then(|instance| player.movie.cast_manager.get_script_by_ref(&instance.script))
+            .and_then(|instance| {
+                player
+                    .movie
+                    .cast_manager
+                    .get_script_by_ref(&instance.script)
+            })
             .is_some_and(|script| {
                 script.get_own_handler("keyDown").is_some()
                     || script.get_own_handler("keyUp").is_some()
@@ -80,11 +85,7 @@ pub(crate) fn sprite_accepts_keyboard_focus(player: &mut DirPlayer, sprite_id: i
     })
 }
 
-pub(crate) fn get_keyboard_focus_sprite_at(
-    player: &mut DirPlayer,
-    x: i32,
-    y: i32,
-) -> Option<i16> {
+pub(crate) fn get_keyboard_focus_sprite_at(player: &mut DirPlayer, x: i32, y: i32) -> Option<i16> {
     let sprite_ids: Vec<i16> = player
         .movie
         .score

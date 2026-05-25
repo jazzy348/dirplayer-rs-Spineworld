@@ -90,6 +90,7 @@ pub struct Sprite {
     pub has_back_color: bool,
     pub has_visible_mod: bool,
     pub has_blend_mod: bool,
+    pub has_loc_changed: bool,
     pub has_size_tweened: bool,
     pub has_size_changed: bool,
     pub bitmap_size_owned_by_sprite: bool,
@@ -178,6 +179,7 @@ impl Sprite {
             has_back_color: false,
             has_visible_mod: false,
             has_blend_mod: false,
+            has_loc_changed: false,
             has_size_tweened: false,
             has_size_changed: false,
             bitmap_size_owned_by_sprite: false,
@@ -249,6 +251,7 @@ impl Sprite {
         self.has_fore_color = false;
         self.has_back_color = false;
         self.has_visible_mod = false;
+        self.has_loc_changed = false;
         self.has_size_tweened = false;
         self.has_size_changed = false;
         self.bitmap_size_owned_by_sprite = false;

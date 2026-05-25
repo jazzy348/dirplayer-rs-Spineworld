@@ -972,9 +972,10 @@ impl BuiltInHandlerManager {
                 }
 
                 let sprite_num = player.get_datum(&args[0]).to_sprite_ref()?;
-                let (vals, _flags) = player.get_datum(&args[1]).to_point_inline().map_err(|_| {
-                    ScriptError::new("mapStageToMember requires a point argument".to_string())
-                })?;
+                let (vals, _flags) =
+                    player.get_datum(&args[1]).to_point_inline().map_err(|_| {
+                        ScriptError::new("mapStageToMember requires a point argument".to_string())
+                    })?;
                 let (stage_x, stage_y) = (vals[0] as i32, vals[1] as i32);
 
                 let Some(sprite) = player.movie.score.get_sprite(sprite_num) else {
@@ -1522,6 +1523,7 @@ impl BuiltInHandlerManager {
                         text,
                         fixed_line_space,
                         top_spacing,
+                        bottom_spacing,
                         char_spacing,
                         member_width,
                         font_name,
@@ -1536,6 +1538,7 @@ impl BuiltInHandlerManager {
                             t.text.clone(),
                             t.fixed_line_space,
                             t.top_spacing,
+                            t.bottom_spacing,
                             t.char_spacing as i16,
                             t.width as i16,
                             t.font.clone(),
@@ -1551,6 +1554,7 @@ impl BuiltInHandlerManager {
                             f.fixed_line_space,
                             f.top_spacing,
                             0,
+                            0,
                             f.width as i16,
                             f.font.clone(),
                             f.font_size,
@@ -1564,6 +1568,7 @@ impl BuiltInHandlerManager {
                             b.field.text.clone(),
                             b.field.fixed_line_space,
                             b.field.top_spacing,
+                            0,
                             0,
                             b.field.width as i16,
                             b.field.font.clone(),
@@ -1809,8 +1814,15 @@ impl BuiltInHandlerManager {
                             fixed_line_space as i32
                         } else {
                             display_font_size as i32
+                        } + top_spacing as i32
+                            + bottom_spacing as i32;
+                        let line_height = if fixed_line_space > 0 {
+                            fixed_line_space as i32
+                        } else {
+                            display_font_size as i32
                         };
-                        let y = top_spacing as i32 + line_idx as i32 * line_step;
+                        let y =
+                            top_spacing.max(0) as i32 + line_height + line_idx as i32 * line_step;
 
                         Ok(player.alloc_datum(Datum::Point([width as f64, y as f64], 0)))
                     } else {
@@ -1971,6 +1983,14 @@ impl BuiltInHandlerManager {
                         };
 
                         let x = x_from_zero as i32 + start_x;
+                        let line_height = if fixed_line_space > 0 {
+                            fixed_line_space as i32
+                        } else if font.font_size > 0 {
+                            font.font_size as i32
+                        } else {
+                            font.char_height as i32
+                        };
+                        let y = y as i32 + line_height;
                         Ok(player.alloc_datum(Datum::Point([x as f64, y as f64], 0)))
                     }
                 })

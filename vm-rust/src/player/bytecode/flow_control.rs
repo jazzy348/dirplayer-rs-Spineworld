@@ -172,7 +172,10 @@ impl FlowControlBytecodeHandler {
                 name,
                 args,
                 is_no_ret,
-            } => (BuiltInHandlerManager::call_handler(&name, &args)?, is_no_ret),
+            } => (
+                BuiltInHandlerManager::call_handler(&name, &args)?,
+                is_no_ret,
+            ),
             LocalCallTarget::Script {
                 handler_ref,
                 args,

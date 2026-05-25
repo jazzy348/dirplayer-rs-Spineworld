@@ -32,14 +32,20 @@ impl MovieHandlers {
 
     pub fn script(args: &Vec<DatumRef>) -> Result<DatumRef, ScriptError> {
         reserve_player_mut(|player| {
-            let identifier = player.get_datum(&args[0]);
+            let identifier = player.get_datum(&args[0]).to_owned();
             let formatted_id = format_datum(&args[0], &player);
 
-            let member_ref = match identifier {
+            let member_ref = match &identifier {
                 Datum::String(script_name) => Ok(player
                     .movie
                     .cast_manager
-                    .find_member_ref_by_name(&script_name)),
+                    .resolve_script_ref_by_name(script_name)
+                    .or_else(|| {
+                        crate::player::virtual_scripts::register_legacy_online_actor_if_known(
+                            player,
+                            script_name,
+                        )
+                    })),
                 Datum::Int(script_num) => Ok(player
                     .movie
                     .cast_manager
@@ -926,20 +932,21 @@ impl MovieHandlers {
         // Prevent re-entrant calls. If a previous handler already changed the
         // playhead, let the frame-advance phase process that transition without
         // marking a frame update as active.
-        let (already_updating, has_player_frame_changed, current_frame) = reserve_player_mut(|player| {
-            if player.is_in_frame_update {
-                return (
-                    true,
-                    player.has_player_frame_changed,
-                    player.movie.current_frame,
-                );
-            }
-            if player.has_player_frame_changed {
-                return (false, true, player.movie.current_frame);
-            }
-            player.is_in_frame_update = true;
-            (false, false, player.movie.current_frame)
-        });
+        let (already_updating, has_player_frame_changed, current_frame) =
+            reserve_player_mut(|player| {
+                if player.is_in_frame_update {
+                    return (
+                        true,
+                        player.has_player_frame_changed,
+                        player.movie.current_frame,
+                    );
+                }
+                if player.has_player_frame_changed {
+                    return (false, true, player.movie.current_frame);
+                }
+                player.is_in_frame_update = true;
+                (false, false, player.movie.current_frame)
+            });
 
         if already_updating || has_player_frame_changed {
             debug!(

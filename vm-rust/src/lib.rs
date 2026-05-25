@@ -25,8 +25,9 @@ use player::{
     commands::{PlayerVMCommand, player_dispatch},
     datum_ref::DatumId,
     eval::eval_lingo_command,
-    init_player, reserve_player_mut, reserve_player_ref,
+    init_player,
     keyboard_events::{get_keyboard_focus_sprite_at, sprite_accepts_keyboard_focus},
+    reserve_player_mut, reserve_player_ref,
     score::get_sprite_at,
 };
 

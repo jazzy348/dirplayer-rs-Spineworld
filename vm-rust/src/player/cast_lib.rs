@@ -168,6 +168,20 @@ impl CastLib {
         best
     }
 
+    pub fn find_script_ref_by_name(&self, name: &str) -> Option<CastMemberRef> {
+        let mut best: Option<CastMemberRef> = None;
+        for script in self.scripts.values() {
+            if script.name.eq_ignore_ascii_case(name) {
+                if best.as_ref().map_or(true, |existing| {
+                    script.member_ref.cast_member < existing.cast_member
+                }) {
+                    best = Some(script.member_ref.clone());
+                }
+            }
+        }
+        best
+    }
+
     fn clear(&mut self) {
         // Clear regardless of state. The previous early-return-when-not-Loaded
         // guard left stale members in place when a swap-in-place reload went
@@ -371,9 +385,23 @@ impl CastLib {
                     properties.insert(CiString::from(name), DatumRef::Void);
                 }
 
+                let script_name = if member.name.is_empty() {
+                    script_def
+                        .factory_name_id
+                        .and_then(|name_id| {
+                            self.lctx
+                                .as_ref()
+                                .and_then(|lctx| lctx.names.get(name_id as usize))
+                        })
+                        .cloned()
+                        .unwrap_or_else(|| member.name.clone())
+                } else {
+                    member.name.clone()
+                };
+
                 let script = Script {
                     member_ref: cast_member_ref(self.number as i32, number as i32),
-                    name: (&member.name).to_owned(),
+                    name: script_name,
                     chunk: script_def.clone(),
                     script_type: script_member.script_type,
                     handlers: handler_name_map,

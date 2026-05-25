@@ -65,12 +65,7 @@ impl TextMemberHandlers {
         style
     }
 
-    fn wrapped_line_count<F>(
-        raw: &str,
-        word_wrap: bool,
-        max_width: f64,
-        measure: F,
-    ) -> usize
+    fn wrapped_line_count<F>(raw: &str, word_wrap: bool, max_width: f64, measure: F) -> usize
     where
         F: Fn(&str) -> f64,
     {
@@ -168,9 +163,8 @@ impl TextMemberHandlers {
             font_parts.push(display_font_name);
             ctx.set_font(&font_parts.join(" "));
 
-            let measure = |value: &str| -> f64 {
-                ctx.measure_text(value).map(|m| m.width()).unwrap_or(0.0)
-            };
+            let measure =
+                |value: &str| -> f64 { ctx.measure_text(value).map(|m| m.width()).unwrap_or(0.0) };
             let line_step = if fixed_line_space > 0 {
                 fixed_line_space as f64
             } else {
@@ -627,7 +621,8 @@ impl TextMemberHandlers {
                     }
                     s
                 };
-                let text_has_breaks = text_data.text.contains('\n') || text_data.text.contains('\r');
+                let text_has_breaks =
+                    text_data.text.contains('\n') || text_data.text.contains('\r');
                 let effective_word_wrap =
                     text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
                 let (width, measured_height) = if measure_with_canvas {

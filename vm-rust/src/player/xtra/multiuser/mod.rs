@@ -67,7 +67,10 @@ pub struct MultiuserXtraInstance {
 }
 
 impl MultiuserXtraInstance {
-    fn message_matches_handler(message: &MultiuserMessage, handler: &MultiuserMessageHandler) -> bool {
+    fn message_matches_handler(
+        message: &MultiuserMessage,
+        handler: &MultiuserMessageHandler,
+    ) -> bool {
         let subject_matches = handler
             .subject
             .as_ref()
@@ -90,7 +93,8 @@ impl MultiuserXtraInstance {
                 .collect();
 
             let error_code = player.alloc_datum(Datum::Int(message.error_code));
-            let recipients = player.alloc_datum(Datum::List(DatumType::List, recipient_refs, false));
+            let recipients =
+                player.alloc_datum(Datum::List(DatumType::List, recipient_refs, false));
             let sender_id = player.alloc_datum(Datum::String(message.sender_id.clone()));
             let subject = player.alloc_datum(Datum::String(message.subject.clone()));
             let content = static_datum_to_runtime(&message.content, &mut player.allocator);
@@ -117,7 +121,11 @@ impl MultiuserXtraInstance {
         })
     }
 
-    pub fn dispatch_message_handler(&self, handler: &MultiuserMessageHandler, message: Option<&MultiuserMessage>) {
+    pub fn dispatch_message_handler(
+        &self,
+        handler: &MultiuserMessageHandler,
+        message: Option<&MultiuserMessage>,
+    ) {
         let args = if handler.pass_message {
             if let Some(message) = message {
                 vec![Self::alloc_message_datum(message)]
@@ -774,7 +782,8 @@ impl MultiuserXtraManager {
                                     .collect::<Vec<u8>>()
                             }
                             MultiuserConnectionMode::Binary => {
-                                let (recipients_arg, subject_arg, content_arg) = if args.len() == 1 {
+                                let (recipients_arg, subject_arg, content_arg) = if args.len() == 1
+                                {
                                     match player.get_datum(args.get(0).unwrap()) {
                                         Datum::PropList(pairs, _) => {
                                             let mut recipients = None;

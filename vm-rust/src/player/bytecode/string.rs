@@ -3,8 +3,8 @@ use crate::{
         Datum, StringChunkExpr, StringChunkSource, StringChunkType, datum_bool,
     },
     player::{
-        cast_member::CastMemberType,
         DirPlayer, HandlerExecutionResult, ScriptError,
+        cast_member::CastMemberType,
         context_vars::{player_get_context_var, player_set_context_var, read_context_var_args},
         datum_formatting::{datum_to_string_for_concat, format_concrete_datum},
         datum_ref::DatumRef,
@@ -248,12 +248,8 @@ impl StringBytecodeHandler {
                         var_type,
                         &ctx,
                     )?;
-                    if Self::put_around_cast_member(
-                        player,
-                        &curr_string_id,
-                        &value_ref,
-                        put_type,
-                    )? {
+                    if Self::put_around_cast_member(player, &curr_string_id, &value_ref, put_type)?
+                    {
                         return Ok(HandlerExecutionResult::Advance);
                     }
                     let curr_string = player.get_datum(&curr_string_id);
@@ -283,12 +279,8 @@ impl StringBytecodeHandler {
                         var_type,
                         &ctx,
                     )?;
-                    if Self::put_around_cast_member(
-                        player,
-                        &curr_string_id,
-                        &value_ref,
-                        put_type,
-                    )? {
+                    if Self::put_around_cast_member(player, &curr_string_id, &value_ref, put_type)?
+                    {
                         return Ok(HandlerExecutionResult::Advance);
                     }
                     let curr_string = player.get_datum(&curr_string_id);

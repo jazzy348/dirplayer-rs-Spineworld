@@ -261,14 +261,20 @@ impl StackBytecodeHandler {
                 scope.stack.pop().unwrap()
             };
             let arg_list = player.get_datum(&arg_list).to_list()?;
-            let script_arg = player.get_datum(&arg_list[0]);
+            let script_arg = player.get_datum(&arg_list[0]).to_owned();
             let extra_args: Vec<DatumRef> = arg_list.iter().skip(1).cloned().collect();
-            let script_ref = match script_arg {
+            let script_ref = match &script_arg {
                 Datum::String(script_name) => {
                     if let Some(script_ref) = player
                         .movie
                         .cast_manager
-                        .find_member_ref_by_name(&script_name)
+                        .resolve_script_ref_by_name(script_name)
+                        .or_else(|| {
+                            crate::player::virtual_scripts::register_legacy_online_actor_if_known(
+                                player,
+                                script_name,
+                            )
+                        })
                     {
                         player.alloc_datum(Datum::ScriptRef(script_ref))
                     } else {

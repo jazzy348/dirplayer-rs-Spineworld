@@ -13,8 +13,8 @@ use crate::director::media::writer::MediaWriter;
 use crate::player::cast_member::Media;
 use crate::player::datum_ref::DatumRef;
 
-use crate::player::allocator::{DatumAllocator, DatumAllocatorTrait};
 use crate::player::DirPlayer;
+use crate::player::allocator::{DatumAllocator, DatumAllocatorTrait};
 use crate::player::reserve_player_ref;
 
 #[derive(Clone, Debug, PartialEq)]

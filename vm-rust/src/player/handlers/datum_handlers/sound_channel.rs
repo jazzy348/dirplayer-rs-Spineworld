@@ -3759,21 +3759,24 @@ impl SoundChannel {
         // Handle fading
         if self.is_fading {
             if self.fade_duration <= 0.0 {
-                self.set_volume(self.fade_target_volume)
-                    .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
+                self.set_volume(self.fade_target_volume).map_err(|err| {
+                    ScriptError::new(format!("Failed to set sound volume: {:?}", err))
+                })?;
                 self.is_fading = false;
             } else {
                 self.fade_elapsed += delta_time;
                 if self.fade_elapsed >= self.fade_duration {
-                    self.set_volume(self.fade_target_volume)
-                        .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
+                    self.set_volume(self.fade_target_volume).map_err(|err| {
+                        ScriptError::new(format!("Failed to set sound volume: {:?}", err))
+                    })?;
                     self.is_fading = false;
                 } else {
                     let t = self.fade_elapsed / self.fade_duration;
                     let new_volume = self.fade_start_volume
                         + (self.fade_target_volume - self.fade_start_volume) * t;
-                    self.set_volume(new_volume)
-                        .map_err(|err| ScriptError::new(format!("Failed to set sound volume: {:?}", err)))?;
+                    self.set_volume(new_volume).map_err(|err| {
+                        ScriptError::new(format!("Failed to set sound volume: {:?}", err))
+                    })?;
                 }
             }
         }

@@ -3078,8 +3078,18 @@ pub async fn player_call_script_handler_raw_args(
             }
         }
 
+        let copied_args: Vec<DatumRef> = arg_list
+            .iter()
+            .map(|arg_ref| match player.get_datum(arg_ref) {
+                Datum::String(s) | Datum::StringChunk(_, _, s) => {
+                    player.alloc_datum(Datum::String(s.clone()))
+                }
+                _ => arg_ref.clone(),
+            })
+            .collect();
+
         let scope = player.scopes.get_mut(scope_ref).unwrap();
-        scope.args.extend_from_slice(arg_list);
+        scope.args.extend(copied_args);
 
         Ok((scope_ref, handler_ptr, script_ptr, names_ptr))
     })?;

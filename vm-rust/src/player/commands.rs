@@ -579,9 +579,9 @@ pub async fn run_player_command(command: PlayerVMCommand) -> Result<DatumRef, Sc
 
             if handler_err.is_none() {
                 if let Some((receiver, handler, args)) = cast_member_script_call {
-                if let Err(e) = player_call_script_handler(receiver, handler, &args).await {
-                    handler_err = Some(e);
-                }
+                    if let Err(e) = player_call_script_handler(receiver, handler, &args).await {
+                        handler_err = Some(e);
+                    }
                 }
             }
 

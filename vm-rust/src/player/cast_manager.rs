@@ -391,6 +391,21 @@ impl CastManager {
             .and_then(|cache| cache.get(&lookup_name).cloned())
     }
 
+    pub fn find_script_ref_by_name(&self, name: &str) -> Option<CastMemberRef> {
+        for cast in &self.casts {
+            if let Some(script_ref) = cast.find_script_ref_by_name(name) {
+                return Some(script_ref);
+            }
+        }
+        None
+    }
+
+    pub fn resolve_script_ref_by_name(&self, name: &str) -> Option<CastMemberRef> {
+        self.find_member_ref_by_name(name)
+            .filter(|member_ref| self.get_script_by_ref(member_ref).is_some())
+            .or_else(|| self.find_script_ref_by_name(name))
+    }
+
     pub fn find_member_ref_by_identifiers(
         &self,
         member_name_or_num: &Datum,

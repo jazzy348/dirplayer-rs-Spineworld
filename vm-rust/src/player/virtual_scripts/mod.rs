@@ -1,4 +1,6 @@
+pub mod door_guard;
 pub mod javascript_proxy;
+pub mod legacy_online_actor;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -10,7 +12,7 @@ use crate::director::enums::ScriptType;
 use crate::director::lingo::datum::Datum;
 
 use super::allocator::ScriptInstanceAllocatorTrait;
-use super::cast_lib::{CastMemberRef, cast_member_ref};
+use super::cast_lib::{cast_member_ref, CastMemberRef};
 use super::cast_member::{CastMember, CastMemberType, ScriptMember};
 use super::ci_string::CiString;
 use super::script::{Script, ScriptInstance};
@@ -112,6 +114,7 @@ impl VirtualScriptRegistry {
             name: name.to_string(),
             chunk: ScriptChunk {
                 script_number: 0,
+                factory_name_id: None,
                 literals: vec![],
                 handlers: vec![],
                 property_name_ids: vec![],
@@ -145,8 +148,9 @@ impl VirtualScriptRegistry {
         // Store the virtual handler
         player.virtual_scripts.insert(member_ref.clone(), handler);
 
-        // Invalidate movie script cache
+        // Invalidate script/member lookup caches
         player.movie.cast_manager.clear_movie_script_cache();
+        player.movie.cast_manager.invalidate_member_name_cache();
 
         member_ref
     }
@@ -314,5 +318,43 @@ impl VirtualScriptRegistry {
 
 /// Register all built-in virtual scripts.
 pub fn register_virtual_scripts(player: &mut DirPlayer) {
-    VirtualScriptRegistry::register(player, "JavaScriptProxy", Rc::new(javascript_proxy::JavascriptProxy));
+    VirtualScriptRegistry::register(
+        player,
+        "JavaScriptProxy",
+        Rc::new(javascript_proxy::JavascriptProxy),
+    );
+    if let Some(script_ref) = player
+        .movie
+        .cast_manager
+        .resolve_script_ref_by_name("pDoor")
+    {
+        VirtualScriptRegistry::attach(player, script_ref, Rc::new(door_guard::DoorGuard));
+    }
+}
+
+pub fn register_legacy_online_actor_if_known(
+    player: &mut DirPlayer,
+    name: &str,
+) -> Option<CastMemberRef> {
+    if let Some(script_ref) = player.movie.cast_manager.resolve_script_ref_by_name(name) {
+        return Some(script_ref);
+    }
+
+    if !is_legacy_online_actor_script_name(name) {
+        return None;
+    }
+
+    Some(VirtualScriptRegistry::register(
+        player,
+        name,
+        Rc::new(legacy_online_actor::LegacyOnlineActor::new("Bartender")),
+    ))
+}
+
+fn is_legacy_online_actor_script_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("pBartender")
+        || name
+            .to_ascii_lowercase()
+            .strip_prefix("pbartender_")
+            .is_some()
 }

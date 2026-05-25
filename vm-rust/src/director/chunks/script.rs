@@ -13,6 +13,7 @@ use std::collections::{HashMap, hash_map::Entry};
 #[derive(Clone)]
 pub struct ScriptChunk {
     pub script_number: u16,
+    pub factory_name_id: Option<u16>,
     pub literals: Vec<Datum>,
     pub handlers: Vec<HandlerDef>,
     pub property_name_ids: Vec<u16>,
@@ -109,6 +110,7 @@ impl ScriptChunk {
 
         Ok(ScriptChunk {
             script_number,
+            factory_name_id: (factory_name_id != u16::MAX).then_some(factory_name_id),
             literals,
             handlers,
             property_name_ids,

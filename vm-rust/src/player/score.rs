@@ -701,8 +701,10 @@ impl Score {
                         sprite.member = Some(member.clone());
                     }
                 }
-                sprite.loc_h = data.pos_x as i32;
-                sprite.loc_v = data.pos_y as i32;
+                if !sprite.has_loc_changed {
+                    sprite.loc_h = data.pos_x as i32;
+                    sprite.loc_v = data.pos_y as i32;
+                }
                 // Only set width/height when non-zero (0 means "use member's natural size")
                 if data.width != 0 {
                     sprite.width = data.width as i32;
@@ -950,8 +952,10 @@ impl Score {
                     }
                 }
                 let sprite = self.get_sprite_mut(sprite_num);
-                sprite.loc_h = data.pos_x as i32;
-                sprite.loc_v = data.pos_y as i32;
+                if !sprite.has_loc_changed {
+                    sprite.loc_h = data.pos_x as i32;
+                    sprite.loc_v = data.pos_y as i32;
+                }
                 // Only update width/height when non-zero (0 means "use member's natural size").
                 if data.width != 0 {
                     sprite.width = data.width as i32;
@@ -1033,8 +1037,10 @@ impl Score {
                     }
 
                     let sprite = self.get_sprite_mut(sprite_num);
-                    sprite.loc_h = data.pos_x as i32;
-                    sprite.loc_v = data.pos_y as i32;
+                    if !sprite.has_loc_changed {
+                        sprite.loc_h = data.pos_x as i32;
+                        sprite.loc_v = data.pos_y as i32;
+                    }
                     if data.width != 0 {
                         sprite.width = data.width as i32;
                     }
@@ -2195,8 +2201,10 @@ impl Score {
             // because sprite_set_prop always writes to main stage score,
             // but we need to set it on this score's sprite (may be filmloop).
             sprite.member = Some(member.clone());
-            sprite.loc_h = data.pos_x as i32;
-            sprite.loc_v = data.pos_y as i32;
+            if !sprite.has_loc_changed {
+                sprite.loc_h = data.pos_x as i32;
+                sprite.loc_v = data.pos_y as i32;
+            }
             sprite.width = data.width as i32;
             sprite.height = data.height as i32;
             sprite.skew = data.skew as f64;
@@ -3858,6 +3866,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
             |sprite, value| {
                 let val = value?;
                 sprite.loc_h = val;
+                sprite.has_loc_changed = true;
                 Ok(())
             },
         ),
@@ -3867,6 +3876,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
             |sprite, value| {
                 let val = value?;
                 sprite.loc_v = val;
+                sprite.has_loc_changed = true;
                 Ok(())
             },
         ),
@@ -3912,6 +3922,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                 let (current_left, new_left) = args;
                 let new_left = new_left?;
                 sprite.loc_h += new_left - current_left;
+                sprite.has_loc_changed = true;
                 Ok(())
             },
         ),
@@ -3925,6 +3936,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                 let (current_top, new_top) = args;
                 let new_top = new_top?;
                 sprite.loc_v += new_top - current_top;
+                sprite.has_loc_changed = true;
                 Ok(())
             },
         ),
@@ -4273,6 +4285,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                     Datum::Point(vals, _) => {
                         sprite.loc_h = vals[0] as i32;
                         sprite.loc_v = vals[1] as i32;
+                        sprite.has_loc_changed = true;
                         Ok(())
                     }
                     // Director auto-coerces a 2-element list to a point for loc
@@ -4281,6 +4294,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                         let y = player.get_datum(&list[1]).int_value()?;
                         sprite.loc_h = x;
                         sprite.loc_v = y;
+                        sprite.has_loc_changed = true;
                         Ok(())
                     }),
                     Datum::Void => Ok(()), // no-op
@@ -4349,6 +4363,7 @@ pub fn sprite_set_prop(sprite_id: i16, prop_name: &str, value: Datum) -> Result<
                             sprite.loc_v = top + reg_point.1 as i32;
                             sprite.width = right - left;
                             sprite.height = bottom - top;
+                            sprite.has_loc_changed = true;
                             sprite.has_size_changed = true;
                             Ok(())
                         }

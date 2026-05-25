@@ -118,9 +118,7 @@ impl PropListUtils {
         }
         if key.eq_ignore_ascii_case("string") {
             let datum = Datum::PropList(prop_list.clone(), false);
-            return Ok(player.alloc_datum(Datum::String(format_concrete_datum(
-                &datum, player,
-            ))));
+            return Ok(player.alloc_datum(Datum::String(format_concrete_datum(&datum, player))));
         }
         // Try built-in properties, but return VOID if not found instead of error
         match Self::get_built_in_prop(prop_list, key) {

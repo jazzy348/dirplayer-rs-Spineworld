@@ -2232,22 +2232,21 @@ impl Bitmap {
             matte_mask = Some(mask);
         }
 
-        let indexed_explicit_edge_transparent_index =
-            if (ink == 2 || ink == 36)
-                && is_indexed
-                && params.bg_color_explicit
-                && src.width > 0
-                && src.height > 0
-            {
-                let sample_x = src_rect.left.clamp(0, src.width as i32 - 1) as u16;
-                let sample_y = src_rect.top.clamp(0, src.height as i32 - 1) as u16;
-                match src.get_pixel_color_ref(sample_x, sample_y) {
-                    ColorRef::PaletteIndex(index) => Some(index),
-                    _ => None,
-                }
-            } else {
-                None
-            };
+        let indexed_explicit_edge_transparent_index = if (ink == 2 || ink == 36)
+            && is_indexed
+            && params.bg_color_explicit
+            && src.width > 0
+            && src.height > 0
+        {
+            let sample_x = src_rect.left.clamp(0, src.width as i32 - 1) as u16;
+            let sample_y = src_rect.top.clamp(0, src.height as i32 - 1) as u16;
+            match src.get_pixel_color_ref(sample_x, sample_y) {
+                ColorRef::PaletteIndex(index) => Some(index),
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         // ---------------- Pixel loop ----------------
         for dst_y in draw_min_y..draw_max_y {

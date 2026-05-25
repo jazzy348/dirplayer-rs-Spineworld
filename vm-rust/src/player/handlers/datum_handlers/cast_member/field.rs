@@ -17,8 +17,7 @@ use crate::{
             measure_text_wrapped,
         },
         handlers::datum_handlers::{
-            cast_member_ref::borrow_member_mut,
-            string_chunk::StringChunkUtils,
+            cast_member_ref::borrow_member_mut, string_chunk::StringChunkUtils,
         },
     },
 };
@@ -198,8 +197,11 @@ impl FieldMemberHandlers {
                 let item_delimiter = player.movie.item_delimiter;
                 let chunk_type = StringChunkType::from(prop);
                 let field_text = field.text.clone();
-                let chunk_count =
-                    StringChunkUtils::resolve_chunk_count(&field_text, chunk_type.clone(), item_delimiter)?;
+                let chunk_count = StringChunkUtils::resolve_chunk_count(
+                    &field_text,
+                    chunk_type.clone(),
+                    item_delimiter,
+                )?;
                 let mut chunk_datums = VecDeque::with_capacity(chunk_count);
                 for i in 1..=chunk_count {
                     let chunk_expr = StringChunkExpr {
@@ -208,7 +210,8 @@ impl FieldMemberHandlers {
                         end: i as i32,
                         item_delimiter,
                     };
-                    let value = StringChunkUtils::resolve_chunk_expr_string(&field_text, &chunk_expr)?;
+                    let value =
+                        StringChunkUtils::resolve_chunk_expr_string(&field_text, &chunk_expr)?;
                     chunk_datums.push_back(player.alloc_datum(Datum::StringChunk(
                         StringChunkSource::Member(cast_member_ref.clone()),
                         chunk_expr,

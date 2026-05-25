@@ -1,11 +1,11 @@
 use crate::{
     director::lingo::datum::Datum,
     player::{
+        DatumRef, DirPlayer, ScriptError,
         allocator::ScriptInstanceAllocatorTrait,
         ci_string::{CiStr, CiString},
         score::get_concrete_sprite_rect,
         script_ref::ScriptInstanceRef,
-        DatumRef, DirPlayer, ScriptError,
     },
 };
 

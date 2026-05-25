@@ -14,6 +14,72 @@ use num_traits::FromPrimitive;
 pub struct BitmapMemberHandlers {}
 
 impl BitmapMemberHandlers {
+    fn trim_chat_input_backing(
+        member_name: &str,
+        bitmap: &mut crate::player::bitmap::bitmap::Bitmap,
+    ) {
+        if member_name != "GUI_input"
+            || bitmap.bit_depth != 32
+            || bitmap.width < 32
+            || bitmap.height < 8
+        {
+            return;
+        }
+
+        const INPUT_BG: (u8, u8, u8) = (232, 225, 177);
+        let mut bounds: Option<(u16, u16, u16, u16)> = None;
+
+        for y in 0..bitmap.height {
+            for x in 0..bitmap.width {
+                let idx = (y as usize * bitmap.width as usize + x as usize) * 4;
+                if idx + 3 >= bitmap.data.len() {
+                    continue;
+                }
+                if bitmap.data[idx + 3] == 0 {
+                    continue;
+                }
+                let pixel = (bitmap.data[idx], bitmap.data[idx + 1], bitmap.data[idx + 2]);
+                if pixel == INPUT_BG {
+                    continue;
+                }
+
+                bounds = Some(match bounds {
+                    Some((left, top, right, bottom)) => {
+                        (left.min(x), top.min(y), right.max(x), bottom.max(y))
+                    }
+                    None => (x, y, x, y),
+                });
+            }
+        }
+
+        let Some((left, top, right, bottom)) = bounds else {
+            return;
+        };
+
+        let keep_left = left.saturating_sub(3);
+        let keep_top = top.saturating_sub(2);
+        let keep_right = right.saturating_add(4).min(bitmap.width.saturating_sub(1));
+        let keep_bottom = bottom
+            .saturating_add(2)
+            .min(bitmap.height.saturating_sub(1));
+
+        for y in 0..bitmap.height {
+            for x in 0..bitmap.width {
+                let idx = (y as usize * bitmap.width as usize + x as usize) * 4;
+                if idx + 3 >= bitmap.data.len() {
+                    continue;
+                }
+
+                let inside_text_backing =
+                    x >= keep_left && x <= keep_right && y >= keep_top && y <= keep_bottom;
+                bitmap.data[idx + 3] = if inside_text_backing { 255 } else { 0 };
+            }
+        }
+
+        bitmap.use_alpha = true;
+        bitmap.mark_dirty();
+    }
+
     pub fn get_prop(
         player: &mut DirPlayer,
         cast_member_ref: &CastMemberRef,
@@ -107,7 +173,7 @@ impl BitmapMemberHandlers {
                     let new_height = bitmap.height;
                     let mut clone = bitmap.clone();
 
-                    let (member_image_ref, old_palette) = {
+                    let (member_image_ref, old_palette, member_name) = {
                         let cast_member = player
                             .movie
                             .cast_manager
@@ -118,7 +184,11 @@ impl BitmapMemberHandlers {
                             .bitmap_manager
                             .get_bitmap(bitmap_member.image_ref)
                             .map(|bm| bm.palette_ref.clone());
-                        (bitmap_member.image_ref, old_palette)
+                        (
+                            bitmap_member.image_ref,
+                            old_palette,
+                            cast_member.name.clone(),
+                        )
                     };
 
                     // Inherit the member's existing palette when the new bitmap has
@@ -132,6 +202,8 @@ impl BitmapMemberHandlers {
                             clone.palette_ref = old_pal;
                         }
                     }
+
+                    Self::trim_chat_input_backing(&member_name, &mut clone);
 
                     player
                         .bitmap_manager

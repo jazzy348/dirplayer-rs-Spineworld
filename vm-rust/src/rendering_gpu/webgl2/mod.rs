@@ -4037,6 +4037,11 @@ impl WebGL2Renderer {
         // Ink 7 (Not Ghost) uses matte for indexed and 16-bit bitmaps (flood-fill from edges)
         // This matches Canvas2D's should_matte_sprite which includes ink 7
         let should_use_matte_ink7 = ink == 7 && (is_indexed || is_16bit);
+        // Ink 30 uses edge matte semantics for dynamically generated bitmaps:
+        // remove edge-connected background while preserving enclosed white areas
+        // such as chat bubble interiors.
+        let should_use_matte_ink30 =
+            ink == 30 && (is_indexed || is_16bit || (is_32bit && !bitmap.use_alpha));
         // Ink 8 (Matte) ALWAYS uses matte for indexed, 16-bit, and 32-bit bitmaps in score rendering
         // The flood-fill matte makes edge-connected background pixels transparent
         // while keeping interior pixels (even if same color) opaque
@@ -4069,7 +4074,8 @@ impl WebGL2Renderer {
         // Same behavior as ink 33 but with subtractive blending
         let should_use_colorkey_ink35 =
             ink == 35 && (is_indexed || is_16bit || (is_32bit && !bitmap.use_alpha));
-        // Ink 36 uses color-key transparency for indexed (2-8 bit), 16-bit, and 32-bit bitmaps (not flood-fill)
+        // Ink 36 uses color-key transparency for indexed (2-8 bit),
+        // 16-bit, and 32-bit bitmaps (not flood-fill).
         // EXCEPTION: 1-bit bitmaps already have alpha baked into texture via is_1bit_transparent,
         // so they don't need shader color-key (which would incorrectly discard colorized pixels)
         // See drawing.rs lines 1210-1231 for 16-bit ink 36 handling
@@ -4100,6 +4106,7 @@ impl WebGL2Renderer {
             || should_use_matte_ink7
             || should_use_matte_ink8
             || should_use_matte_ink9
+            || should_use_matte_ink30
             || should_use_matte_ink32
             || should_use_matte_ink41;
 
@@ -4112,6 +4119,8 @@ impl WebGL2Renderer {
         let ink_8_needs_matte =
             ink == 8 && (is_indexed || is_16bit || (is_32bit && !bitmap.use_alpha));
         let ink_9_needs_matte = ink == 9 && (is_32bit && !bitmap.use_alpha);
+        let ink_30_needs_matte =
+            ink == 30 && (is_indexed || is_16bit || (is_32bit && !bitmap.use_alpha));
         let ink_41_needs_matte =
             ink == 41 && (is_indexed || is_16bit || (is_32bit && !bitmap.use_alpha));
         let ink_32_needs_matte =
@@ -4121,6 +4130,7 @@ impl WebGL2Renderer {
             || ink_7_needs_matte
             || ink_8_needs_matte
             || ink_9_needs_matte
+            || ink_30_needs_matte
             || ink_32_needs_matte
             || ink_41_needs_matte)
             && should_use_matte
@@ -4131,6 +4141,8 @@ impl WebGL2Renderer {
                 (is_indexed && ink == 7)
                 // Indexed bitmaps ink 8: ALWAYS use matte (flood-fill transparency)
                 || (is_indexed && ink == 8)
+                // Indexed bitmaps ink 30: use matte to preserve enclosed bg pixels
+                || (is_indexed && ink == 30)
                 // Indexed bitmaps ink 32: ALWAYS use matte (blend shouldn't show bg)
                 || (is_indexed && ink == 32)
                 // Indexed bitmaps ink 41: ALWAYS use matte (background shouldn't darken)
@@ -4139,6 +4151,8 @@ impl WebGL2Renderer {
                 || (is_16bit && ink == 7)
                 // 16-bit bitmaps ink 8: ALWAYS use matte (flood-fill transparency)
                 || (is_16bit && ink == 8)
+                // 16-bit bitmaps ink 30: use matte to preserve enclosed bg pixels
+                || (is_16bit && ink == 30)
                 // 16-bit bitmaps ink 41: ALWAYS use matte (background shouldn't darken)
                 || (is_16bit && ink == 41)
                 // 32-bit bitmaps: no matte for ink 0 (Director doesn't use matte on 32-bit ink 0)
@@ -4146,6 +4160,8 @@ impl WebGL2Renderer {
                 || (is_32bit && !bitmap.use_alpha && ink == 8)
                 // 32-bit bitmaps WITHOUT use_alpha ink 9: ALWAYS use matte (embedded alpha)
                 || (is_32bit && !bitmap.use_alpha && ink == 9)
+                // 32-bit bitmaps WITHOUT use_alpha ink 30: edge matte for bubble sprites
+                || (is_32bit && !bitmap.use_alpha && ink == 30)
                 // 32-bit bitmaps WITHOUT use_alpha ink 41: ALWAYS use matte with bgColor
                 || (is_32bit && !bitmap.use_alpha && ink == 41)
             );
@@ -4184,7 +4200,7 @@ impl WebGL2Renderer {
                 }
             } else if is_32bit {
                 // For 32-bit bitmaps without use_alpha:
-                // - Ink 8: use sprite's bgColor for matte (matches Canvas2D behavior)
+                // - Ink 8/30: use sprite's bgColor for matte (matches Canvas2D behavior)
                 // - Ink 9: use sprite's bgColor for matte
                 // - Ink 41 (Darken): use bitmap's structural bg (white). Canvas2D's
                 //   create_matte uses get_bg_color_ref() = Rgb(255,255,255) for non-palette
@@ -4192,7 +4208,7 @@ impl WebGL2Renderer {
                 //   Using sprite_bg_color here would re-flood the matte every time bgColor
                 //   changes, causing real bg pixels to render as colored blobs.
                 // - Other inks: use edge color
-                let bg_color_for_matte = if ink == 8 || ink == 9 {
+                let bg_color_for_matte = if ink == 8 || ink == 9 || ink == 30 {
                     sprite_bg_color.unwrap_or_else(|| bitmap.get_pixel_color(palettes, 0, 0))
                 } else if ink == 41 {
                     (255u8, 255u8, 255u8)
@@ -4211,7 +4227,7 @@ impl WebGL2Renderer {
                 // - Ink 7, 8: use sprite's bgColor for matte (matches Canvas2D behavior)
                 // - Ink 41 (Darken): use bitmap's structural bg (white) — see 32-bit branch above
                 // - Ink 0: use white as background (default for trim_white_space)
-                let bg_color_for_matte = if ink == 7 || ink == 8 {
+                let bg_color_for_matte = if ink == 7 || ink == 8 || ink == 30 {
                     sprite_bg_color.unwrap_or((255u8, 255u8, 255u8))
                 } else {
                     (255u8, 255u8, 255u8)
@@ -4336,7 +4352,7 @@ impl WebGL2Renderer {
                     } else {
                         255
                     };
-                    // For ink 36 (BgTransparent): also color-key bgColor pixels
+                    // For bg-transparent ink: also color-key bgColor pixels.
                     if ink == 36 {
                         if let Some(bg) = sprite_bg_color {
                             if (r, g, b) == bg {
@@ -4351,7 +4367,7 @@ impl WebGL2Renderer {
                         embedded_a
                     }
                 } else if should_use_colorkey_ink36 {
-                    // Ink 36: bake bgColor transparency into texture alpha
+                    // Bg-transparent ink: bake bgColor transparency into texture alpha
                     // This avoids relying on shader discard which has driver issues
                     let bg = sprite_bg_color.unwrap_or((255, 255, 255));
                     if (r, g, b) == bg {
@@ -4366,7 +4382,7 @@ impl WebGL2Renderer {
                     || should_use_colorkey_ink37
                     || should_use_colorkey_ink39
                 {
-                    // Ink 3/33/35/36/37/39 color-key transparency is handled by shader
+                    // Ink 3/30/33/35/36/37/39 color-key transparency is handled by shader
                     // The shader compares pixel RGB with bgColor uniform
                     // All pixels are uploaded as opaque, shader discards matching pixels
                     // Works for indexed (2-8 bit), 16-bit, and 32-bit (without use_alpha) bitmaps
@@ -4721,6 +4737,7 @@ impl WebGL2Renderer {
     /// Matches Canvas2D's should_matte_sprite function
     fn should_matte_sprite(ink: i32) -> bool {
         ink == 3
+            || ink == 30
             || ink == 36
             || ink == 33
             || ink == 37
@@ -4847,13 +4864,20 @@ impl WebGL2Renderer {
         // Note: Ink 41 (Darken) uses bitmap's structural bg (palette idx 0 / white), not the
         //       sprite's bgColor — the bgColor only tints in the shader uniform — so the texture
         //       does not depend on sprite_bg_color and must not be in the cache key.
-        let is_ink_with_bgcolor_matte =
-            ((ink == 7 || ink == 8 || ink == 36 || ink == 37 || ink == 39 || ink == 40)
-                && bitmap.original_bit_depth >= 2
-                && bitmap.original_bit_depth <= 8)
-                || ((ink == 0 || ink == 8) && bitmap.original_bit_depth == 32 && !bitmap.use_alpha)
-                || (ink == 9 && bitmap.original_bit_depth == 32 && !bitmap.use_alpha)
-                || (ink == 36 && bitmap.original_bit_depth == 32 && bitmap.use_alpha);
+        let is_ink_with_bgcolor_matte = ((ink == 7
+            || ink == 8
+            || ink == 30
+            || ink == 36
+            || ink == 37
+            || ink == 39
+            || ink == 40)
+            && bitmap.original_bit_depth >= 2
+            && bitmap.original_bit_depth <= 8)
+            || ((ink == 0 || ink == 8 || ink == 30)
+                && bitmap.original_bit_depth == 32
+                && !bitmap.use_alpha)
+            || (ink == 9 && bitmap.original_bit_depth == 32 && !bitmap.use_alpha)
+            || (ink == 36 && bitmap.original_bit_depth == 32 && bitmap.use_alpha);
         let cache_key_bg_color = if is_ink_with_bgcolor_matte {
             sprite_bg_color
         } else {
@@ -6566,10 +6590,11 @@ impl WebGL2Renderer {
         // - Ink 7 (Not Ghost): discards alpha=0 pixels via matte
         // - Ink 8 (Matte): discards alpha<0.01 pixels in shader
         // - Ink 9 (Mask): uses alpha as mask
-        // - Ink 36 (BgTransparent): composited with alpha blending
+        // - Inks 30/36 (BgTransparent): composited with alpha blending
         // Filling background with bg_color at alpha=255 would make the entire
         // text area opaque, producing solid colored rectangles instead of text.
-        let is_transparency_ink = ink == 3 || ink == 7 || ink == 8 || ink == 9 || ink == 36;
+        let is_transparency_ink =
+            ink == 3 || ink == 7 || ink == 8 || ink == 9 || ink == 30 || ink == 36;
         // White bg fields use ink 36 (BgTransparent) when the author wants the
         // bg to fall through (e.g. text/field members composited over a 3D
         // scene). Under any non-transparent ink (e.g. ink 0 Copy on Coke

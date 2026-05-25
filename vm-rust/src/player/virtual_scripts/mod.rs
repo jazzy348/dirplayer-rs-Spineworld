@@ -12,7 +12,7 @@ use crate::director::enums::ScriptType;
 use crate::director::lingo::datum::Datum;
 
 use super::allocator::ScriptInstanceAllocatorTrait;
-use super::cast_lib::{cast_member_ref, CastMemberRef};
+use super::cast_lib::{CastMemberRef, cast_member_ref};
 use super::cast_member::{CastMember, CastMemberType, ScriptMember};
 use super::ci_string::CiString;
 use super::script::{Script, ScriptInstance};

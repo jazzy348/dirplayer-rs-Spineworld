@@ -623,8 +623,7 @@ impl TextMemberHandlers {
                 };
                 let text_has_breaks =
                     text_data.text.contains('\n') || text_data.text.contains('\r');
-                let effective_word_wrap =
-                    text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
+                let effective_word_wrap = text_data.word_wrap && text_data.box_type != "adjust";
                 let (width, measured_height) = if measure_with_canvas {
                     // Canvas2D measurement — matches the Canvas2D render path
                     // used by `.image` for non-PFR and native-standard fonts.
@@ -858,8 +857,7 @@ impl TextMemberHandlers {
                     let requested_font_for_measure =
                         resolve_director_native_font_name(Some(&member.name), &text_data.font);
                     let measure_with_canvas = !is_pfr;
-                    let effective_word_wrap =
-                        text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
+                    let effective_word_wrap = text_data.word_wrap && text_data.box_type != "adjust";
                     let member_style_bits: u8 = {
                         let mut s = 0u8;
                         for tag in &text_data.font_style {
@@ -1390,8 +1388,7 @@ impl TextMemberHandlers {
                 };
                 let text_has_breaks =
                     text_data.text.contains('\n') || text_data.text.contains('\r');
-                let effective_word_wrap =
-                    text_data.word_wrap && !(text_data.box_type == "adjust" && text_has_breaks);
+                let effective_word_wrap = text_data.word_wrap && text_data.box_type != "adjust";
 
                 // Decide the measurement path. When the member will render via
                 // Canvas2D (non-PFR, or standard-font with prefer_native), measure
@@ -1470,8 +1467,15 @@ impl TextMemberHandlers {
                 let mut box_width = width;
                 let mut box_height = height;
                 if let Some(w) = explicit_box_width {
-                    // For text members with an authored box width, keep wrapping constrained to that box.
-                    box_width = w.max(1);
+                    // For wrapped text members with an authored box width, keep wrapping
+                    // constrained to that box. Unwrapped adjustable members render their
+                    // `.image` to the current text run width; scripts often measure with
+                    // charPosToLoc and then copy that exact rect from member.image.
+                    box_width = if effective_word_wrap {
+                        w.max(1)
+                    } else {
+                        width.max(w).max(1)
+                    };
                 }
                 // PFR bitmap-font path: raw `measure_text*` reports the full PFR
                 // cell height (char_height-1) which over-reports vs Director's

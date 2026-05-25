@@ -1621,9 +1621,7 @@ impl BuiltInHandlerManager {
                     } else {
                         0
                     };
-                    let has_explicit_line_breaks = text.contains('\r') || text.contains('\n');
-                    let effective_word_wrap =
-                        word_wrap && !(box_type == "adjust" && has_explicit_line_breaks);
+                    let effective_word_wrap = word_wrap && box_type != "adjust";
 
                     if !is_pfr && !font_name.is_empty() {
                         // Native Canvas2D path: measure the substring up to `index` using the

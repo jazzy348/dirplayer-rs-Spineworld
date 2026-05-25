@@ -92,6 +92,7 @@ fn blend_color_alpha(dst: (u8, u8, u8), src: (u8, u8, u8), alpha: f32) -> (u8, u
 
 pub fn should_matte_sprite(ink: u32) -> bool {
     ink == 2
+        || ink == 30
         || ink == 36
         || ink == 33
         || ink == 37

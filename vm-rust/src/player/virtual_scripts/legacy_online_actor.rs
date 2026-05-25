@@ -5,10 +5,10 @@ use fxhash::FxHashMap;
 use crate::{
     director::lingo::datum::{Datum, DatumType},
     player::{
+        DatumRef, DirPlayer, ScriptError,
         allocator::ScriptInstanceAllocatorTrait,
         ci_string::{CiStr, CiString},
         script_ref::ScriptInstanceRef,
-        DatumRef, DirPlayer, ScriptError,
     },
 };
 

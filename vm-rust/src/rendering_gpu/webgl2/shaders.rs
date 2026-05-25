@@ -44,6 +44,7 @@ impl InkMode {
     /// Convert Director ink number to InkMode
     pub fn from_ink_number(ink: i32) -> Self {
         match ink {
+            30 => InkMode::Matte,
             36 => InkMode::BackgroundTransparent,
             3 => InkMode::Ghost,
             7 => InkMode::NotGhost,

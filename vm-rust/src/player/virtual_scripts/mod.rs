@@ -347,7 +347,7 @@ pub fn register_legacy_online_actor_if_known(
     Some(VirtualScriptRegistry::register(
         player,
         name,
-        Rc::new(legacy_online_actor::LegacyOnlineActor::new("Bartender")),
+        Rc::new(legacy_online_actor::LegacyOnlineActor::new(name)),
     ))
 }
 

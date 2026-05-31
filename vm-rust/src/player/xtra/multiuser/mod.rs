@@ -460,14 +460,15 @@ impl MultiuserXtraManager {
                     )
                 });
 
-                // If ws_secure param is set, it overrides the page protocol check for ws_scheme
-                let ws_secure = ws_secure.unwrap_or(window_secure);
+                // HTTPS pages must use the TLS proxy listener to avoid mixed-content blocking.
+                let ws_secure = window_secure || ws_secure.unwrap_or(false);
                 let ws_scheme = if ws_secure { "wss" } else { "ws" };
+                let ws_port = if window_secure { 443 } else { port };
                 let ws_url = format!(
                     "{}://{}:{}{}",
                     ws_scheme,
                     host,
-                    port,
+                    ws_port,
                     ws_path.unwrap_or_default()
                 );
 

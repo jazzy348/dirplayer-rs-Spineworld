@@ -168,6 +168,7 @@ function renderPlayer(
   height: string,
   src: string,
   externalParams: Record<string, string>,
+  moviePathOverride?: string,
   enableGestures?: boolean
 ) {
   const root = ReactDOM.createRoot(mount);
@@ -179,6 +180,7 @@ function renderPlayer(
           height={height}
           src={src}
           externalParams={externalParams}
+          moviePathOverride={moviePathOverride}
           requireClickToPlay={config.requireClickToPlay}
           enableGestures={enableGestures}
         />
@@ -244,6 +246,7 @@ function replaceDirEmbed(config: PolyfillConfig, element: HTMLEmbedElement) {
   const enableGestures = element.hasAttribute('data-enable-gestures')
     || (element.parentElement?.tagName === 'OBJECT' && element.parentElement.hasAttribute('data-enable-gestures'))
     || undefined;
+  const moviePathOverride = element.getAttribute('data-dirplayer-movie-path-override') || undefined;
 
   processedDirElements.add(element);
   let size = resolveReplacementSize(element);
@@ -256,7 +259,7 @@ function replaceDirEmbed(config: PolyfillConfig, element: HTMLEmbedElement) {
   } else {
     element.replaceWith(newElement);
   }
-  renderPlayer(config, newElement, size.width, size.height, src, externalParams, enableGestures);
+  renderPlayer(config, newElement, size.width, size.height, src, externalParams, moviePathOverride, enableGestures);
 }
 
 function replaceDirObject(config: PolyfillConfig, element: HTMLObjectElement, params: Record<string, string | null>) {
@@ -282,6 +285,7 @@ function replaceDirObject(config: PolyfillConfig, element: HTMLObjectElement, pa
   const enableGestures = element.hasAttribute('data-enable-gestures')
     || getCaseInsensitiveValue(params, 'enableGestures') === 'true'
     || undefined;
+  const moviePathOverride = element.getAttribute('data-dirplayer-movie-path-override') || undefined;
 
   processedDirElements.add(element);
   for (const embed of Array.from(element.getElementsByTagName('embed'))) {
@@ -290,7 +294,7 @@ function replaceDirObject(config: PolyfillConfig, element: HTMLObjectElement, pa
 
   const newElement = document.createElement('div');
   element.replaceWith(newElement);
-  renderPlayer(config, newElement, size.width, size.height, src, externalParams, enableGestures);
+  renderPlayer(config, newElement, size.width, size.height, src, externalParams, moviePathOverride, enableGestures);
 }
 
 function extractNoscriptElements() {

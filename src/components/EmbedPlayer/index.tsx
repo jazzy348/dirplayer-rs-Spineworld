@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RootState } from '../../store';
 import { useSelector } from 'react-redux'
-import { load_movie_file, play, set_base_path, set_external_params } from 'vm-rust';
+import { load_movie_file, play, set_base_path, set_external_params, set_movie_path_override } from 'vm-rust';
 import { getFullPathFromOrigin, getBasePath } from '../../utils/path';
 import { initAudioBackend } from '../../audio/audioInit';
 import Stage from '../../views/Stage';
@@ -13,11 +13,12 @@ type EmbedPlayerProps = {
   height: string
   src: string
   externalParams?: Record<string, string>
+  moviePathOverride?: string
   requireClickToPlay?: boolean
   enableGestures?: boolean
 };
 
-export default function EmbedPlayer({width, height, src, externalParams, requireClickToPlay, enableGestures}: EmbedPlayerProps) {
+export default function EmbedPlayer({width, height, src, externalParams, moviePathOverride, requireClickToPlay, enableGestures}: EmbedPlayerProps) {
   const isVmReady = useSelector<RootState>(state => state.vm.isReady);
   const movieLoadError = useSelector<RootState, string | undefined>(state => state.vm.movieLoadError);
   const [userClicked, setUserClicked] = useState(!requireClickToPlay);
@@ -32,6 +33,7 @@ export default function EmbedPlayer({width, height, src, externalParams, require
       const fullPath = getFullPathFromOrigin(src);
       set_base_path(getBasePath(fullPath));
       set_external_params(externalParams || {});
+      set_movie_path_override(moviePathOverride || '');
       await load_movie_file(fullPath, true);
     }
     if (isVmReady && userClicked) {
